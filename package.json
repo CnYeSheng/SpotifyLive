@@ -11,17 +11,23 @@
     "dev": "nodemon server-proxy.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
     "axios": "^1.6.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "iconv-lite": "^0.6.3",
     "node-fetch": "^3.3.2",
     "node-forge": "^1.3.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
   },
-  "keywords": ["spotify", "lyrics", "music", "web-app"],
+  "keywords": [
+    "spotify",
+    "lyrics",
+    "music",
+    "web-app"
+  ],
   "author": "",
   "license": "MIT"
 }

@@ -294,24 +294,54 @@ class SpotifyLyricsPlayer {
 
             console.log('歌詞 API 回應:', data);
 
-            if (data.success && data.lyrics && data.lyrics.length > 0) {
-                this.lyrics = data.lyrics;
-                this.lyricsType = data.type || 'plain';
-                this.displayLyrics();
-                this.updateStatus('lyrics', true);
-                console.log(`✅ 歌詞載入成功: ${data.lyrics.length} 行 (${this.lyricsType})`);
+            // 檢查新的 API 響應格式
+            if (data.success && data.lyrics && Array.isArray(data.lyrics) && data.lyrics.length > 0) {
+                // 驗證歌詞內容是否有效
+                const validLyrics = data.lyrics.filter(line => {
+                    const text = line.text || line;
+                    return text && text.trim() !== '' && this.isValidText(text);
+                });
+
+                if (validLyrics.length > 0) {
+                    this.lyrics = validLyrics;
+                    this.lyricsType = data.type || 'plain';
+                    this.displayLyrics();
+                    this.updateStatus('lyrics', true);
+                    console.log(`✅ 歌詞載入成功: ${validLyrics.length} 行 (${this.lyricsType}) 來源: ${data.source}`);
+                } else {
+                    console.log(`❌ 歌詞內容無效或為亂碼`);
+                    this.showLyricsError('歌詞內容格式錯誤');
+                }
             } else {
                 const errorMsg = data.error || '找不到歌詞';
                 console.log(`❌ 歌詞載入失敗: ${errorMsg}`);
-                
-                this.showLyricsPlaceholder(`😔 ${errorMsg}\n\n可能的原因:\n• 歌曲太新或太冷門\n• 歌詞數據庫中沒有此歌曲\n• 藝術家或歌曲名稱不匹配\n\n💡 嘗試播放其他熱門歌曲`);
-                this.updateStatus('lyrics', false);
+                this.showLyricsError(errorMsg);
             }
         } catch (error) {
             console.error('載入歌詞失敗:', error);
-            this.showLyricsPlaceholder('❌ 載入歌詞失敗\n\n請檢查網路連接或稍後再試\n\n🔧 如果問題持續，請檢查歌詞服務狀態');
-            this.updateStatus('lyrics', false);
+            this.showLyricsError('載入歌詞失敗');
         }
+    }
+
+    // 檢查文本是否有效（不是亂碼）
+    isValidText(text) {
+        if (!text || typeof text !== 'string') return false;
+        
+        // 檢查是否包含大量亂碼字符
+        const garbledChars = /[�\uFFFD]/g;
+        const garbledCount = (text.match(garbledChars) || []).length;
+        
+        // 如果亂碼字符超過文本長度的30%，視為無效
+        if (garbledCount > text.length * 0.3) {
+            return false;
+        }
+        
+        // 檢查是否包含正常的字符（中文、英文、數字、標點符號）
+        const normalChars = /[\u4e00-\u9fff\u3400-\u4dbf\w\s\-,.!?'"()[\]]/g;
+        const normalCount = (text.match(normalChars) || []).length;
+        
+        // 如果正常字符少於50%，可能是亂碼
+        return normalCount >= text.length * 0.5;
     }
 
     showLyricsPlaceholder(text) {
@@ -322,11 +352,16 @@ class SpotifyLyricsPlayer {
         `;
     }
 
+    showLyricsError(errorMsg) {
+        this.showLyricsPlaceholder(`😔 ${errorMsg}\n\n可能的原因:\n• 歌曲太新或太冷門\n• 歌詞數據庫中沒有此歌曲\n• 藝術家或歌曲名稱不匹配\n• 歌詞內容編碼錯誤\n\n💡 嘗試播放其他熱門歌曲`);
+        this.updateStatus('lyrics', false);
+    }
+
     displayLyrics() {
         if (!this.lyrics || this.lyrics.length === 0) return;
 
         const lyricsHTML = this.lyrics.map((line, index) => {
-            const text = this.lyricsType === 'synced' ? line.text : line.text || line;
+            const text = this.lyricsType === 'synced' ? line.text : (line.text || line);
             const timeAttr = this.lyricsType === 'synced' && line.time ? `data-time="${line.time}"` : '';
             return `<div class="lyrics-line" data-index="${index}" ${timeAttr}>${this.escapeHtml(text)}</div>`;
         }).join('');
@@ -335,9 +370,9 @@ class SpotifyLyricsPlayer {
 
         // 添加同步歌詞指示器
         if (this.lyricsType === 'synced') {
-            // const indicator = document.createElement('div');
-            // indicator.className = 'sync-indicator';
-            // indicator.innerHTML = '🎵 同步歌詞';
+            const indicator = document.createElement('div');
+            indicator.className = 'sync-indicator';
+            indicator.innerHTML = '🎵 同步歌詞';
             this.lyricsContent.insertBefore(indicator, this.lyricsContent.firstChild);
         }
 
@@ -356,12 +391,9 @@ class SpotifyLyricsPlayer {
 
         let targetIndex = this.currentLyricIndex;
 
-        if (this.autoScroll) {
+        if (this.autoScroll && currentTime !== undefined) {
             if (this.lyricsType === 'synced') {
                 // 同步歌詞：根據精確時間匹配
-                // const currentTime = this.currentTrack.progress;
-                
-                // 找到當前時間應該顯示的歌詞行
                 for (let i = 0; i < this.lyrics.length; i++) {
                     const line = this.lyrics[i];
                     const nextLine = this.lyrics[i + 1];
@@ -453,7 +485,7 @@ document.addEventListener('visibilitychange', () => {
             clearInterval(window.spotifyPlayer.updateInterval);
             window.spotifyPlayer.updateInterval = setInterval(() => {
                 window.spotifyPlayer.checkCurrentTrack();
-            }, 100); // 10秒更新一次
+            }, 10000); // 10秒更新一次
         }
     } else {
         // 頁面顯示時恢復正常頻率
@@ -461,7 +493,7 @@ document.addEventListener('visibilitychange', () => {
             clearInterval(window.spotifyPlayer.updateInterval);
             window.spotifyPlayer.updateInterval = setInterval(() => {
                 window.spotifyPlayer.checkCurrentTrack();
-            }, 100); // 3秒更新一次
+            }, 3000); // 3秒更新一次
         }
     }
 });

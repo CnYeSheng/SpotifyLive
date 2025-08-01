@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const iconv = require('iconv-lite');
 require('dotenv').config();
 
 const app = express();
@@ -135,41 +136,284 @@ async function refreshAccessToken() {
   }
 }
 
+// 檢查文本是否為亂碼
+function isGarbledText(text) {
+  if (!text || typeof text !== 'string') return true;
+  
+  // 檢查是否包含大量亂碼字符
+  const garbledChars = /[�\uFFFD]/g;
+  const garbledCount = (text.match(garbledChars) || []).length;
+  
+  // 如果亂碼字符超過文本長度的30%，視為亂碼
+  if (garbledCount > text.length * 0.3) {
+    return true;
+  }
+  
+  // 檢查是否包含正常的中文、英文或數字字符
+  const normalChars = /[\u4e00-\u9fff\u3400-\u4dbf\w\s\-,.!?'"()]/g;
+  const normalCount = (text.match(normalChars) || []).length;
+  
+  // 如果正常字符少於50%，可能是亂碼
+  return normalCount < text.length * 0.5;
+}
+
+// 清理和驗證歌詞文本
+function cleanLyricsText(text) {
+  if (!text) return '';
+  
+  // 移除常見的亂碼字符
+  let cleaned = text.replace(/[�\uFFFD]/g, '');
+  
+  // 移除過多的空白字符
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  
+  return cleaned;
+}
+
 // Get lyrics (using multiple lyrics API services)
+const { spawn } = require('child_process');
+
 app.get('/api/lyrics/:artist/:title', async (req, res) => {
   const { artist, title } = req.params;
   
   console.log(`🎤 請求歌詞: ${artist} - ${title}`);
-  
+
   try {
-    // 使用 lrclib.net API 獲取歌詞
-    const lyrics = await getLyricsFromLrclib(artist, title);
+    // 1️⃣ 先走原本的 lyrics.ovh
+    console.log('🔍 嘗試 lyrics.ovh API...');
+    const ovhUrl = `https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`;
     
-    if (lyrics && lyrics.lyrics && lyrics.lyrics.length > 0) {
-      console.log(`✅ 找到歌詞: ${lyrics.lyrics.length} 行 (${lyrics.type})`);
-      res.json({ 
-        lyrics: lyrics.lyrics,
-        type: lyrics.type,
-        source: 'lrclib.net',
-        success: true 
+    try {
+      const ovhRes = await axios.get(ovhUrl, { 
+        timeout: 4000,
+        headers: {
+          'User-Agent': 'Spotify Lyrics Player/1.0'
+        }
       });
-    } else {
-      console.log(`❌ 未找到歌詞: ${artist} - ${title}`);
-      res.json({ 
-        lyrics: ['找不到歌詞'],
-        error: 'No lyrics found',
-        success: false 
-      });
+
+      if (ovhRes.data.lyrics && !isGarbledText(ovhRes.data.lyrics)) {
+        // 轉成前端吃的格式：每行文字
+        const lines = ovhRes.data.lyrics
+          .split('\n')
+          .filter(l => l.trim() !== '')
+          .map(text => ({ text: cleanLyricsText(text) }))
+          .filter(item => item.text); // 過濾空行
+        
+        if (lines.length > 0) {
+          console.log(`✅ lyrics.ovh 成功: ${lines.length} 行`);
+          return res.json({ 
+            success: true,
+            lyrics: lines, 
+            type: 'plain', 
+            source: 'lyrics.ovh' 
+          });
+        }
+      }
+    } catch (e) {
+      console.log('❌ lyrics.ovh 失敗:', e.message);
     }
-  } catch (error) {
-    console.error('❌ 歌詞服務錯誤:', error.message);
+
+    // 2️⃣ 嘗試 lrclib.net API
+    console.log('🔍 嘗試 lrclib.net API...');
+    try {
+      const lrclibResult = await getLyricsFromLrclib(artist, title);
+      if (lrclibResult && lrclibResult.lyrics && lrclibResult.lyrics.length > 0) {
+        // 檢查歌詞是否為亂碼
+        const hasValidLyrics = lrclibResult.lyrics.some(line => {
+          const text = line.text || line;
+          return text && !isGarbledText(text);
+        });
+        
+        if (hasValidLyrics) {
+          // 清理歌詞文本
+          const cleanedLyrics = lrclibResult.lyrics
+            .map(line => {
+              if (typeof line === 'object' && line.text !== undefined) {
+                return {
+                  ...line,
+                  text: cleanLyricsText(line.text)
+                };
+              } else {
+                return { text: cleanLyricsText(line) };
+              }
+            })
+            .filter(line => line.text); // 過濾空行
+          
+          console.log(`✅ lrclib.net 成功: ${cleanedLyrics.length} 行 (${lrclibResult.type})`);
+          return res.json({
+            success: true,
+            lyrics: cleanedLyrics,
+            type: lrclibResult.type,
+            source: 'lrclib.net'
+          });
+        }
+      }
+    } catch (e) {
+      console.log('❌ lrclib.net 失敗:', e.message);
+    }
+
+    // 3️⃣ 走 SyncedLyrics（Python）
+    console.log('🔍 嘗試 SyncedLyrics (Python)...');
+    try {
+      const pythonResult = await getSyncedLyricsFromPython(artist, title);
+      if (pythonResult && pythonResult.lyrics && pythonResult.lyrics.length > 0) {
+        // 檢查歌詞是否為亂碼
+        const hasValidLyrics = pythonResult.lyrics.some(line => {
+          const text = line.text || line;
+          return text && !isGarbledText(text);
+        });
+        
+        if (hasValidLyrics) {
+          // 清理歌詞文本
+          const cleanedLyrics = pythonResult.lyrics
+            .map(line => {
+              if (typeof line === 'object' && line.text !== undefined) {
+                return {
+                  ...line,
+                  text: cleanLyricsText(line.text)
+                };
+              } else {
+                return { text: cleanLyricsText(line) };
+              }
+            })
+            .filter(line => line.text); // 過濾空行
+          
+          console.log(`✅ SyncedLyrics 成功: ${cleanedLyrics.length} 行 (${pythonResult.type})`);
+          return res.json({
+            success: true,
+            lyrics: cleanedLyrics,
+            type: pythonResult.type,
+            source: 'syncedlyrics'
+          });
+        } else {
+          console.log('❌ SyncedLyrics 返回亂碼歌詞');
+        }
+      }
+    } catch (e) {
+      console.log('❌ SyncedLyrics 失敗:', e.message);
+    }
+
+    // 所有方法都失敗
+    console.log('❌ 所有歌詞來源都失敗');
     res.json({ 
-      lyrics: null,
-      error: error.message,
-      success: false 
+      success: false,
+      lyrics: null, 
+      error: '找不到歌詞或歌詞格式錯誤',
+      source: 'none' 
+    });
+
+  } catch (error) {
+    console.error('❌ 歌詞請求總體失敗:', error);
+    res.json({ 
+      success: false,
+      lyrics: null, 
+      error: '歌詞服務暫時不可用',
+      source: 'error' 
     });
   }
 });
+
+// Python SyncedLyrics 函數
+function getSyncedLyricsFromPython(artist, title) {
+  return new Promise((resolve, reject) => {
+    const py = spawn('python3', [
+      '-c',
+      `
+import syncedlyrics
+import sys
+import urllib.parse as ul
+import json
+
+try:
+    artist = ul.unquote_plus('${encodeURIComponent(artist)}')
+    title = ul.unquote_plus('${encodeURIComponent(title)}')
+    
+    # 嘗試獲取同步歌詞
+    lrc = syncedlyrics.search(f'{title} {artist}', providers=['lrclib', 'netease'])
+    
+    if not lrc:
+        print(json.dumps({"success": False, "error": "No lyrics found"}))
+        sys.exit(0)
+    
+    # 解析 LRC 格式
+    lines = []
+    for line in lrc.split('\\n'):
+        line = line.strip()
+        if line.startswith('[') and ']' in line:
+            try:
+                # 解析時間戳 [mm:ss.xx]
+                time_part = line[line.find('[') + 1:line.find(']')]
+                text_part = line[line.find(']') + 1:].strip()
+                
+                if ':' in time_part and text_part:
+                    time_components = time_part.split(':')
+                    minutes = int(time_components[0])
+                    seconds_parts = time_components[1].split('.')
+                    seconds = int(seconds_parts[0])
+                    centiseconds = int(seconds_parts[1][:2]) if len(seconds_parts) > 1 else 0
+                    
+                    time_ms = (minutes * 60 + seconds) * 1000 + centiseconds * 10
+                    lines.append({"time": time_ms, "text": text_part})
+            except:
+                continue
+    
+    if lines:
+        result = {
+            "success": True,
+            "lyrics": lines,
+            "type": "synced"
+        }
+    else:
+        result = {"success": False, "error": "Failed to parse lyrics"}
+    
+    print(json.dumps(result, ensure_ascii=False))
+    
+except Exception as e:
+    print(json.dumps({"success": False, "error": str(e)}))
+`
+    ]);
+
+    let output = '';
+    let errorOutput = '';
+
+    py.stdout.on('data', (data) => {
+      output += data.toString('utf8');
+    });
+
+    py.stderr.on('data', (data) => {
+      errorOutput += data.toString('utf8');
+    });
+
+    py.on('close', (code) => {
+      try {
+        if (output.trim()) {
+          const result = JSON.parse(output.trim());
+          if (result.success) {
+            resolve(result);
+          } else {
+            resolve(null);
+          }
+        } else {
+          resolve(null);
+        }
+      } catch (parseError) {
+        console.error('Python 輸出解析失敗:', parseError, 'Output:', output);
+        resolve(null);
+      }
+    });
+
+    py.on('error', (error) => {
+      console.error('Python 執行失敗:', error);
+      resolve(null);
+    });
+
+    // 設置超時
+    setTimeout(() => {
+      py.kill();
+      resolve(null);
+    }, 10000);
+  });
+}
 
 // 使用 lrclib.net API 獲取歌詞
 async function getLyricsFromLrclib(artist, title, album = '', duration = '') {
@@ -189,13 +433,17 @@ async function getLyricsFromLrclib(artist, title, album = '', duration = '') {
     if (duration) {
       params.append('duration', duration);
     }
-    
-    const response = await axios.get(`https://lrclib.net/api/get?${params.toString()}`, {
-      timeout: 8000,
-      headers: {
-        'User-Agent': 'Spotify Lyrics Player/1.0'
+
+    const response = await axios.get(
+      `https://lrclib.net/api/get?${params.toString()}`,
+      {
+        timeout: 8000,
+        headers: { 
+          'User-Agent': 'Spotify Lyrics Player/1.0',
+          'Accept': 'application/json'
+        }
       }
-    });
+    );
     
     if (response.data && response.data.syncedLyrics) {
       // 優先使用同步歌詞 (LRC 格式)
@@ -209,44 +457,60 @@ async function getLyricsFromLrclib(artist, title, album = '', duration = '') {
             const seconds = parseInt(match[2]);
             const centiseconds = parseInt(match[3]);
             const timeMs = (minutes * 60 + seconds) * 1000 + centiseconds * 10;
-            return {
-              time: timeMs,
-              text: match[4].trim()
-            };
+            const text = match[4].trim();
+            
+            // 檢查文本是否有效
+            if (text && !isGarbledText(text)) {
+              return {
+                time: timeMs,
+                text: cleanLyricsText(text)
+              };
+            }
           }
           return null;
         })
         .filter(item => item !== null);
       
-      console.log(`✅ lrclib.net 成功找到同步歌詞: ${syncedLyrics.length} 行`);
-      return {
-        type: 'synced',
-        lyrics: syncedLyrics
-      };
-    } else if (response.data && response.data.plainLyrics) {
+      if (syncedLyrics.length > 0) {
+        console.log(`✅ lrclib.net 成功找到同步歌詞: ${syncedLyrics.length} 行`);
+        return {
+          success: true,
+          type: 'synced',
+          lyrics: syncedLyrics
+        };
+      }
+    } 
+    
+    if (response.data && response.data.plainLyrics) {
       // 備用：使用純文本歌詞
-      const lyrics = response.data.plainLyrics
-        .split('\n')
-        .filter(line => line.trim() !== '')
-        .map(text => ({ text }));
+      const plainText = response.data.plainLyrics;
       
-      console.log(`✅ lrclib.net 成功找到純文本歌詞: ${lyrics.length} 行`);
-      return {
-        type: 'plain',
-        lyrics: lyrics
-      };
+      if (plainText && !isGarbledText(plainText)) {
+        const lyrics = plainText
+          .split('\n')
+          .filter(line => line.trim() !== '')
+          .map(text => ({ text: cleanLyricsText(text) }))
+          .filter(item => item.text);
+        
+        if (lyrics.length > 0) {
+          console.log(`✅ lrclib.net 成功找到純文本歌詞: ${lyrics.length} 行`);
+          return {
+            success: true,
+            type: 'plain',
+            lyrics: lyrics
+          };
+        }
+      }
     }
     
-    console.log(`❌ lrclib.net 沒有找到歌詞`);
+    console.log(`❌ lrclib.net 沒有找到有效歌詞`);
     return null;
     
   } catch (error) {
     console.log(`❌ lrclib.net 請求失敗:`, error.message);
-    throw error;
+    return null;
   }
 }
-
-// 移除舊的歌詞來源 - 現在只使用 lrclib.net
 
 // Check authentication status
 app.get('/api/auth-status', (req, res) => {
@@ -280,21 +544,27 @@ app.get('/api/test-lyrics', async (req, res) => {
   const testCases = [
     { artist: 'Ed Sheeran', title: 'Shape of You' },
     { artist: 'The Weeknd', title: 'Blinding Lights' },
-    { artist: 'Test Artist', title: 'Test Song' }
+    { artist: '頑童MJ116', title: 'Here We Are' },
+    { artist: 'Jay Chou', title: '青花瓷' }
   ];
   
   const results = [];
   
   for (const testCase of testCases) {
     try {
-      const lyrics = await getLyricsFromLrclib(testCase.artist, testCase.title);
+      const lrclibResult = await getLyricsFromLrclib(testCase.artist, testCase.title);
       results.push({
         artist: testCase.artist,
         title: testCase.title,
-        success: !!(lyrics && lyrics.lyrics),
-        lyricsCount: lyrics && lyrics.lyrics ? lyrics.lyrics.length : 0,
-        type: lyrics ? lyrics.type : 'none',
-        source: lyrics ? 'lrclib.net' : 'none'
+        success: !!(lrclibResult && lrclibResult.lyrics && lrclibResult.lyrics.length > 0),
+        lyricsCount: lrclibResult && lrclibResult.lyrics ? lrclibResult.lyrics.length : 0,
+        type: lrclibResult ? lrclibResult.type : 'none',
+        source: lrclibResult ? 'lrclib.net' : 'none',
+        hasGarbledText: lrclibResult && lrclibResult.lyrics ? 
+          lrclibResult.lyrics.some(line => {
+            const text = line.text || line;
+            return isGarbledText(text);
+          }) : false
       });
     } catch (error) {
       results.push({
@@ -330,6 +600,10 @@ app.get('/api/test-lyrics', async (req, res) => {
     status: 'tested',
     results: results,
     lrclib_status: lrclibStatus,
+    encoding_check: {
+      garbled_detection: 'enabled',
+      text_cleaning: 'enabled'
+    },
     timestamp: new Date().toISOString()
   });
 });
@@ -343,5 +617,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔗 Spotify 回調: ${REDIRECT_URI}`);
   console.log(`📱 外部訪問: https://${DOMAIN}`);
   console.log(`💡 請確保反向代理已設定: ${DOMAIN} -> 0.0.0.0:${PORT}`);
+  console.log(`🔧 新增功能: 亂碼檢測與文本清理`);
   console.log(`🛑 按 Ctrl+C 停止伺服器`);
 });
