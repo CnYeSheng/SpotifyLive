@@ -335,9 +335,9 @@ class SpotifyLyricsPlayer {
 
         // 添加同步歌詞指示器
         if (this.lyricsType === 'synced') {
-            const indicator = document.createElement('div');
-            indicator.className = 'sync-indicator';
-            indicator.innerHTML = '🎵 同步歌詞';
+            // const indicator = document.createElement('div');
+            // indicator.className = 'sync-indicator';
+            // indicator.innerHTML = '🎵 同步歌詞';
             this.lyricsContent.insertBefore(indicator, this.lyricsContent.firstChild);
         }
 
