@@ -32,8 +32,10 @@ if not exist ".env" (
 
 echo.
 echo 🎵 啟動伺服器...
-echo 請在瀏覽器中開啟: https://localhost:3000
+echo 內部應用監聽: 0.0.0.0:3000
+echo 外部訪問地址: https://live.cyss.us.eu.org
+echo 請確保反向代理已設定
 echo 按 Ctrl+C 停止伺服器
 echo.
 
-node server.js
+node server-proxy.js

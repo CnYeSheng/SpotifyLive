@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>歌詞服務診斷工具</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #1db954;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #fafafa;
+        }
+        .test-button {
+            background: #1db954;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        .test-button:hover {
+            background: #1ed760;
+        }
+        .test-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .result.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .result.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .result.info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-green { background: #28a745; }
+        .status-red { background: #dc3545; }
+        .status-yellow { background: #ffc107; }
+        .input-group {
+            margin: 15px 0;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .input-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 歌詞服務診斷工具</h1>
+        
+        <div class="test-section">
+            <h3>📊 服務狀態檢查</h3>
+            <button class="test-button" onclick="checkServiceStatus()">檢查服務狀態</button>
+            <div id="status-result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>🧪 歌詞服務測試</h3>
+            <button class="test-button" onclick="testLyricsService()">執行歌詞服務測試</button>
+            <div id="lyrics-test-result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>🔍 自訂歌詞搜尋</h3>
+            <div class="input-group">
+                <label for="artist-input">藝術家:</label>
+                <input type="text" id="artist-input" placeholder="例如: Ed Sheeran" value="Ed Sheeran">
+            </div>
+            <div class="input-group">
+                <label for="title-input">歌曲名稱:</label>
+                <input type="text" id="title-input" placeholder="例如: Shape of You" value="Shape of You">
+            </div>
+            <button class="test-button" onclick="searchCustomLyrics()">搜尋歌詞</button>
+            <div id="custom-search-result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>🌐 網路連接測試</h3>
+            <button class="test-button" onclick="testNetworkConnectivity()">測試網路連接</button>
+            <div id="network-test-result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>📋 診斷報告</h3>
+            <button class="test-button" onclick="generateDiagnosticReport()">生成完整診斷報告</button>
+            <div id="diagnostic-report"></div>
+        </div>
+    </div>
+
+    <script>
+        // 檢查服務狀態
+        async function checkServiceStatus() {
+            const resultDiv = document.getElementById('status-result');
+            resultDiv.innerHTML = '<div class="result info">正在檢查服務狀態...</div>';
+            
+            try {
+                const response = await fetch('/health');
+                const data = await response.json();
+                
+                let statusHtml = '<div class="result success">';
+                statusHtml += `<span class="status-indicator status-green"></span>服務運行正常\n\n`;
+                statusHtml += `域名: ${data.domain}\n`;
+                statusHtml += `端口: ${data.port}\n`;
+                statusHtml += `時間: ${data.timestamp}\n`;
+                statusHtml += `Spotify: ${data.services?.spotify || 'unknown'}\n`;
+                statusHtml += `歌詞服務: ${data.services?.lyrics || 'unknown'}\n`;
+                statusHtml += '</div>';
+                
+                resultDiv.innerHTML = statusHtml;
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="result error"><span class="status-indicator status-red"></span>服務狀態檢查失敗: ${error.message}</div>`;
+            }
+        }
+
+        // 測試歌詞服務
+        async function testLyricsService() {
+            const resultDiv = document.getElementById('lyrics-test-result');
+            resultDiv.innerHTML = '<div class="result info">正在測試歌詞服務...</div>';
+            
+            try {
+                const response = await fetch('/api/test-lyrics');
+                const data = await response.json();
+                
+                let resultHtml = '<div class="result success">';
+                resultHtml += `<span class="status-indicator status-green"></span>歌詞服務測試完成\n\n`;
+                
+                data.results.forEach((result, index) => {
+                    const status = result.success ? '✅' : '❌';
+                    resultHtml += `${status} ${result.artist} - ${result.title}\n`;
+                    if (result.success) {
+                        resultHtml += `   找到 ${result.lyricsCount} 行歌詞\n`;
+                    } else {
+                        resultHtml += `   錯誤: ${result.error || '未知錯誤'}\n`;
+                    }
+                    resultHtml += '\n';
+                });
+                
+                resultHtml += '</div>';
+                resultDiv.innerHTML = resultHtml;
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="result error"><span class="status-indicator status-red"></span>歌詞服務測試失敗: ${error.message}</div>`;
+            }
+        }
+
+        // 自訂歌詞搜尋
+        async function searchCustomLyrics() {
+            const artist = document.getElementById('artist-input').value.trim();
+            const title = document.getElementById('title-input').value.trim();
+            const resultDiv = document.getElementById('custom-search-result');
+            
+            if (!artist || !title) {
+                resultDiv.innerHTML = '<div class="result error">請輸入藝術家和歌曲名稱</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div class="result info">正在搜尋歌詞...</div>';
+            
+            try {
+                const response = await fetch(`/api/lyrics/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
+                const data = await response.json();
+                
+                if (data.success && data.lyrics) {
+                    let resultHtml = '<div class="result success">';
+                    resultHtml += `<span class="status-indicator status-green"></span>找到歌詞！\n\n`;
+                    resultHtml += `歌曲: ${artist} - ${title}\n`;
+                    resultHtml += `歌詞行數: ${data.lyrics.length}\n`;
+                    resultHtml += `來源: ${data.source || 'unknown'}\n\n`;
+                    resultHtml += '歌詞預覽:\n';
+                    resultHtml += '─'.repeat(40) + '\n';
+                    resultHtml += data.lyrics.slice(0, 10).join('\n');
+                    if (data.lyrics.length > 10) {
+                        resultHtml += `\n... (還有 ${data.lyrics.length - 10} 行)`;
+                    }
+                    resultHtml += '</div>';
+                    resultDiv.innerHTML = resultHtml;
+                } else {
+                    resultDiv.innerHTML = `<div class="result error"><span class="status-indicator status-red"></span>找不到歌詞: ${data.error || '未知原因'}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="result error"><span class="status-indicator status-red"></span>搜尋失敗: ${error.message}</div>`;
+            }
+        }
+
+        // 測試網路連接
+        async function testNetworkConnectivity() {
+            const resultDiv = document.getElementById('network-test-result');
+            resultDiv.innerHTML = '<div class="result info">正在測試網路連接...</div>';
+            
+            const tests = [
+                { name: '本地服務', url: '/health' },
+                { name: 'Lyrics.ovh API', url: 'https://api.lyrics.ovh/v1/Ed%20Sheeran/Shape%20of%20You' },
+                { name: 'Spotify API', url: 'https://accounts.spotify.com' }
+            ];
+            
+            let resultHtml = '<div class="result info">';
+            resultHtml += '網路連接測試結果:\n\n';
+            
+            for (const test of tests) {
+                try {
+                    const startTime = Date.now();
+                    const response = await fetch(test.url, { 
+                        method: 'HEAD',
+                        mode: test.url.startsWith('http') ? 'no-cors' : 'cors'
+                    });
+                    const endTime = Date.now();
+                    const responseTime = endTime - startTime;
+                    
+                    resultHtml += `✅ ${test.name}: 連接成功 (${responseTime}ms)\n`;
+                } catch (error) {
+                    resultHtml += `❌ ${test.name}: 連接失敗 - ${error.message}\n`;
+                }
+            }
+            
+            resultHtml += '</div>';
+            resultDiv.innerHTML = resultHtml;
+        }
+
+        // 生成診斷報告
+        async function generateDiagnosticReport() {
+            const resultDiv = document.getElementById('diagnostic-report');
+            resultDiv.innerHTML = '<div class="result info">正在生成診斷報告...</div>';
+            
+            let report = '🔍 Spotify 歌詞播放器診斷報告\n';
+            report += '=' .repeat(50) + '\n';
+            report += `生成時間: ${new Date().toLocaleString()}\n\n`;
+            
+            // 檢查各項服務
+            try {
+                // 1. 服務狀態
+                report += '📊 服務狀態:\n';
+                const healthResponse = await fetch('/health');
+                const healthData = await healthResponse.json();
+                report += `   ✅ 主服務: 運行中\n`;
+                report += `   📡 端口: ${healthData.port}\n`;
+                report += `   🌐 域名: ${healthData.domain}\n`;
+                report += `   🎵 Spotify: ${healthData.services?.spotify || 'unknown'}\n`;
+                report += `   🎤 歌詞服務: ${healthData.services?.lyrics || 'unknown'}\n\n`;
+                
+                // 2. 歌詞服務測試
+                report += '🧪 歌詞服務測試:\n';
+                const lyricsTestResponse = await fetch('/api/test-lyrics');
+                const lyricsTestData = await lyricsTestResponse.json();
+                
+                lyricsTestData.results.forEach(result => {
+                    const status = result.success ? '✅' : '❌';
+                    report += `   ${status} ${result.artist} - ${result.title}`;
+                    if (result.success) {
+                        report += ` (${result.lyricsCount} 行)\n`;
+                    } else {
+                        report += ` (失敗)\n`;
+                    }
+                });
+                
+                report += '\n';
+                
+                // 3. 建議
+                report += '💡 建議:\n';
+                const successCount = lyricsTestData.results.filter(r => r.success).length;
+                if (successCount === 0) {
+                    report += '   ⚠️  所有歌詞測試都失敗，請檢查網路連接\n';
+                    report += '   🔧 嘗試重新啟動應用程式\n';
+                } else if (successCount < lyricsTestData.results.length) {
+                    report += '   ✅ 歌詞服務部分正常\n';
+                    report += '   💡 某些歌曲可能找不到歌詞，這是正常的\n';
+                } else {
+                    report += '   ✅ 歌詞服務完全正常！\n';
+                    report += '   🎉 所有功能都在正常運行\n';
+                }
+                
+            } catch (error) {
+                report += `❌ 診斷過程中發生錯誤: ${error.message}\n`;
+            }
+            
+            resultDiv.innerHTML = `<div class="result info">${report}</div>`;
+        }
+
+        // 頁面載入時自動檢查狀態
+        window.addEventListener('load', () => {
+            checkServiceStatus();
+        });
+    </script>
+</body>
+</html>

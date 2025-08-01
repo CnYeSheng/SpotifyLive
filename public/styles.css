@@ -5,6 +5,10 @@
     box-sizing: border-box;
 }
 
+html {
+    overflow-x: hidden;
+}
+
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -185,6 +189,24 @@ body {
 }
 
 /* 歌詞區域 */
+.sync-indicator {
+    text-align: center;
+    color: #1db954;
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-bottom: 20px;
+    padding: 8px 16px;
+    background: linear-gradient(135deg, rgba(29, 185, 84, 0.1), rgba(30, 215, 96, 0.1));
+    border-radius: 20px;
+    border: 1px solid rgba(29, 185, 84, 0.3);
+    display: inline-block;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
 .lyrics-container {
     background: rgba(255, 255, 255, 0.95);
     backdrop-filter: blur(20px);
@@ -242,6 +264,7 @@ body {
     line-height: 2;
     font-size: 1.1rem;
     scroll-behavior: smooth;
+    overflow-x: hidden;
 }
 
 .lyrics-content::-webkit-scrollbar {
@@ -281,7 +304,24 @@ body {
     font-weight: 600;
     color: #1db954;
     transform: scale(1.02);
+    text-shadow: 0 0 10px rgba(29, 185, 84, 0.3);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 4px 0;
 }
+
+/*
+.lyrics-line.upcoming {
+    color: #1ed760;
+    font-weight: 500;
+    opacity: 0.8;
+    background: rgba(30, 215, 96, 0.05);
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin: 2px 0;
+    border-left: 3px solid #1ed760;
+}
+*/
 
 .lyrics-placeholder {
     text-align: center;

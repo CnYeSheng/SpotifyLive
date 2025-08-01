@@ -7,7 +7,8 @@ const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 443;
+const DOMAIN = process.env.DOMAIN || 'live.cyss.us.eu.org';
 
 // Middleware
 app.use(cors());
@@ -17,7 +18,7 @@ app.use(express.static('public'));
 // Spotify API credentials
 const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
-const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:3000/callback';
+const REDIRECT_URI = process.env.REDIRECT_URI || `https://${DOMAIN}/callback`;
 
 // Store access tokens (in production, use a proper database)
 let accessToken = null;
@@ -58,7 +59,7 @@ app.get('/callback', async (req, res) => {
     accessToken = response.data.access_token;
     refreshToken = response.data.refresh_token;
     
-    res.redirect('/');
+    res.redirect('/?auth=success');
   } catch (error) {
     console.error('Error getting access token:', error.response?.data || error.message);
     res.status(500).send('Authentication failed');
@@ -160,7 +161,17 @@ app.get('/api/auth-status', (req, res) => {
   res.json({ authenticated: !!accessToken });
 });
 
-// 創建自簽名證書的函數
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    domain: DOMAIN,
+    port: PORT,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// 創建自簽名證書的函數 (用於開發)
 function createSelfSignedCert() {
   const certDir = path.join(__dirname, 'certs');
   const keyPath = path.join(certDir, 'key.pem');
@@ -182,8 +193,8 @@ function createSelfSignedCert() {
   try {
     console.log('正在生成自簽名 SSL 證書...');
     
-    // 使用 OpenSSL 生成私鑰和證書
-    execSync(`openssl req -x509 -newkey rsa:4096 -keyout "${keyPath}" -out "${certPath}" -days 365 -nodes -subj "/C=TW/ST=Taiwan/L=Taipei/O=SpotifyLyricsPlayer/CN=localhost"`, {
+    // 使用 OpenSSL 生成私鑰和證書，支援域名
+    execSync(`openssl req -x509 -newkey rsa:4096 -keyout "${keyPath}" -out "${certPath}" -days 365 -nodes -subj "/C=US/ST=State/L=City/O=Organization/CN=${DOMAIN}"`, {
       stdio: 'inherit'
     });
     
@@ -209,16 +220,16 @@ function createSelfSignedCert() {
     
     const attrs = [{
       name: 'commonName',
-      value: 'localhost'
+      value: DOMAIN
     }, {
       name: 'countryName',
-      value: 'TW'
+      value: 'US'
     }, {
       shortName: 'ST',
-      value: 'Taiwan'
+      value: 'State'
     }, {
       name: 'localityName',
-      value: 'Taipei'
+      value: 'City'
     }, {
       name: 'organizationName',
       value: 'SpotifyLyricsPlayer'
@@ -240,10 +251,57 @@ function createSelfSignedCert() {
   }
 }
 
+// 嘗試載入生產環境證書
+function loadProductionCerts() {
+  const certPaths = [
+    // Let's Encrypt 標準路徑
+    { 
+      key: `/etc/letsencrypt/live/${DOMAIN}/privkey.pem`,
+      cert: `/etc/letsencrypt/live/${DOMAIN}/fullchain.pem`
+    },
+    // Cloudflare 或其他 CA 證書路徑
+    {
+      key: path.join(__dirname, 'ssl', 'private.key'),
+      cert: path.join(__dirname, 'ssl', 'certificate.crt')
+    },
+    // 自定義證書路徑
+    {
+      key: path.join(__dirname, 'ssl', `${DOMAIN}.key`),
+      cert: path.join(__dirname, 'ssl', `${DOMAIN}.crt`)
+    }
+  ];
+
+  for (const certPath of certPaths) {
+    if (fs.existsSync(certPath.key) && fs.existsSync(certPath.cert)) {
+      console.log(`✅ 找到生產環境證書: ${certPath.cert}`);
+      return {
+        keyPath: certPath.key,
+        certPath: certPath.cert
+      };
+    }
+  }
+
+  return null;
+}
+
 // 啟動 HTTPS 伺服器
 function startServer() {
   try {
-    const { keyPath, certPath } = createSelfSignedCert();
+    let keyPath, certPath;
+    
+    // 首先嘗試載入生產環境證書
+    const prodCerts = loadProductionCerts();
+    if (prodCerts) {
+      keyPath = prodCerts.keyPath;
+      certPath = prodCerts.certPath;
+      console.log('🔒 使用生產環境 SSL 證書');
+    } else {
+      // 如果沒有生產證書，生成自簽名證書
+      const selfSignedCerts = createSelfSignedCert();
+      keyPath = selfSignedCerts.keyPath;
+      certPath = selfSignedCerts.certPath;
+      console.log('⚠️  使用自簽名證書 (僅適用於開發環境)');
+    }
     
     const httpsOptions = {
       key: fs.readFileSync(keyPath),
@@ -252,17 +310,21 @@ function startServer() {
 
     const server = https.createServer(httpsOptions, app);
     
-    server.listen(PORT, () => {
+    server.listen(PORT, '0.0.0.0', () => {
       console.log(`🎵 Spotify 歌詞播放器已啟動！`);
-      console.log(`🔒 HTTPS 伺服器運行於: https://localhost:${PORT}`);
-      console.log(`📱 請在瀏覽器中開啟: https://localhost:${PORT}`);
-      console.log(`⚠️  首次訪問時，瀏覽器會警告證書不受信任，請點擊「繼續前往」`);
+      console.log(`🌐 域名: ${DOMAIN}`);
+      console.log(`🔒 HTTPS 端口: ${PORT}`);
+      console.log(`📱 訪問地址: https://${DOMAIN}${PORT === 443 ? '' : ':' + PORT}`);
+      console.log(`🔗 Spotify 回調: ${REDIRECT_URI}`);
       console.log(`🛑 按 Ctrl+C 停止伺服器`);
     });
 
     server.on('error', (err) => {
       if (err.code === 'EADDRINUSE') {
-        console.error(`❌ 端口 ${PORT} 已被使用，請嘗試其他端口`);
+        console.error(`❌ 端口 ${PORT} 已被使用`);
+      } else if (err.code === 'EACCES') {
+        console.error(`❌ 權限不足，無法綁定端口 ${PORT}`);
+        console.log('💡 提示: 端口 443 需要管理員權限，請使用 sudo 或以管理員身份運行');
       } else {
         console.error('❌ 伺服器啟動失敗:', err.message);
       }

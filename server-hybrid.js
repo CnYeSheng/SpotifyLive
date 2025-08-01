@@ -1,5 +1,6 @@
 const express = require('express');
 const https = require('https');
+const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
@@ -8,6 +9,7 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const HTTPS_PORT = process.env.HTTPS_PORT || 3001;
 
 // Middleware
 app.use(cors());
@@ -58,7 +60,9 @@ app.get('/callback', async (req, res) => {
     accessToken = response.data.access_token;
     refreshToken = response.data.refresh_token;
     
-    res.redirect('/');
+    // 重定向到 HTTPS 版本
+    const httpsUrl = `https://localhost:${HTTPS_PORT}/?auth=success`;
+    res.redirect(httpsUrl);
   } catch (error) {
     console.error('Error getting access token:', error.response?.data || error.message);
     res.status(500).send('Authentication failed');
@@ -240,9 +244,16 @@ function createSelfSignedCert() {
   }
 }
 
-// 啟動 HTTPS 伺服器
-function startServer() {
+// 啟動雙伺服器 (HTTP + HTTPS)
+function startServers() {
   try {
+    // 啟動 HTTP 伺服器 (用於 Spotify 回調)
+    const httpServer = http.createServer(app);
+    httpServer.listen(PORT, () => {
+      console.log(`🔓 HTTP 伺服器 (Spotify 回調): http://localhost:${PORT}`);
+    });
+
+    // 啟動 HTTPS 伺服器 (主要應用)
     const { keyPath, certPath } = createSelfSignedCert();
     
     const httpsOptions = {
@@ -250,30 +261,41 @@ function startServer() {
       cert: fs.readFileSync(certPath)
     };
 
-    const server = https.createServer(httpsOptions, app);
+    const httpsServer = https.createServer(httpsOptions, app);
     
-    server.listen(PORT, () => {
+    httpsServer.listen(HTTPS_PORT, () => {
       console.log(`🎵 Spotify 歌詞播放器已啟動！`);
-      console.log(`🔒 HTTPS 伺服器運行於: https://localhost:${PORT}`);
-      console.log(`📱 請在瀏覽器中開啟: https://localhost:${PORT}`);
+      console.log(`🔒 HTTPS 主應用: https://localhost:${HTTPS_PORT}`);
+      console.log(`🔓 HTTP 回調服務: http://localhost:${PORT}`);
+      console.log(`📱 請在瀏覽器中開啟: https://localhost:${HTTPS_PORT}`);
       console.log(`⚠️  首次訪問時，瀏覽器會警告證書不受信任，請點擊「繼續前往」`);
       console.log(`🛑 按 Ctrl+C 停止伺服器`);
     });
 
-    server.on('error', (err) => {
+    // 錯誤處理
+    httpServer.on('error', (err) => {
       if (err.code === 'EADDRINUSE') {
-        console.error(`❌ 端口 ${PORT} 已被使用，請嘗試其他端口`);
+        console.error(`❌ HTTP 端口 ${PORT} 已被使用`);
       } else {
-        console.error('❌ 伺服器啟動失敗:', err.message);
+        console.error('❌ HTTP 伺服器啟動失敗:', err.message);
+      }
+      process.exit(1);
+    });
+
+    httpsServer.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(`❌ HTTPS 端口 ${HTTPS_PORT} 已被使用`);
+      } else {
+        console.error('❌ HTTPS 伺服器啟動失敗:', err.message);
       }
       process.exit(1);
     });
 
   } catch (error) {
-    console.error('❌ 無法啟動 HTTPS 伺服器:', error.message);
-    console.log('💡 請確保已安裝必要的依賴或檢查證書配置');
+    console.error('❌ 無法啟動伺服器:', error.message);
+    console.log('💡 請確保已安裝必要的依賴或檢查端口配置');
     process.exit(1);
   }
 }
 
-startServer();
+startServers();

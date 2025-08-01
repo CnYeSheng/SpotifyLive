@@ -2,6 +2,7 @@ class SpotifyLyricsPlayer {
     constructor() {
         this.currentTrack = null;
         this.lyrics = [];
+        this.lyricsType = 'plain'; // 'synced' 或 'plain'
         this.currentLyricIndex = 0;
         this.autoScroll = true;
         this.fontSize = 'medium';
@@ -10,7 +11,59 @@ class SpotifyLyricsPlayer {
         
         this.initializeElements();
         this.bindEvents();
+        this.handleAuthCallback();
         this.checkAuthStatus();
+    }
+
+    handleAuthCallback() {
+        // 檢查是否從認證回調返回
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('auth') === 'success') {
+            // 清除 URL 參數
+            window.history.replaceState({}, document.title, window.location.pathname);
+            // 顯示成功訊息
+            this.showSuccessMessage('🎉 Spotify 連接成功！');
+        }
+    }
+
+    showSuccessMessage(message) {
+        const successDiv = document.createElement('div');
+        successDiv.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #1db954, #1ed760);
+            color: white;
+            padding: 16px 24px;
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(29, 185, 84, 0.3);
+            z-index: 1000;
+            font-weight: 600;
+            animation: slideIn 0.3s ease;
+        `;
+        successDiv.textContent = message;
+        
+        // 添加動畫樣式
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        document.body.appendChild(successDiv);
+        
+        // 3秒後自動移除
+        setTimeout(() => {
+            successDiv.style.animation = 'slideIn 0.3s ease reverse';
+            setTimeout(() => {
+                if (successDiv.parentNode) {
+                    successDiv.parentNode.removeChild(successDiv);
+                }
+            }, 300);
+        }, 3000);
     }
 
     initializeElements() {
@@ -168,17 +221,22 @@ class SpotifyLyricsPlayer {
                 return;
             }
 
-            // 檢查是否是新歌曲
             const isNewTrack = !this.currentTrack || 
                               this.currentTrack.id !== data.id ||
                               this.currentTrack.name !== data.name;
 
             this.currentTrack = data;
+            this.currentTrack.lastUpdated = Date.now(); // 記錄更新時間
             this.updateTrackInfo();
-            this.updateProgress();
 
             if (isNewTrack) {
                 this.loadLyrics();
+                this.updateProgress(); // 新歌立即開始更新進度
+            } else {
+                // 如果歌曲暫停後又播放，需要重新啟動動畫
+                if (this.currentTrack.isPlaying && !this.animationFrameId) {
+                    this.updateProgress();
+                }
             }
 
             this.showPlayerSection();
@@ -201,14 +259,25 @@ class SpotifyLyricsPlayer {
     }
 
     updateProgress() {
-        if (!this.currentTrack) return;
+        if (!this.currentTrack || !this.currentTrack.isPlaying) return;
 
-        const progress = (this.currentTrack.progress / this.currentTrack.duration) * 100;
-        this.progressFill.style.width = `${progress}%`;
-        this.currentTime.textContent = this.formatTime(this.currentTrack.progress);
+        const update = () => {
+            if (!this.currentTrack.isPlaying) return;
 
-        // 更新歌詞高亮
-        this.updateLyricsHighlight();
+            const elapsedTime = (Date.now() - this.currentTrack.lastUpdated) + this.currentTrack.progress;
+            const progress = (elapsedTime / this.currentTrack.duration) * 100;
+            
+            this.progressFill.style.width = `${Math.min(100, progress)}%`;
+            this.currentTime.textContent = this.formatTime(elapsedTime);
+
+            this.updateLyricsHighlight(elapsedTime);
+
+            if (elapsedTime < this.currentTrack.duration) {
+                requestAnimationFrame(update);
+            }
+        };
+
+        requestAnimationFrame(update);
     }
 
     async loadLyrics() {
@@ -218,20 +287,29 @@ class SpotifyLyricsPlayer {
         this.showLyricsPlaceholder('🎵 正在載入歌詞...');
 
         try {
+            console.log(`🎤 請求歌詞: ${this.currentTrack.artist} - ${this.currentTrack.name}`);
+            
             const response = await fetch(`/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}`);
             const data = await response.json();
 
-            if (data.lyrics && data.lyrics.length > 0) {
+            console.log('歌詞 API 回應:', data);
+
+            if (data.success && data.lyrics && data.lyrics.length > 0) {
                 this.lyrics = data.lyrics;
+                this.lyricsType = data.type || 'plain';
                 this.displayLyrics();
                 this.updateStatus('lyrics', true);
+                console.log(`✅ 歌詞載入成功: ${data.lyrics.length} 行 (${this.lyricsType})`);
             } else {
-                this.showLyricsPlaceholder('😔 找不到歌詞\n\n可能是因為:\n• 歌曲太新或太冷門\n• 歌詞數據庫中沒有此歌曲\n• 藝術家或歌曲名稱不匹配');
+                const errorMsg = data.error || '找不到歌詞';
+                console.log(`❌ 歌詞載入失敗: ${errorMsg}`);
+                
+                this.showLyricsPlaceholder(`😔 ${errorMsg}\n\n可能的原因:\n• 歌曲太新或太冷門\n• 歌詞數據庫中沒有此歌曲\n• 藝術家或歌曲名稱不匹配\n\n💡 嘗試播放其他熱門歌曲`);
                 this.updateStatus('lyrics', false);
             }
         } catch (error) {
             console.error('載入歌詞失敗:', error);
-            this.showLyricsPlaceholder('❌ 載入歌詞失敗\n\n請檢查網路連接或稍後再試');
+            this.showLyricsPlaceholder('❌ 載入歌詞失敗\n\n請檢查網路連接或稍後再試\n\n🔧 如果問題持續，請檢查歌詞服務狀態');
             this.updateStatus('lyrics', false);
         }
     }
@@ -247,11 +325,21 @@ class SpotifyLyricsPlayer {
     displayLyrics() {
         if (!this.lyrics || this.lyrics.length === 0) return;
 
-        const lyricsHTML = this.lyrics.map((line, index) => 
-            `<div class="lyrics-line" data-index="${index}">${this.escapeHtml(line)}</div>`
-        ).join('');
+        const lyricsHTML = this.lyrics.map((line, index) => {
+            const text = this.lyricsType === 'synced' ? line.text : line.text || line;
+            const timeAttr = this.lyricsType === 'synced' && line.time ? `data-time="${line.time}"` : '';
+            return `<div class="lyrics-line" data-index="${index}" ${timeAttr}>${this.escapeHtml(text)}</div>`;
+        }).join('');
 
         this.lyricsContent.innerHTML = lyricsHTML;
+
+        // 添加同步歌詞指示器
+        if (this.lyricsType === 'synced') {
+            const indicator = document.createElement('div');
+            indicator.className = 'sync-indicator';
+            indicator.innerHTML = '🎵 同步歌詞';
+            this.lyricsContent.insertBefore(indicator, this.lyricsContent.firstChild);
+        }
 
         // 添加點擊事件到歌詞行
         this.lyricsContent.querySelectorAll('.lyrics-line').forEach(line => {
@@ -263,27 +351,52 @@ class SpotifyLyricsPlayer {
         });
     }
 
-    updateLyricsHighlight() {
+    updateLyricsHighlight(currentTime) {
         if (!this.lyrics || this.lyrics.length === 0) return;
 
-        // 簡單的時間估算：假設歌詞平均分佈在整首歌中
-        const progressRatio = this.currentTrack.progress / this.currentTrack.duration;
-        const estimatedIndex = Math.floor(progressRatio * this.lyrics.length);
-        
-        // 更新當前歌詞索引（如果沒有手動選擇）
+        let targetIndex = this.currentLyricIndex;
+
         if (this.autoScroll) {
-            this.currentLyricIndex = Math.max(0, Math.min(estimatedIndex, this.lyrics.length - 1));
+            if (this.lyricsType === 'synced') {
+                // 同步歌詞：根據精確時間匹配
+                // const currentTime = this.currentTrack.progress;
+                
+                // 找到當前時間應該顯示的歌詞行
+                for (let i = 0; i < this.lyrics.length; i++) {
+                    const line = this.lyrics[i];
+                    const nextLine = this.lyrics[i + 1];
+                    
+                    if (line.time <= currentTime && (!nextLine || nextLine.time > currentTime)) {
+                        targetIndex = i;
+                        break;
+                    }
+                }
+            } else {
+                // 純文本歌詞：使用時間估算
+                const progressRatio = currentTime / this.currentTrack.duration;
+                targetIndex = Math.floor(progressRatio * this.lyrics.length);
+            }
+            
+            this.currentLyricIndex = Math.max(0, Math.min(targetIndex, this.lyrics.length - 1));
         }
 
         // 移除所有高亮
         this.lyricsContent.querySelectorAll('.lyrics-line').forEach(line => {
-            line.classList.remove('current');
+            line.classList.remove('current', 'upcoming');
         });
 
         // 添加當前行高亮
         const currentLine = this.lyricsContent.querySelector(`[data-index="${this.currentLyricIndex}"]`);
         if (currentLine) {
             currentLine.classList.add('current');
+            
+            // 為同步歌詞添加即將到來的行預覽
+            if (this.lyricsType === 'synced') {
+                const nextLine = this.lyricsContent.querySelector(`[data-index="${this.currentLyricIndex + 1}"]`);
+                if (nextLine) {
+                    nextLine.classList.add('upcoming');
+                }
+            }
             
             // 自動滾動到當前行
             if (this.autoScroll) {
@@ -340,7 +453,7 @@ document.addEventListener('visibilitychange', () => {
             clearInterval(window.spotifyPlayer.updateInterval);
             window.spotifyPlayer.updateInterval = setInterval(() => {
                 window.spotifyPlayer.checkCurrentTrack();
-            }, 10000); // 10秒更新一次
+            }, 100); // 10秒更新一次
         }
     } else {
         // 頁面顯示時恢復正常頻率
@@ -348,7 +461,7 @@ document.addEventListener('visibilitychange', () => {
             clearInterval(window.spotifyPlayer.updateInterval);
             window.spotifyPlayer.updateInterval = setInterval(() => {
                 window.spotifyPlayer.checkCurrentTrack();
-            }, 3000); // 3秒更新一次
+            }, 100); // 3秒更新一次
         }
     }
 });
