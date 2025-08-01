@@ -316,100 +316,57 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
 // Python SyncedLyrics 函數
 function getSyncedLyricsFromPython(artist, title) {
   return new Promise((resolve, reject) => {
-    const py = spawn('python3', [
-      '-c',
-      `
-import syncedlyrics
-import sys
-import urllib.parse as ul
-import json
+    const env = { ...process.env, PYTHONIOENCODING: 'utf-8' };
+    const { spawn } = require('child_process');
+    const py = spawn('python', ['-u', 'lyrics.py', artist, title]);
 
-try:
-    artist = ul.unquote_plus('${encodeURIComponent(artist)}')
-    title = ul.unquote_plus('${encodeURIComponent(title)}')
-    
-    # 嘗試獲取同步歌詞
-    lrc = syncedlyrics.search(f'{title} {artist}', providers=['lrclib', 'netease'])
-    
-    if not lrc:
-        print(json.dumps({"success": False, "error": "No lyrics found"}))
-        sys.exit(0)
-    
-    # 解析 LRC 格式
-    lines = []
-    for line in lrc.split('\\n'):
-        line = line.strip()
-        if line.startswith('[') and ']' in line:
-            try:
-                # 解析時間戳 [mm:ss.xx]
-                time_part = line[line.find('[') + 1:line.find(']')]
-                text_part = line[line.find(']') + 1:].strip()
-                
-                if ':' in time_part and text_part:
-                    time_components = time_part.split(':')
-                    minutes = int(time_components[0])
-                    seconds_parts = time_components[1].split('.')
-                    seconds = int(seconds_parts[0])
-                    centiseconds = int(seconds_parts[1][:2]) if len(seconds_parts) > 1 else 0
-                    
-                    time_ms = (minutes * 60 + seconds) * 1000 + centiseconds * 10
-                    lines.append({"time": time_ms, "text": text_part})
-            except:
-                continue
-    
-    if lines:
-        result = {
-            "success": True,
-            "lyrics": lines,
-            "type": "synced"
-        }
-    else:
-        result = {"success": False, "error": "Failed to parse lyrics"}
-    
-    print(json.dumps(result, ensure_ascii=False))
-    
-except Exception as e:
-    print(json.dumps({"success": False, "error": str(e)}))
-`
-    ]);
-
-    let output = '';
-    let errorOutput = '';
+    let stdout = '';
+    let stderr = '';
 
     py.stdout.on('data', (data) => {
-      output += data.toString('utf8');
+      stdout += data.toString('utf8'); // 保證以 UTF-8 解讀
     });
 
     py.stderr.on('data', (data) => {
-      errorOutput += data.toString('utf8');
+      stderr += data.toString('utf8');
     });
 
     py.on('close', (code) => {
+      if (stderr) {
+        console.error('❌ [Python 錯誤]', stderr);
+      }
+
       try {
-        if (output.trim()) {
-          const result = JSON.parse(output.trim());
-          if (result.success) {
-            resolve(result);
-          } else {
-            resolve(null);
-          }
-        } else {
-          resolve(null);
+        const trimmed = stdout.trim();
+        if (!trimmed) {
+          console.warn('⚠️ Python 沒有任何輸出');
+          return resolve(null);
         }
-      } catch (parseError) {
-        console.error('Python 輸出解析失敗:', parseError, 'Output:', output);
-        resolve(null);
+
+        const result = JSON.parse(trimmed);
+
+        if (result.success && Array.isArray(result.lyrics)) {
+          return resolve(result);
+        } else {
+          console.warn('⚠️ Python 返回非成功格式:', result.error);
+          return resolve(null);
+        }
+      } catch (err) {
+        console.error('❌ JSON 解析失敗:', err.message);
+        console.log('🧾 原始輸出:', stdout);
+        return resolve(null);
       }
     });
 
-    py.on('error', (error) => {
-      console.error('Python 執行失敗:', error);
-      resolve(null);
+    py.on('error', (err) => {
+      console.error('❌ Python 執行錯誤:', err.message);
+      return resolve(null);
     });
 
-    // 設置超時
+    // 超時機制（10秒）
     setTimeout(() => {
       py.kill();
+      console.warn('⚠️ Python 執行超時，已終止');
       resolve(null);
     }, 10000);
   });
