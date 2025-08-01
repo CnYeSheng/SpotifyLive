@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spotify 即時歌詞播放器</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- 認證區域 -->
+        <div id="auth-section" class="auth-section">
+            <div class="auth-card">
+                <h1>🎵 Spotify 即時歌詞播放器</h1>
+                <p>連接你的 Spotify 帳戶來查看正在播放的音樂和即時歌詞</p>
+                <button id="login-btn" class="login-btn">連接 Spotify</button>
+            </div>
+        </div>
+
+        <!-- 主播放器區域 -->
+        <div id="player-section" class="player-section" style="display: none;">
+            <!-- 音樂信息卡片 -->
+            <div class="music-card">
+                <div class="album-art">
+                    <img id="album-image" src="" alt="專輯封面">
+                    <div class="play-indicator">
+                        <div class="wave-animation">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="track-info">
+                    <h2 id="track-name">-</h2>
+                    <p id="artist-name">-</p>
+                    <p id="album-name">-</p>
+                </div>
+                
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill"></div>
+                    </div>
+                    <div class="time-info">
+                        <span id="current-time">0:00</span>
+                        <span id="total-time">0:00</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 歌詞區域 -->
+            <div class="lyrics-container">
+                <div class="lyrics-header">
+                    <h3>🎤 歌詞</h3>
+                    <div class="lyrics-controls">
+                        <button id="auto-scroll-btn" class="control-btn active">自動滾動</button>
+                        <button id="font-size-btn" class="control-btn">字體大小</button>
+                    </div>
+                </div>
+                
+                <div id="lyrics-content" class="lyrics-content">
+                    <div class="lyrics-placeholder">
+                        <p>🎵 正在載入歌詞...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 狀態指示器 -->
+            <div class="status-bar">
+                <div class="status-item">
+                    <span class="status-dot" id="spotify-status"></span>
+                    <span>Spotify 連接</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-dot" id="lyrics-status"></span>
+                    <span>歌詞服務</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 無音樂播放狀態 -->
+        <div id="no-music-section" class="no-music-section" style="display: none;">
+            <div class="no-music-card">
+                <div class="no-music-icon">🎵</div>
+                <h2>沒有正在播放的音樂</h2>
+                <p>請在 Spotify 中開始播放音樂</p>
+                <button id="refresh-btn" class="refresh-btn">重新檢查</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 字體大小選擇器 -->
+    <div id="font-size-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>選擇字體大小</h3>
+            <div class="font-size-options">
+                <button class="font-option" data-size="small">小</button>
+                <button class="font-option" data-size="medium">中</button>
+                <button class="font-option" data-size="large">大</button>
+                <button class="font-option" data-size="extra-large">特大</button>
+            </div>
+            <button id="close-modal" class="close-btn">關閉</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
