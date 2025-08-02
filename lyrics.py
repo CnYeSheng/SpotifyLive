@@ -22,7 +22,7 @@ def convert_to_traditional(text):
     """Convert simplified Chinese to traditional Chinese using OpenCC"""
     try:
         import opencc
-        converter = opencc.OpenCC('s2t')
+        converter = opencc.OpenCC('s2twp')
         return converter.convert(text)
     except ImportError:
         # If OpenCC is not available, return original text

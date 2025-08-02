@@ -3,14 +3,12 @@ class SpotifyLyricsPlayer {
         this.currentTrack = null;
         this.lyrics = [];
         this.lyricsType = 'plain'; // 'synced' 或 'plain'
-        this.currentLyricIndex = -1; // 默认为-1，表示无高亮行
+        this.currentLyricIndex = 0;
         this.autoScroll = true;
         this.fontSize = 'medium';
         this.updateInterval = null;
         this.lyricsUpdateTimeout = null;
         this.animationFrameId = null;
-        this.retryCount = 0; // 添加重试计数器
-        this.maxRetries = 3; // 最大重试次数
         
         this.initializeElements();
         this.bindEvents();
@@ -220,21 +218,14 @@ class SpotifyLyricsPlayer {
             if (!response.ok) {
                 console.error(`API 錯誤: ${response.status} ${response.statusText}`);
                 // 添加重试机制
-                if (response.status >= 500 && this.retryCount < this.maxRetries) {
-                    this.retryCount++;
-                    console.log(`服务器错误，第${this.retryCount}次重试...`);
+                if (response.status >= 500) {
+                    console.log('服务器错误，稍后重试...');
                     setTimeout(() => this.checkCurrentTrack(), 5000);
-                    return;
-                } else if (response.status >= 500) {
-                    console.error('达到最大重试次数，停止重试');
                 }
                 // 不要立即隱藏播放器，可能是暫時的網路問題
                 this.updateStatus('spotify', false);
                 return;
             }
-            
-            // 重置重试计数器
-            this.retryCount = 0;
 
             const data = await response.json();
             
@@ -268,13 +259,7 @@ class SpotifyLyricsPlayer {
             console.error('獲取當前播放失敗:', error);
             this.updateStatus('spotify', false);
             // 網路錯誤時不要隱藏播放器，添加重试机制
-            if (this.retryCount < this.maxRetries) {
-                this.retryCount++;
-                console.log(`网络错误，第${this.retryCount}次重试...`);
-                setTimeout(() => this.checkCurrentTrack(), 5000);
-            } else {
-                console.error('达到最大重试次数，停止重试');
-            }
+            setTimeout(() => this.checkCurrentTrack(), 5000);
         }
     }
 
@@ -337,7 +322,6 @@ class SpotifyLyricsPlayer {
 
         this.updateStatus('lyrics', null); // 載入中
         this.showLyricsPlaceholder('🎵 正在載入歌詞...');
-        this.currentLyricIndex = -1; // 重置歌词索引
 
         try {
             console.log(`🎤 請求歌詞: ${this.currentTrack.artist} - ${this.currentTrack.name}`);
@@ -381,7 +365,7 @@ class SpotifyLyricsPlayer {
         if (!text || typeof text !== 'string') return false;
         
         // 檢查是否包含大量亂碼字符
-        const garbledChars = /[\uFFFD]/g;
+        const garbledChars = /[�\uFFFD]/g;
         const garbledCount = (text.match(garbledChars) || []).length;
         
         // 如果亂碼字符超過文本長度的30%，視為無效
@@ -442,6 +426,10 @@ class SpotifyLyricsPlayer {
         let targetIndex = -1; // 預設為 -1，表示還沒到歌詞
 
         if (this.autoScroll && currentTime !== undefined) {
+
+            // 調整時間
+            const adjustedTime = currentTime + 2500;
+
             if (this.lyricsType === 'synced') {
                 // 同步歌詞：根據精確時間匹配
                 for (let i = 0; i < this.lyrics.length; i++) {
@@ -449,8 +437,8 @@ class SpotifyLyricsPlayer {
                     const nextLine = this.lyrics[i + 1];
                     
                     // 添加容差处理，解决歌词不同步问题
-                    const tolerance = 300; // 300ms 容差，提高精度
-                    if (line.time <= currentTime + tolerance && (!nextLine || nextLine.time > currentTime + tolerance)) {
+                    const tolerance = 500; // 500ms 容差
+                    if (line.time <= currentTime + tolerance && (!nextLine || nextLine.time > currentTime)) {
                         targetIndex = i;
                         break;
                     }
@@ -459,35 +447,32 @@ class SpotifyLyricsPlayer {
                 // 純文本歌詞：根據時間同步，但稍微延遲一點
                 const progressRatio = currentTime / this.currentTrack.duration;
                 // 调整时间偏移，解决歌词不同步问题
-                const timeOffset = 500; // 0.5秒提前量，提高同步性
+                const timeOffset = 1000; // 1秒提前量
                 const adjustedProgress = Math.max(0, (currentTime - timeOffset) / this.currentTrack.duration);
                 targetIndex = Math.floor(adjustedProgress * this.lyrics.length);
                 targetIndex = Math.max(0, Math.min(targetIndex, this.lyrics.length - 1));
             }
+            
+            this.currentLyricIndex = targetIndex;
         }
 
-        // 只有当索引发生变化时才更新高亮
-        if (this.currentLyricIndex !== targetIndex) {
-            // 移除所有高亮
-            this.lyricsContent.querySelectorAll('.lyrics-line').forEach(line => {
-                line.classList.remove('current');
-            });
+        // 移除所有高亮
+        this.lyricsContent.querySelectorAll('.lyrics-line').forEach(line => {
+            line.classList.remove('current');
+        });
 
-            this.currentLyricIndex = targetIndex;
-
-            // 只有當 targetIndex >= 0 時才添加高亮
-            if (this.currentLyricIndex >= 0) {
-                const currentLine = this.lyricsContent.querySelector(`[data-index="${this.currentLyricIndex}"]`);
-                if (currentLine) {
-                    currentLine.classList.add('current');
-                    
-                    // 自動滾動到當前行
-                    if (this.autoScroll) {
-                        currentLine.scrollIntoView({
-                            behavior: 'smooth',
-                            block: 'center'
-                        });
-                    }
+        // 只有當 targetIndex >= 0 時才添加高亮
+        if (this.currentLyricIndex >= 0) {
+            const currentLine = this.lyricsContent.querySelector(`[data-index="${this.currentLyricIndex}"]`);
+            if (currentLine) {
+                currentLine.classList.add('current');
+                
+                // 自動滾動到當前行
+                if (this.autoScroll) {
+                    currentLine.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'center'
+                    });
                 }
             }
         }

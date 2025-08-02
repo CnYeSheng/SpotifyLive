@@ -324,7 +324,7 @@ body {
 .lyrics-container {
     /* background: var(--glass-background); */
     /* border-radius: 8px; */
-    padding: 50px;
+    /* padding: 50px; */
     /* border: 1px solid var(--glass-border); */
     max-height: 80vh;
     overflow-y: hidden;
@@ -420,6 +420,68 @@ body {
     scroll-behavior: smooth;
     height: calc(9 * 150px); /* 9行歌詞的高度 */
     max-height: calc(9 * 150px);
+}
+
+/* 大屏幕设备 (1920px 及以上) */
+@media (min-width: 1920px) {
+    .lyrics-content {
+        font-size: 42px;
+    }
+    
+    .lyrics-line {
+        font-size: 42px;
+    }
+    
+    .lyrics-line.current {
+        font-size: 42px;
+    }
+}
+
+/* 中等屏幕设备 (1200px 到 1919px) */
+@media (min-width: 1200px) and (max-width: 1919px) {
+    .lyrics-content {
+        font-size: 38px;
+    }
+    
+    .lyrics-line {
+        font-size: 38px;
+    }
+    
+    .lyrics-line.current {
+        font-size: 38px;
+    }
+}
+
+/* 小屏幕设备 (768px 到 1199px) */
+@media (min-width: 768px) and (max-width: 1199px) {
+    .lyrics-content {
+        font-size: 32px;
+    }
+    
+    .lyrics-line {
+        font-size: 32px;
+        padding: 15px 0;
+    }
+    
+    .lyrics-line.current {
+        font-size: 32px;
+    }
+}
+
+/* 移动设备 (767px 及以下) */
+@media (max-width: 767px) {
+    .lyrics-content {
+        font-size: 26px;
+    }
+    
+    .lyrics-line {
+        font-size: 26px;
+        padding: 12px 0;
+    }
+    
+    .lyrics-line.current {
+        font-size: 26px;
+    }
 }
 
 .lyrics-line {
