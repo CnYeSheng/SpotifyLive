@@ -6,6 +6,7 @@
     <title>Spotify 即時歌詞播放器</title>
     <link rel="stylesheet" href="styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preload" href="font/SpotifyMix-Extrabold.woff2" as="font" type="font/woff2" crossorigin>
 </head>
 <body>
     <div class="container">
@@ -65,7 +66,7 @@
                 
                 <div id="lyrics-content" class="lyrics-content">
                     <div class="lyrics-placeholder">
-                        <p>🎵 正在載入歌詞...</p>
+                        <p>等待播放音樂...</p>
                     </div>
                 </div>
             </div>
@@ -110,6 +111,8 @@
         </div>
     </div>
 
+    <script src="opencc.js"></script>
+    <script src="apple-music-enhancements.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

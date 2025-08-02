@@ -99,11 +99,38 @@ app.get('/api/current-track', async (req, res) => {
   } catch (error) {
     if (error.response?.status === 401) {
       // Token expired, try to refresh
-      await refreshAccessToken();
-      return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+      try {
+        await refreshAccessToken();
+        // 重新嘗試請求
+        const retryResponse = await axios.get('https://api.spotify.com/v1/me/player/currently-playing', {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          }
+        });
+        
+        if (retryResponse.status === 204 || !retryResponse.data) {
+          return res.json({ isPlaying: false });
+        }
+        
+        const track = retryResponse.data.item;
+        const currentTrack = {
+          isPlaying: retryResponse.data.is_playing,
+          name: track.name,
+          artist: track.artists.map(artist => artist.name).join(', '),
+          album: track.album.name,
+          image: track.album.images[0]?.url,
+          duration: track.duration_ms,
+          progress: retryResponse.data.progress_ms,
+          id: track.id
+        };
+        
+        return res.json(currentTrack);
+      } catch (refreshError) {
+        return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+      }
     }
     console.error('Error fetching current track:', error.response?.data || error.message);
-    res.status(500).json({ error: 'Failed to fetch current track' });
+    res.status(500).json({ error: { status: 500, message: 'Server error.' } });
   }
 });
 
@@ -135,24 +162,100 @@ async function refreshAccessToken() {
   }
 }
 
-// Get lyrics (using a lyrics API service)
+// 從 server-proxy.js 複製歌詞 API 功能
+const { spawn } = require('child_process');
+
+// Python SyncedLyrics 函數
+function getSyncedLyricsFromPython(artist, title) {
+  return new Promise((resolve, reject) => {
+    const env = { ...process.env, PYTHONIOENCODING: 'utf-8' };
+    const py = spawn('python', ['-u', 'lyrics.py', artist, title], { env });
+
+    let stdout = '';
+    let stderr = '';
+    let isResolved = false;
+
+    // 設置 15 秒超時
+    const timeout = setTimeout(() => {
+      if (!isResolved) {
+        console.log('⏰ Python 執行超時，已終止');
+        py.kill('SIGTERM');
+        isResolved = true;
+        resolve(null);
+      }
+    }, 15000);
+
+    py.stdout.on('data', (data) => {
+      stdout += data.toString('utf8');
+    });
+
+    py.stderr.on('data', (data) => {
+      stderr += data.toString('utf8');
+    });
+
+    py.on('close', (code) => {
+      if (isResolved) return;
+      clearTimeout(timeout);
+      isResolved = true;
+
+      if (stderr) {
+        console.error('❌ [Python 錯誤]', stderr);
+      }
+
+      try {
+        const trimmed = stdout.trim();
+        if (!trimmed) {
+          console.warn('⚠️ Python 沒有任何輸出');
+          return resolve(null);
+        }
+
+        const result = JSON.parse(trimmed);
+
+        if (result.success && Array.isArray(result.lyrics)) {
+          return resolve(result);
+        } else {
+          console.warn('⚠️ Python 返回非成功格式:', result.error);
+          return resolve(null);
+        }
+      } catch (err) {
+        console.error('❌ JSON 解析失敗:', err.message);
+        console.log('🧾 原始輸出:', stdout);
+        return resolve(null);
+      }
+    });
+
+    py.on('error', (err) => {
+      if (isResolved) return;
+      clearTimeout(timeout);
+      isResolved = true;
+      console.error('❌ Python 執行錯誤:', err.message);
+      return resolve(null);
+    });
+  });
+}
+
+// 歌詞 API 路由
 app.get('/api/lyrics/:artist/:title', async (req, res) => {
   const { artist, title } = req.params;
   
+  console.log(`請求歌詞: ${artist} - ${title}`);
+  
   try {
-    // Using lyrics.ovh API as an example (free but basic)
-    const response = await axios.get(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
+    // 嘗試 SyncedLyrics (Python)
+    console.log('嘗試 SyncedLyrics (Python)...');
+    const pythonResult = await getSyncedLyricsFromPython(artist, title);
     
-    if (response.data.lyrics) {
-      // Simple lyrics parsing - split by lines
-      const lines = response.data.lyrics.split('\n').filter(line => line.trim() !== '');
-      res.json({ lyrics: lines });
-    } else {
-      res.json({ lyrics: null });
+    if (pythonResult && pythonResult.success) {
+      console.log('✅ SyncedLyrics 成功獲取歌詞');
+      return res.json(pythonResult);
     }
+    
+    console.log('所有歌詞來源都失敗');
+    res.json({ success: false, error: '找不到歌詞' });
+    
   } catch (error) {
-    console.error('Error fetching lyrics:', error.response?.data || error.message);
-    res.json({ lyrics: null });
+    console.error('歌詞 API 錯誤:', error);
+    res.json({ success: false, error: '歌詞服務錯誤' });
   }
 });
 
