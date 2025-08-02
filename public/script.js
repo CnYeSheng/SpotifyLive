@@ -217,6 +217,11 @@ class SpotifyLyricsPlayer {
 
             if (!response.ok) {
                 console.error(`API 錯誤: ${response.status} ${response.statusText}`);
+                // 添加重试机制
+                if (response.status >= 500) {
+                    console.log('服务器错误，稍后重试...');
+                    setTimeout(() => this.checkCurrentTrack(), 5000);
+                }
                 // 不要立即隱藏播放器，可能是暫時的網路問題
                 this.updateStatus('spotify', false);
                 return;
@@ -253,7 +258,8 @@ class SpotifyLyricsPlayer {
         } catch (error) {
             console.error('獲取當前播放失敗:', error);
             this.updateStatus('spotify', false);
-            // 網路錯誤時不要隱藏播放器
+            // 網路錯誤時不要隱藏播放器，添加重试机制
+            setTimeout(() => this.checkCurrentTrack(), 5000);
         }
     }
 
@@ -288,7 +294,7 @@ class SpotifyLyricsPlayer {
                 // 播放中：计算实时进度
                 elapsedTime = (Date.now() - this.currentTrack.lastUpdated) + this.currentTrack.progress;
             } else {
-                // 暂停中：使用固定进度
+                // 暫停中：使用固定进度
                 elapsedTime = this.currentTrack.progress;
             }
             
@@ -426,7 +432,9 @@ class SpotifyLyricsPlayer {
                     const line = this.lyrics[i];
                     const nextLine = this.lyrics[i + 1];
                     
-                    if (line.time <= currentTime && (!nextLine || nextLine.time > currentTime)) {
+                    // 添加容差处理，解决歌词不同步问题
+                    const tolerance = 500; // 500ms 容差
+                    if (line.time <= currentTime + tolerance && (!nextLine || nextLine.time > currentTime)) {
                         targetIndex = i;
                         break;
                     }
@@ -434,9 +442,10 @@ class SpotifyLyricsPlayer {
             } else {
                 // 純文本歌詞：根據時間同步，但稍微延遲一點
                 const progressRatio = currentTime / this.currentTrack.duration;
-                // 延遲 5% 的時間讓歌詞更同步
-                const adjustedRatio = Math.max(0, progressRatio - 0.05);
-                targetIndex = Math.floor(adjustedRatio * this.lyrics.length);
+                // 调整时间偏移，解决歌词不同步问题
+                const timeOffset = 1000; // 1秒提前量
+                const adjustedProgress = Math.max(0, (currentTime - timeOffset) / this.currentTrack.duration);
+                targetIndex = Math.floor(adjustedProgress * this.lyrics.length);
                 targetIndex = Math.max(0, Math.min(targetIndex, this.lyrics.length - 1));
             }
             

@@ -369,7 +369,6 @@ body {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.7; }
 }
-/* 重複的 .lyrics-container 已刪除 */
 
 .lyrics-header {
     display: flex;
@@ -415,15 +414,13 @@ body {
     overflow-x: hidden;
     padding: 16px 0;
     line-height: 1.5;
-    font-size: 60px;
+    font-size: 38px;
     font-family: 'Spotify Mix', 'Inter', sans-serif;
     font-weight: bold;
     scroll-behavior: smooth;
     height: calc(9 * 150px); /* 9行歌詞的高度 */
     max-height: calc(9 * 150px);
 }
-
-/* 移除滾動條樣式，因為已設置 overflow: hidden */
 
 .lyrics-line {
     padding: 20px 0;
@@ -440,9 +437,8 @@ body {
     letter-spacing: 0.01em;
     min-height: auto;
     display: block;
+    scroll-margin: 50vh; /* 确保歌词在视图中央 */
 }
-
-/* 移除 hover 效果，Apple Music 風格不需要 */
 
 .lyrics-line.current {
     color: var(--text-primary);
@@ -452,6 +448,18 @@ body {
     padding-left: 16px;
     transform: translateX(8px);
     font-size: 38px;
+    animation: highlight 0.5s ease;
+}
+
+@keyframes highlight {
+    0% { 
+        background: transparent;
+        color: var(--text-tertiary);
+    }
+    100% { 
+        background: linear-gradient(135deg, rgba(0, 122, 255, 0.15), rgba(88, 86, 214, 0.1));
+        color: var(--text-primary);
+    }
 }
 
 /*
@@ -667,4 +675,23 @@ body {
         left: 16px;
         justify-content: center;
     }
+}
+
+/* 改进滚动条样式 */
+.lyrics-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.lyrics-content::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+}
+
+.lyrics-content::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+}
+
+.lyrics-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.5);
 }
