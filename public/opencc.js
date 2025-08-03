@@ -10,10 +10,28 @@ async function initOpenCC() {
     const tryInit = () => {
         try {
             if (typeof OpenCC !== 'undefined' && OpenCC.Converter) {
-                // 使用 s2twp 配置：簡體中文轉繁體中文（台灣用詞）
-                converter = OpenCC.Converter({ from: 's', to: 'twp' });
-                console.log('OpenCC 初始化成功 (s2twp)');
-                return true;
+                // 嘗試不同的配置，從最簡單的開始
+                const configs = [
+                    { from: 'cn', to: 'tw', name: 'cn2tw (簡體到繁體)' },
+                    { from: 's', to: 't', name: 's2t (簡體到繁體)' },
+                    { from: 'cn', to: 'twp', name: 'cn2twp (簡體到台灣)' }
+                ];
+                
+                for (const config of configs) {
+                    try {
+                        converter = OpenCC.Converter(config);
+                        console.log(`OpenCC 初始化成功 (${config.name})`);
+                        return true;
+                    } catch (configError) {
+                        console.warn(`OpenCC ${config.name} 配置失敗:`, configError.message);
+                        continue;
+                    }
+                }
+                
+                // 如果所有配置都失敗，記錄錯誤
+                console.error('所有 OpenCC 配置都失敗');
+                return false;
+                
             } else if (retries < maxRetries) {
                 retries++;
                 setTimeout(tryInit, 100); // 100ms 後重試
@@ -23,18 +41,7 @@ async function initOpenCC() {
                 return false;
             }
         } catch (error) {
-            console.error('OpenCC s2twp 初始化失敗:', error);
-            // 如果 s2twp 失敗，嘗試使用基本的簡繁轉換
-            try {
-                if (typeof OpenCC !== 'undefined' && OpenCC.Converter) {
-                    converter = OpenCC.Converter({ from: 'cn', to: 'tw' });
-                    console.log('OpenCC 初始化成功 (cn2tw 備用)');
-                    return true;
-                }
-            } catch (fallbackError) {
-                console.error('OpenCC 備用初始化也失敗:', fallbackError);
-                console.log('將使用原始文本，不進行簡繁轉換');
-            }
+            console.error('OpenCC 初始化失敗:', error);
             return false;
         }
     };
