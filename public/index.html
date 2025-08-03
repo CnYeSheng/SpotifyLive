@@ -25,20 +25,46 @@
             <div class="music-card">
                 <div class="album-art">
                     <img id="album-image" src="" alt="專輯封面">
-                    <!-- <div class="play-indicator">
-                        <div class="wave-animation">
-                            <span></span>
-                            <span></span>
-                            <span></span>
-                            <span></span>
-                        </div>
-                    </div> -->
                 </div>
                 
                 <div class="track-info">
                     <h2 id="track-name">-</h2>
                     <p id="artist-name">-</p>
                     <p id="album-name">-</p>
+                    <div id="device-info" class="device-info" style="display: none;">
+                        <span id="device-name">-</span>
+                    </div>
+                </div>
+                
+                <!-- 播放控制 -->
+                <div class="player-controls">
+                    <button id="prev-btn" class="control-btn" title="上一首">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
+                        </svg>
+                    </button>
+                    <button id="play-pause-btn" class="control-btn play-pause" title="播放/暫停">
+                        <svg id="play-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M8 5v14l11-7z"/>
+                        </svg>
+                        <svg id="pause-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+                            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                        </svg>
+                    </button>
+                    <button id="next-btn" class="control-btn" title="下一首">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+                        </svg>
+                    </button>
+                </div>
+                
+                <!-- 音量控制 -->
+                <div class="volume-control">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                    </svg>
+                    <input type="range" id="volume-slider" min="0" max="100" value="50" class="volume-slider">
+                    <span id="volume-value">50%</span>
                 </div>
                 
                 <div class="progress-container">
@@ -48,6 +74,14 @@
                     <div class="time-info">
                         <span id="current-time">0:00</span>
                         <span id="total-time">0:00</span>
+                    </div>
+                </div>
+                
+                <!-- 下一首預覽 -->
+                <div id="next-track-preview" class="next-track-preview" style="display: none;">
+                    <div class="next-track-info">
+                        <span class="next-label">下一首：</span>
+                        <span id="next-track-name">-</span>
                     </div>
                 </div>
             </div>
@@ -113,7 +147,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/umd/full.js"></script>
     <script src="opencc.js"></script>
-    <script src="apple-music-enhancements.js"></script>
     <script src="script.js"></script>
+    <script src="apple-music-enhancements.js"></script>
 </body>
 </html>

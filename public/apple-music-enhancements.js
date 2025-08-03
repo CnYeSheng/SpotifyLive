@@ -66,8 +66,8 @@ class AppleMusicEnhancements {
             this.applyDynamicBackground(avgColor, complementaryColor);
             
         } catch (error) {
-            console.log('無法提取顏色，使用預設配色');
-            this.applyDefaultColors();
+            console.log('apple-music-enhancements.js 顏色提取跳過 (由 script.js 處理)');
+            // 不需要處理，由 script.js 的顏色提取功能處理
         }
     }
 

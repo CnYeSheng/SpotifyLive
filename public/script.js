@@ -9,6 +9,11 @@ class SpotifyLyricsPlayer {
         this.updateInterval = null;
         this.lyricsUpdateTimeout = null;
         this.animationFrameId = null;
+        this.sessionId = null;
+        this.nextTrackPreviewTimeout = null;
+        this.currentLyricsTrackId = null;
+        this.isLoadingLyrics = false;
+        this.lastExtractedImageUrl = null;
         
         this.initializeElements();
         this.bindEvents();
@@ -20,10 +25,17 @@ class SpotifyLyricsPlayer {
         // 檢查是否從認證回調返回
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('auth') === 'success') {
+            this.sessionId = urlParams.get('session');
+            if (this.sessionId) {
+                localStorage.setItem('spotify_session_id', this.sessionId);
+            }
             // 清除 URL 參數
             window.history.replaceState({}, document.title, window.location.pathname);
             // 顯示成功訊息
             this.showSuccessMessage('🎉 Spotify 連接成功！');
+        } else {
+            // 嘗試從 localStorage 恢復 session
+            this.sessionId = localStorage.getItem('spotify_session_id');
         }
     }
 
@@ -95,6 +107,20 @@ class SpotifyLyricsPlayer {
         this.loginBtn = document.getElementById('login-btn');
         this.refreshBtn = document.getElementById('refresh-btn');
         
+        // 播放控制元素
+        this.playPauseBtn = document.getElementById('play-pause-btn');
+        this.playIcon = document.getElementById('play-icon');
+        this.pauseIcon = document.getElementById('pause-icon');
+        this.prevBtn = document.getElementById('prev-btn');
+        this.nextBtn = document.getElementById('next-btn');
+        this.volumeSlider = document.getElementById('volume-slider');
+        this.volumeValue = document.getElementById('volume-value');
+        this.deviceInfo = document.getElementById('device-info');
+        this.deviceName = document.getElementById('device-name');
+        this.nextTrackPreview = document.getElementById('next-track-preview');
+        this.nextTrackName = document.getElementById('next-track-name');
+        // this.playIndicator = document.getElementById('play-indicator'); // 已移除
+        
         // 模態框元素
         this.fontSizeModal = document.getElementById('font-size-modal');
         this.closeModalBtn = document.getElementById('close-modal');
@@ -147,18 +173,54 @@ class SpotifyLyricsPlayer {
                 this.fontSizeModal.style.display = 'none';
             }
         });
+
+        // 播放控制事件
+        this.playPauseBtn?.addEventListener('click', () => {
+            this.handlePlayPause();
+        });
+
+        this.prevBtn?.addEventListener('click', () => {
+            this.handlePrevious();
+        });
+
+        this.nextBtn?.addEventListener('click', () => {
+            this.handleNext();
+        });
+
+        // 音量控制事件
+        this.volumeSlider?.addEventListener('input', (e) => {
+            const volume = parseInt(e.target.value);
+            this.volumeValue.textContent = `${volume}%`;
+            this.handleVolumeChange(volume);
+        });
+
+        this.volumeSlider?.addEventListener('change', (e) => {
+            const volume = parseInt(e.target.value);
+            this.setVolume(volume);
+        });
     }
 
     async checkAuthStatus() {
         try {
-            const response = await fetch('/api/auth-status');
+            const headers = {};
+            if (this.sessionId) {
+                headers['X-Session-Id'] = this.sessionId;
+            }
+            
+            const response = await fetch('/api/auth-status', { headers });
             const data = await response.json();
             
             if (data.authenticated) {
+                if (data.sessionId && !this.sessionId) {
+                    this.sessionId = data.sessionId;
+                    localStorage.setItem('spotify_session_id', this.sessionId);
+                }
                 this.showPlayerSection();
                 this.startTracking();
             } else {
                 this.showAuthSection();
+                localStorage.removeItem('spotify_session_id');
+                this.sessionId = null;
             }
         } catch (error) {
             console.error('檢查認證狀態失敗:', error);
@@ -203,62 +265,70 @@ class SpotifyLyricsPlayer {
             clearTimeout(this.lyricsUpdateTimeout);
             this.lyricsUpdateTimeout = null;
         }
+        if (this.nextTrackPreviewTimeout) {
+            clearTimeout(this.nextTrackPreviewTimeout);
+            this.nextTrackPreviewTimeout = null;
+        }
     }
 
     async checkCurrentTrack() {
         try {
-            const response = await fetch('/api/current-track');
+            const headers = {};
+            if (this.sessionId) {
+                headers['X-Session-Id'] = this.sessionId;
+            }
+            
+            const response = await fetch('/api/current-track', { headers });
             
             if (response.status === 401) {
                 this.showAuthSection();
                 this.stopTracking();
+                localStorage.removeItem('spotify_session_id');
+                this.sessionId = null;
                 return;
             }
 
             if (!response.ok) {
                 console.error(`API 錯誤: ${response.status} ${response.statusText}`);
-                // 添加重试机制
                 if (response.status >= 500) {
                     console.log('服务器错误，稍后重试...');
                     setTimeout(() => this.checkCurrentTrack(), 5000);
                 }
-                // 不要立即隱藏播放器，可能是暫時的網路問題
                 this.updateStatus('spotify', false);
                 return;
             }
 
             const data = await response.json();
             
-            // 如果没有歌曲数据，显示无音乐页面
             if (!data.name) {
                 this.showNoMusicSection();
                 return;
             }
-            
-            // 如果有歌曲但暂停了，仍然显示播放器页面
 
             const isNewTrack = !this.currentTrack || 
                               this.currentTrack.id !== data.id ||
                               this.currentTrack.name !== data.name;
 
             this.currentTrack = data;
-            this.currentTrack.lastUpdated = Date.now(); // 記錄更新時間
+            this.currentTrack.lastUpdated = Date.now();
             this.updateTrackInfo();
+            this.updatePlayerControls();
 
             if (isNewTrack) {
                 this.loadLyrics();
+                this.loadNextTrackPreview();
+            } else {
+                // 如果不是新歌，不要重複載入歌詞
+                console.log('相同歌曲，跳過歌詞載入');
             }
             
-            // 无论是否为新歌，都要更新进度（包括暂停状态）
             this.updateProgress();
-
             this.showPlayerSection();
             this.updateStatus('spotify', true);
 
         } catch (error) {
             console.error('獲取當前播放失敗:', error);
             this.updateStatus('spotify', false);
-            // 網路錯誤時不要隱藏播放器，添加重试机制
             setTimeout(() => this.checkCurrentTrack(), 5000);
         }
     }
@@ -272,6 +342,26 @@ class SpotifyLyricsPlayer {
         this.artistName.textContent = this.currentTrack.artist;
         this.albumName.textContent = this.currentTrack.album;
         this.totalTime.textContent = this.formatTime(this.currentTrack.duration);
+        
+        // 提取專輯封面顏色並更新背景（避免重複提取）
+        if (this.currentTrack.image && this.currentTrack.image !== this.lastExtractedImageUrl) {
+            this.lastExtractedImageUrl = this.currentTrack.image;
+            this.extractColorsAndUpdateBackground(this.currentTrack.image);
+        }
+        
+        // 更新設備信息
+        if (this.currentTrack.device && this.deviceInfo) {
+            this.deviceName.textContent = `${this.currentTrack.device.name} (${this.currentTrack.device.type})`;
+            this.deviceInfo.style.display = 'block';
+            
+            // 更新音量滑塊
+            if (this.currentTrack.device.volume !== null && this.volumeSlider) {
+                this.volumeSlider.value = this.currentTrack.device.volume;
+                this.volumeValue.textContent = `${this.currentTrack.device.volume}%`;
+            }
+        } else if (this.deviceInfo) {
+            this.deviceInfo.style.display = 'none';
+        }
     }
 
     updateProgress() {
@@ -305,6 +395,12 @@ class SpotifyLyricsPlayer {
             // 更新歌词高亮（无论播放还是暂停）
             this.updateLyricsHighlight(elapsedTime);
 
+            // 檢查是否接近歌曲結束（最後5秒）
+            const remainingTime = this.currentTrack.duration - elapsedTime;
+            if (remainingTime <= 5000 && remainingTime > 0 && this.currentTrack.isPlaying) {
+                this.showNextTrackPreview();
+            }
+
             // 只有在播放时才继续动画
             if (this.currentTrack.isPlaying && elapsedTime < this.currentTrack.duration) {
                 this.animationFrameId = requestAnimationFrame(update);
@@ -319,6 +415,19 @@ class SpotifyLyricsPlayer {
 
     async loadLyrics() {
         if (!this.currentTrack) return;
+
+        // 檢查是否已經有相同歌曲的歌詞
+        if (this.lyrics && this.lyrics.length > 0 && this.currentLyricsTrackId === this.currentTrack.id) {
+            console.log('歌詞已存在，跳過載入');
+            return;
+        }
+
+        // 防止重複請求
+        if (this.isLoadingLyrics) {
+            console.log('歌詞正在載入中，跳過重複請求');
+            return;
+        }
+        this.isLoadingLyrics = true;
 
         this.updateStatus('lyrics', null); // 載入中
         this.showLyricsPlaceholder('🎵 正在載入歌詞...');
@@ -342,6 +451,7 @@ class SpotifyLyricsPlayer {
                 if (validLyrics.length > 0) {
                     this.lyrics = validLyrics;
                     this.lyricsType = data.type || 'plain';
+                    this.currentLyricsTrackId = this.currentTrack.id; // 記錄當前歌詞對應的歌曲ID
                     this.displayLyrics();
                     this.updateStatus('lyrics', true);
                     console.log(`✅ 歌詞載入成功: ${validLyrics.length} 行 (${this.lyricsType}) 來源: ${data.source}`);
@@ -357,6 +467,8 @@ class SpotifyLyricsPlayer {
         } catch (error) {
             console.error('載入歌詞失敗:', error);
             this.showLyricsError('載入歌詞失敗');
+        } finally {
+            this.isLoadingLyrics = false;
         }
     }
 
@@ -399,7 +511,7 @@ class SpotifyLyricsPlayer {
 
         const lyricsHTML = this.lyrics.map((line, index) => {
             let text = this.lyricsType === 'synced' ? line.text : (line.text || line);
-            // Convert simplified Chinese to traditional Chinese
+            // Convert simplified Chinese to traditional Chinese using s2twp
             if (typeof convertToTraditional === 'function') {
                 text = convertToTraditional(text);
             }
@@ -423,55 +535,59 @@ class SpotifyLyricsPlayer {
     updateLyricsHighlight(currentTime) {
         if (!this.lyrics || this.lyrics.length === 0) return;
 
-        let targetIndex = -1; // 預設為 -1，表示還沒到歌詞
+        let targetIndex = -1;
 
-        if (this.autoScroll && currentTime !== undefined) {
-
-            // 調整時間
-            const adjustedTime = currentTime + 2500;
-
+        if (currentTime !== undefined) {
             if (this.lyricsType === 'synced') {
-                // 同步歌詞：根據精確時間匹配
+                // 同步歌詞：根據精確時間匹配，減少延遲
                 for (let i = 0; i < this.lyrics.length; i++) {
                     const line = this.lyrics[i];
                     const nextLine = this.lyrics[i + 1];
                     
-                    // 添加容差处理，解决歌词不同步问题
-                    const tolerance = 500; // 500ms 容差
-                    if (line.time <= currentTime + tolerance && (!nextLine || nextLine.time > currentTime)) {
+                    // 減少容差，提高同步精度
+                    const tolerance = 200; // 200ms 容差
+                    if (line.time <= currentTime + tolerance && (!nextLine || nextLine.time > currentTime + tolerance)) {
                         targetIndex = i;
                         break;
                     }
                 }
             } else {
-                // 純文本歌詞：根據時間同步，但稍微延遲一點
-                const progressRatio = currentTime / this.currentTrack.duration;
-                // 调整时间偏移，解决歌词不同步问题
-                const timeOffset = 1000; // 1秒提前量
-                const adjustedProgress = Math.max(0, (currentTime - timeOffset) / this.currentTrack.duration);
-                targetIndex = Math.floor(adjustedProgress * this.lyrics.length);
-                targetIndex = Math.max(0, Math.min(targetIndex, this.lyrics.length - 1));
+                // 純文本歌詞：改進時間同步算法
+                if (this.currentTrack && this.currentTrack.duration > 0) {
+                    // 使用更精確的進度計算
+                    const progressRatio = currentTime / this.currentTrack.duration;
+                    // 減少時間偏移，讓歌詞更同步
+                    const timeOffset = 500; // 0.5秒提前量
+                    const adjustedProgress = Math.max(0, (currentTime - timeOffset) / this.currentTrack.duration);
+                    targetIndex = Math.floor(adjustedProgress * this.lyrics.length);
+                    targetIndex = Math.max(0, Math.min(targetIndex, this.lyrics.length - 1));
+                }
             }
             
-            this.currentLyricIndex = targetIndex;
+            // 只有在自動滾動開啟時才更新索引
+            if (this.autoScroll) {
+                this.currentLyricIndex = targetIndex;
+            }
         }
 
         // 移除所有高亮
-        this.lyricsContent.querySelectorAll('.lyrics-line').forEach(line => {
+        const lyricsLines = this.lyricsContent.querySelectorAll('.lyrics-line');
+        lyricsLines.forEach(line => {
             line.classList.remove('current');
         });
 
-        // 只有當 targetIndex >= 0 時才添加高亮
-        if (this.currentLyricIndex >= 0) {
+        // 高亮當前行
+        if (this.currentLyricIndex >= 0 && this.currentLyricIndex < this.lyrics.length) {
             const currentLine = this.lyricsContent.querySelector(`[data-index="${this.currentLyricIndex}"]`);
             if (currentLine) {
                 currentLine.classList.add('current');
                 
-                // 自動滾動到當前行
+                // 自動滾動到當前行（保持在視窗中央）
                 if (this.autoScroll) {
                     currentLine.scrollIntoView({
                         behavior: 'smooth',
-                        block: 'center'
+                        block: 'center',
+                        inline: 'nearest'
                     });
                 }
             }
@@ -507,6 +623,350 @@ class SpotifyLyricsPlayer {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // 播放控制方法
+    updatePlayerControls() {
+        if (!this.currentTrack) return;
+
+        // 更新播放/暫停按鈕
+        if (this.currentTrack.isPlaying) {
+            this.playIcon.style.display = 'none';
+            this.pauseIcon.style.display = 'block';
+            // 移除播放指示器
+            // this.playIndicator.style.display = 'block';
+        } else {
+            this.playIcon.style.display = 'block';
+            this.pauseIcon.style.display = 'none';
+            // this.playIndicator.style.display = 'none';
+        }
+    }
+
+    async handlePlayPause() {
+        if (!this.currentTrack) return;
+
+        try {
+            const headers = { 'Content-Type': 'application/json' };
+            if (this.sessionId) {
+                headers['X-Session-Id'] = this.sessionId;
+            }
+
+            const response = await fetch('/api/player/play-pause', {
+                method: 'PUT',
+                headers: headers,
+                body: JSON.stringify({ isPlaying: this.currentTrack.isPlaying })
+            });
+
+            if (response.ok) {
+                // 立即更新UI狀態
+                this.currentTrack.isPlaying = !this.currentTrack.isPlaying;
+                this.updatePlayerControls();
+                
+                // 稍後重新檢查狀態
+                setTimeout(() => this.checkCurrentTrack(), 500);
+            }
+        } catch (error) {
+            console.error('播放控制失敗:', error);
+        }
+    }
+
+    async handlePrevious() {
+        try {
+            const headers = {};
+            if (this.sessionId) {
+                headers['X-Session-Id'] = this.sessionId;
+            }
+
+            const response = await fetch('/api/player/previous', {
+                method: 'POST',
+                headers: headers
+            });
+
+            if (response.ok) {
+                setTimeout(() => this.checkCurrentTrack(), 500);
+            }
+        } catch (error) {
+            console.error('上一首失敗:', error);
+        }
+    }
+
+    async handleNext() {
+        try {
+            const headers = {};
+            if (this.sessionId) {
+                headers['X-Session-Id'] = this.sessionId;
+            }
+
+            const response = await fetch('/api/player/next', {
+                method: 'POST',
+                headers: headers
+            });
+
+            if (response.ok) {
+                setTimeout(() => this.checkCurrentTrack(), 500);
+            }
+        } catch (error) {
+            console.error('下一首失敗:', error);
+        }
+    }
+
+    handleVolumeChange(volume) {
+        // 即時更新顯示，但不立即發送請求（避免過多請求）
+        this.volumeValue.textContent = `${volume}%`;
+    }
+
+    async setVolume(volume) {
+        try {
+            const headers = { 'Content-Type': 'application/json' };
+            if (this.sessionId) {
+                headers['X-Session-Id'] = this.sessionId;
+            }
+
+            const response = await fetch('/api/player/volume', {
+                method: 'PUT',
+                headers: headers,
+                body: JSON.stringify({ volume: volume })
+            });
+
+            if (!response.ok) {
+                console.error('音量設定失敗');
+            }
+        } catch (error) {
+            console.error('音量控制失敗:', error);
+        }
+    }
+
+    async loadNextTrackPreview() {
+        try {
+            const headers = {};
+            if (this.sessionId) {
+                headers['X-Session-Id'] = this.sessionId;
+            }
+
+            const response = await fetch('/api/player/queue', { headers });
+            if (response.ok) {
+                const data = await response.json();
+                if (data.nextTrack) {
+                    this.nextTrackName.textContent = `${data.nextTrack.artist} - ${data.nextTrack.name}`;
+                } else {
+                    this.nextTrackName.textContent = '無下一首';
+                }
+            } else {
+                // 如果 API 失敗，不顯示錯誤，只是不顯示下一首
+                this.nextTrackName.textContent = '無下一首';
+            }
+        } catch (error) {
+            console.error('載入下一首預覽失敗:', error);
+            this.nextTrackName.textContent = '無下一首';
+        }
+    }
+
+    showNextTrackPreview() {
+        if (this.nextTrackPreview && this.nextTrackName.textContent !== '無下一首') {
+            this.nextTrackPreview.style.display = 'block';
+            
+            // 清除之前的超時
+            if (this.nextTrackPreviewTimeout) {
+                clearTimeout(this.nextTrackPreviewTimeout);
+            }
+            
+            // 5秒後隱藏預覽
+            this.nextTrackPreviewTimeout = setTimeout(() => {
+                this.nextTrackPreview.style.display = 'none';
+            }, 5000);
+        }
+    }
+
+    // 提取專輯封面顏色並更新背景
+    extractColorsAndUpdateBackground(imageUrl) {
+        // 使用代理服務器獲取圖片以避免 CORS 問題
+        this.fetchImageThroughProxy(imageUrl)
+            .then(colors => {
+                if (colors && colors.length > 0) {
+                    this.updateDynamicBackground(colors);
+                    console.log('✅ 成功提取專輯封面顏色:', colors);
+                } else {
+                    this.useDefaultBackground();
+                }
+            })
+            .catch(error => {
+                console.error('❌ 顏色提取失敗:', error);
+                this.useDefaultBackground();
+            });
+    }
+
+    // 通過代理獲取圖片並提取顏色
+    async fetchImageThroughProxy(imageUrl) {
+        try {
+            // 使用 fetch 獲取圖片數據
+            const response = await fetch(`/api/extract-colors`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Session-Id': this.sessionId
+                },
+                body: JSON.stringify({ imageUrl })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                return data.colors;
+            } else {
+                throw new Error('代理請求失敗');
+            }
+        } catch (error) {
+            console.error('代理顏色提取失敗:', error);
+            // 降級：嘗試直接載入圖片（可能會因 CORS 失敗）
+            return this.extractColorsDirectly(imageUrl);
+        }
+    }
+
+    // 直接提取顏色（可能會因 CORS 失敗）
+    extractColorsDirectly(imageUrl) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            
+            img.onload = () => {
+                try {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    canvas.width = 100;
+                    canvas.height = 100;
+                    ctx.drawImage(img, 0, 0, 100, 100);
+                    
+                    const imageData = ctx.getImageData(0, 0, 100, 100);
+                    const colors = this.extractDominantColors(imageData.data);
+                    
+                    resolve(colors);
+                } catch (error) {
+                    reject(error);
+                }
+            };
+            
+            img.onerror = () => {
+                reject(new Error('圖片載入失敗'));
+            };
+            
+            // 嘗試不同的 CORS 設置
+            img.crossOrigin = 'anonymous';
+            img.src = imageUrl;
+        });
+    }
+
+    // 提取主要顏色
+    extractDominantColors(imageData) {
+        const colorMap = new Map();
+        
+        // 採樣像素（每隔4個像素採樣一次以提高性能）
+        for (let i = 0; i < imageData.length; i += 16) {
+            const r = imageData[i];
+            const g = imageData[i + 1];
+            const b = imageData[i + 2];
+            const a = imageData[i + 3];
+            
+            // 跳過透明像素
+            if (a < 128) continue;
+            
+            // 量化顏色以減少顏色數量
+            const quantizedR = Math.floor(r / 32) * 32;
+            const quantizedG = Math.floor(g / 32) * 32;
+            const quantizedB = Math.floor(b / 32) * 32;
+            
+            const colorKey = `${quantizedR},${quantizedG},${quantizedB}`;
+            colorMap.set(colorKey, (colorMap.get(colorKey) || 0) + 1);
+        }
+        
+        // 排序並獲取最常見的顏色
+        const sortedColors = Array.from(colorMap.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([color]) => {
+                const [r, g, b] = color.split(',').map(Number);
+                return { r, g, b };
+            });
+        
+        // 如果沒有足夠的顏色，使用預設值
+        while (sortedColors.length < 3) {
+            sortedColors.push({ r: 102, g: 126, b: 234 });
+        }
+        
+        return sortedColors;
+    }
+
+    // 更新動態背景
+    updateDynamicBackground(colors) {
+        const body = document.body;
+        
+        // 創建漸層顏色
+        const color1 = `rgb(${colors[0].r}, ${colors[0].g}, ${colors[0].b})`;
+        const color2 = `rgb(${colors[1].r}, ${colors[1].g}, ${colors[1].b})`;
+        const color3 = `rgb(${colors[2].r}, ${colors[2].g}, ${colors[2].b})`;
+        
+        // 創建動態背景樣式
+        const backgroundStyle = `
+            radial-gradient(circle at 20% 80%, ${color1} 0%, transparent 50%),
+            radial-gradient(circle at 80% 20%, ${color2} 0%, transparent 50%),
+            radial-gradient(circle at 40% 40%, ${color3} 0%, transparent 50%)
+        `;
+        
+        // 平滑過渡到新背景
+        body.style.backgroundImage = backgroundStyle;
+        
+        // 更新 CSS 變數以供其他元素使用
+        document.documentElement.style.setProperty('--album-color-1', color1);
+        document.documentElement.style.setProperty('--album-color-2', color2);
+        document.documentElement.style.setProperty('--album-color-3', color3);
+        
+        // 添加動畫效果
+        this.animateBackgroundPosition();
+    }
+
+    // 使用預設背景
+    useDefaultBackground() {
+        const defaultColors = [
+            'rgb(102, 126, 234)',
+            'rgb(118, 75, 162)', 
+            'rgb(240, 147, 251)'
+        ];
+        
+        const backgroundStyle = `
+            radial-gradient(circle at 20% 80%, ${defaultColors[0]} 0%, transparent 50%),
+            radial-gradient(circle at 80% 20%, ${defaultColors[1]} 0%, transparent 50%),
+            radial-gradient(circle at 40% 40%, ${defaultColors[2]} 0%, transparent 50%)
+        `;
+        
+        document.body.style.backgroundImage = backgroundStyle;
+    }
+
+    // 動畫背景位置
+    animateBackgroundPosition() {
+        let angle = 0;
+        
+        const animate = () => {
+            angle += 0.5;
+            const x1 = 20 + Math.sin(angle * 0.01) * 10;
+            const y1 = 80 + Math.cos(angle * 0.01) * 10;
+            const x2 = 80 + Math.sin(angle * 0.015) * 15;
+            const y2 = 20 + Math.cos(angle * 0.015) * 15;
+            const x3 = 40 + Math.sin(angle * 0.008) * 8;
+            const y3 = 40 + Math.cos(angle * 0.008) * 8;
+            
+            document.documentElement.style.setProperty('--bg-x1', `${x1}%`);
+            document.documentElement.style.setProperty('--bg-y1', `${y1}%`);
+            document.documentElement.style.setProperty('--bg-x2', `${x2}%`);
+            document.documentElement.style.setProperty('--bg-y2', `${y2}%`);
+            document.documentElement.style.setProperty('--bg-x3', `${x3}%`);
+            document.documentElement.style.setProperty('--bg-y3', `${y3}%`);
+            
+            if (this.currentTrack && this.currentTrack.isPlaying) {
+                requestAnimationFrame(animate);
+            }
+        };
+        
+        if (this.currentTrack && this.currentTrack.isPlaying) {
+            animate();
+        }
     }
 }
 
