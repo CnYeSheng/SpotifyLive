@@ -14,9 +14,9 @@ app.use(express.json());
 // Spotify API credentials
 const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
-const REDIRECT_URI = process.env.REDIRECT_URI || 'https://your-app.vercel.app/api/callback';
+const REDIRECT_URI = process.env.REDIRECT_URI;
 
-// Store user sessions (in production, use Redis or database)
+// Store user sessions (in production, use a proper database)
 const userSessions = new Map();
 
 // Generate a simple session ID
@@ -81,52 +81,11 @@ app.get('/api/callback', async (req, res) => {
             expiresAt: Date.now() + (response.data.expires_in * 1000)
         });
         
-        // 重定向到前端，使用相對路徑
         res.redirect(`/?auth=success&session=${sessionId}`);
     } catch (error) {
         console.error('Error getting access token:', error.response?.data || error.message);
         res.status(500).send('Authentication failed');
     }
-});
-
-// Refresh access token
-async function refreshAccessToken(session) {
-    if (!session.refreshToken) return false;
-    
-    try {
-        const response = await axios.post('https://accounts.spotify.com/api/token',
-            new URLSearchParams({
-                grant_type: 'refresh_token',
-                refresh_token: session.refreshToken,
-                client_id: CLIENT_ID,
-                client_secret: CLIENT_SECRET
-            }),
-            {
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                }
-            }
-        );
-        
-        session.accessToken = response.data.access_token;
-        if (response.data.refresh_token) {
-            session.refreshToken = response.data.refresh_token;
-        }
-        session.expiresAt = Date.now() + (response.data.expires_in * 1000);
-        return true;
-    } catch (error) {
-        console.error('Error refreshing token:', error.response?.data || error.message);
-        return false;
-    }
-}
-
-// Check authentication status
-app.get('/api/auth-status', (req, res) => {
-    const session = getUserSession(req);
-    res.json({ 
-        authenticated: !!session,
-        sessionId: session ? req.headers['x-session-id'] || req.query.sessionId : null
-    });
 });
 
 // Get currently playing track with enhanced information
@@ -197,6 +156,46 @@ app.get('/api/current-track', async (req, res) => {
         console.error('Error fetching current track:', error.response?.data || error.message);
         res.status(500).json({ error: 'Failed to fetch current track' });
     }
+});
+
+// Refresh access token
+async function refreshAccessToken(session) {
+    if (!session.refreshToken) return false;
+    
+    try {
+        const response = await axios.post('https://accounts.spotify.com/api/token',
+            new URLSearchParams({
+                grant_type: 'refresh_token',
+                refresh_token: session.refreshToken,
+                client_id: CLIENT_ID,
+                client_secret: CLIENT_SECRET
+            }),
+            {
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            }
+        );
+        
+        session.accessToken = response.data.access_token;
+        if (response.data.refresh_token) {
+            session.refreshToken = response.data.refresh_token;
+        }
+        session.expiresAt = Date.now() + (response.data.expires_in * 1000);
+        return true;
+    } catch (error) {
+        console.error('Error refreshing token:', error.response?.data || error.message);
+        return false;
+    }
+}
+
+// Check authentication status
+app.get('/api/auth-status', (req, res) => {
+    const session = getUserSession(req);
+    res.json({ 
+        authenticated: !!session,
+        sessionId: session ? req.headers['x-session-id'] || req.query.sessionId : null
+    });
 });
 
 // Get available devices
@@ -326,33 +325,141 @@ app.get('/api/player/queue', async (req, res) => {
     }
 });
 
-// Get lyrics (simplified for Vercel)
+// Get lyrics (enhanced with multiple sources and syncedlyrics support)
 app.get('/api/lyrics/:artist/:title', async (req, res) => {
     const { artist, title } = req.params;
     
     try {
-        // 只使用 lyrics.ovh API (syncedlyrics 在 Vercel 上不可用)
-        const response = await axios.get(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
+        // Try multiple lyrics sources
+        const sources = [
+            () => getLyricsFromSyncedLyrics(artist, title),
+            () => getLyricsFromOvh(artist, title)
+        ];
         
-        if (response.data.lyrics) {
-            const lines = response.data.lyrics.split('\n').filter(line => line.trim() !== '');
-            res.json({
-                success: true,
-                lyrics: lines.map(text => ({ text })),
-                type: 'plain',
-                source: 'lyrics.ovh'
-            });
-        } else {
-            res.json({ success: false, error: '找不到歌詞' });
+        for (const getSource of sources) {
+            try {
+                const result = await getSource();
+                if (result.success) {
+                    return res.json(result);
+                }
+            } catch (error) {
+                console.log(`Lyrics source failed: ${error.message}`);
+                continue;
+            }
         }
+        
+        res.json({ success: false, error: '找不到歌詞' });
     } catch (error) {
-        console.error('Error fetching lyrics:', error.response?.data || error.message);
+        console.error('Error fetching lyrics:', error);
         res.json({ success: false, error: '載入歌詞失敗' });
     }
 });
 
+// Lyrics source implementations
+async function getLyricsFromSyncedLyrics(artist, title) {
+    try {
+        // 使用 syncedlyrics Python 包的 API (需要先安裝)
+        const { spawn } = require('child_process');
+        
+        return new Promise((resolve, reject) => {
+            const python = spawn('python', ['-c', `
+import syncedlyrics
+import json
+import sys
+
+try:
+    lyrics = syncedlyrics.search("${artist.replace(/"/g, '\\"')} ${title.replace(/"/g, '\\"')}")
+    if lyrics:
+        # 解析同步歌詞
+        lines = []
+        for line in lyrics.split('\\n'):
+            if line.strip():
+                if line.startswith('[') and ']' in line:
+                    # 時間戳格式: [mm:ss.xx]
+                    time_end = line.find(']')
+                    if time_end > 0:
+                        time_str = line[1:time_end]
+                        text = line[time_end+1:].strip()
+                        if text:
+                            try:
+                                # 解析時間
+                                if ':' in time_str:
+                                    parts = time_str.split(':')
+                                    minutes = int(parts[0])
+                                    seconds = float(parts[1])
+                                    time_ms = (minutes * 60 + seconds) * 1000
+                                    lines.append({"time": int(time_ms), "text": text})
+                                else:
+                                    lines.append({"text": text})
+                            except:
+                                lines.append({"text": text})
+                else:
+                    lines.append({"text": line.strip()})
+        
+        result = {
+            "success": True,
+            "lyrics": lines,
+            "type": "synced" if any("time" in line for line in lines) else "plain",
+            "source": "syncedlyrics"
+        }
+        print(json.dumps(result))
+    else:
+        print(json.dumps({"success": False, "error": "No lyrics found"}))
+except Exception as e:
+    print(json.dumps({"success": False, "error": str(e)}))
+            `]);
+            
+            let output = '';
+            let error = '';
+            
+            python.stdout.on('data', (data) => {
+                output += data.toString();
+            });
+            
+            python.stderr.on('data', (data) => {
+                error += data.toString();
+            });
+            
+            python.on('close', (code) => {
+                if (code === 0 && output.trim()) {
+                    try {
+                        const result = JSON.parse(output.trim());
+                        if (result.success) {
+                            resolve(result);
+                        } else {
+                            reject(new Error(result.error || 'No lyrics found'));
+                        }
+                    } catch (e) {
+                        reject(new Error('Failed to parse syncedlyrics output'));
+                    }
+                } else {
+                    reject(new Error(`syncedlyrics failed: ${error || 'Unknown error'}`));
+                }
+            });
+        });
+    } catch (error) {
+        throw new Error(`syncedlyrics error: ${error.message}`);
+    }
+}
+
+async function getLyricsFromOvh(artist, title) {
+    const response = await axios.get(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
+    
+    if (response.data.lyrics) {
+        const lines = response.data.lyrics.split('\n').filter(line => line.trim() !== '');
+        return {
+            success: true,
+            lyrics: lines.map(text => ({ text })),
+            type: 'plain',
+            source: 'lyrics.ovh'
+        };
+    }
+    
+    throw new Error('No lyrics found');
+}
+
 // Color extraction endpoint
-app.post('/extract-colors', async (req, res) => {
+app.post('/api/extract-colors', async (req, res) => {
     const { imageUrl } = req.body;
     
     try {
