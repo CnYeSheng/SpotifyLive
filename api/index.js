@@ -56,7 +56,7 @@ app.get('/auth', (req, res) => {
 });
 
 // Spotify callback
-app.get('/callback', async (req, res) => {
+app.get('/api/callback', async (req, res) => {
     const { code, state: sessionId } = req.query;
     
     try {
@@ -121,7 +121,7 @@ async function refreshAccessToken(session) {
 }
 
 // Check authentication status
-app.get('/auth-status', (req, res) => {
+app.get('/api/auth-status', (req, res) => {
     const session = getUserSession(req);
     res.json({ 
         authenticated: !!session,
@@ -130,7 +130,7 @@ app.get('/auth-status', (req, res) => {
 });
 
 // Get currently playing track with enhanced information
-app.get('/current-track', async (req, res) => {
+app.get('/api/current-track', async (req, res) => {
     const session = getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
@@ -200,7 +200,7 @@ app.get('/current-track', async (req, res) => {
 });
 
 // Get available devices
-app.get('/devices', async (req, res) => {
+app.get('/api/devices', async (req, res) => {
     const session = getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
@@ -219,7 +219,7 @@ app.get('/devices', async (req, res) => {
 });
 
 // Enhanced player control
-app.put('/player/:action', async (req, res) => {
+app.put('/api/player/:action', async (req, res) => {
     const session = getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
@@ -299,7 +299,7 @@ app.put('/player/:action', async (req, res) => {
 });
 
 // Get queue information
-app.get('/player/queue', async (req, res) => {
+app.get('/api/player/queue', async (req, res) => {
     const session = getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
@@ -327,7 +327,7 @@ app.get('/player/queue', async (req, res) => {
 });
 
 // Get lyrics (simplified for Vercel)
-app.get('/lyrics/:artist/:title', async (req, res) => {
+app.get('/api/lyrics/:artist/:title', async (req, res) => {
     const { artist, title } = req.params;
     
     try {

@@ -147,7 +147,7 @@ class SpotifyLyricsPlayer {
     bindEvents() {
         // 登入按鈕
         this.loginBtn?.addEventListener('click', () => {
-            window.location.href = '/api/auth';
+            window.location.href = '/auth';
         });
 
         // 重新檢查按鈕
