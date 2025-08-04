@@ -15,6 +15,10 @@ class SpotifyLyricsPlayer {
         this.isLoadingLyrics = false;
         this.lastExtractedImageUrl = null;
         
+        // 检测运行环境 (Vercel 或 本地)
+        this.isVercel = window.location.hostname.includes('vercel.app');
+        this.apiBase = this.isVercel ? '/api' : '';
+        
         this.initializeElements();
         this.bindEvents();
         this.handleAuthCallback();
@@ -338,7 +342,7 @@ class SpotifyLyricsPlayer {
                 headers['X-Session-Id'] = this.sessionId;
             }
             
-            const response = await fetch('/api/current-track', { headers });
+            const response = await fetch(`${this.apiBase}/current-track`, { headers });
             
             if (response.status === 401) {
                 this.showAuthSection();
@@ -517,7 +521,7 @@ class SpotifyLyricsPlayer {
         try {
             console.log(`🎤 請求歌詞: ${this.currentTrack.artist} - ${this.currentTrack.name}`);
             
-            const response = await fetch(`/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}`);
+            const response = await fetch(`${this.apiBase}/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}`);
             const data = await response.json();
 
             console.log('歌詞 API 回應:', data);
@@ -724,98 +728,206 @@ class SpotifyLyricsPlayer {
         }
     }
 
-    async handlePlayPause() {
-        if (!this.currentTrack) return;
+    handlePlayPause() {
+        if (!this.currentTrack || !this.sessionId) return;
 
-        try {
-            const headers = { 'Content-Type': 'application/json' };
-            if (this.sessionId) {
-                headers['X-Session-Id'] = this.sessionId;
+        fetch(`${this.apiBase}/playback/play-pause`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Id': this.sessionId
             }
-
-            const response = await fetch('/api/player/play-pause', {
-                method: 'PUT',
-                headers: headers,
-                body: JSON.stringify({ isPlaying: this.currentTrack.isPlaying })
-            });
-
-            if (response.ok) {
-                // 立即更新UI狀態
-                this.currentTrack.isPlaying = !this.currentTrack.isPlaying;
-                this.updatePlayerControls();
-                
-                // 稍後重新檢查狀態
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log('播放/暫停成功');
+                // 立即更新播放狀態
                 setTimeout(() => this.checkCurrentTrack(), 500);
+            } else {
+                console.error('播放/暫停失敗:', data.error);
             }
-        } catch (error) {
-            console.error('播放控制失敗:', error);
-        }
+        })
+        .catch(error => {
+            console.error('播放/暫停請求失敗:', error);
+        });
     }
 
-    async handlePrevious() {
-        try {
-            const headers = {};
-            if (this.sessionId) {
-                headers['X-Session-Id'] = this.sessionId;
+    handlePrevious() {
+        if (!this.currentTrack || !this.sessionId) return;
+
+        fetch(`${this.apiBase}/playback/previous`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Id': this.sessionId
             }
-
-            const response = await fetch('/api/player/previous', {
-                method: 'POST',
-                headers: headers
-            });
-
-            if (response.ok) {
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log('上一首成功');
+                // 立即更新播放狀態
                 setTimeout(() => this.checkCurrentTrack(), 500);
+            } else {
+                console.error('上一首失敗:', data.error);
             }
-        } catch (error) {
-            console.error('上一首失敗:', error);
-        }
+        })
+        .catch(error => {
+            console.error('上一首請求失敗:', error);
+        });
     }
 
-    async handleNext() {
-        try {
-            const headers = {};
-            if (this.sessionId) {
-                headers['X-Session-Id'] = this.sessionId;
+    handleNext() {
+        if (!this.currentTrack || !this.sessionId) return;
+
+        fetch(`${this.apiBase}/playback/next`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Id': this.sessionId
             }
-
-            const response = await fetch('/api/player/next', {
-                method: 'POST',
-                headers: headers
-            });
-
-            if (response.ok) {
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log('下一首成功');
+                // 立即更新播放狀態
                 setTimeout(() => this.checkCurrentTrack(), 500);
+            } else {
+                console.error('下一首失敗:', data.error);
             }
-        } catch (error) {
-            console.error('下一首失敗:', error);
-        }
+        })
+        .catch(error => {
+            console.error('下一首請求失敗:', error);
+        });
     }
 
     handleVolumeChange(volume) {
-        // 即時更新顯示，但不立即發送請求（避免過多請求）
-        this.volumeValue.textContent = `${volume}%`;
+        if (!this.currentTrack || !this.sessionId) return;
+
+        fetch(`${this.apiBase}/playback/volume`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Id': this.sessionId
+            },
+            body: JSON.stringify({ volume })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log(`音量設置為 ${volume}%`);
+            } else {
+                console.error('音量設置失敗:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('音量設置請求失敗:', error);
+        });
     }
 
-    async setVolume(volume) {
-        try {
-            const headers = { 'Content-Type': 'application/json' };
-            if (this.sessionId) {
-                headers['X-Session-Id'] = this.sessionId;
-            }
+    setVolume(volume) {
+        if (!this.currentTrack || !this.sessionId) return;
 
-            const response = await fetch('/api/player/volume', {
-                method: 'PUT',
-                headers: headers,
-                body: JSON.stringify({ volume: volume })
-            });
-
-            if (!response.ok) {
-                console.error('音量設定失敗');
+        fetch(`${this.apiBase}/playback/volume`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Id': this.sessionId
+            },
+            body: JSON.stringify({ volume, set: true })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log(`音量設置為 ${volume}%`);
+                // 立即更新播放狀態
+                setTimeout(() => this.checkCurrentTrack(), 500);
+            } else {
+                console.error('音量設置失敗:', data.error);
             }
-        } catch (error) {
-            console.error('音量控制失敗:', error);
-        }
+        })
+        .catch(error => {
+            console.error('音量設置請求失敗:', error);
+        });
+    }
+
+    toggleShuffle() {
+        if (!this.currentTrack || !this.sessionId) return;
+
+        fetch(`${this.apiBase}/playback/shuffle`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Id': this.sessionId
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log('隨機播放切換成功');
+                // 立即更新播放狀態
+                setTimeout(() => this.checkCurrentTrack(), 500);
+            } else {
+                console.error('隨機播放切換失敗:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('隨機播放切換請求失敗:', error);
+        });
+    }
+
+    toggleRepeat() {
+        if (!this.currentTrack || !this.sessionId) return;
+
+        fetch(`${this.apiBase}/playback/repeat`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Id': this.sessionId
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log('重複播放切換成功');
+                // 立即更新播放狀態
+                setTimeout(() => this.checkCurrentTrack(), 500);
+            } else {
+                console.error('重複播放切換失敗:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('重複播放切換請求失敗:', error);
+        });
+    }
+
+    addToLikedSongs() {
+        if (!this.currentTrack || !this.sessionId) return;
+
+        fetch(`${this.apiBase}/library/add`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Id': this.sessionId
+            },
+            body: JSON.stringify({ trackId: this.currentTrack.id })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log('已添加到喜歡的歌曲');
+                this.showSuccessMessage('❤️ 已添加到喜歡的歌曲');
+            } else {
+                console.error('添加到喜歡的歌曲失敗:', data.error);
+                this.showErrorMessage('添加失敗: ' + (data.error || '未知錯誤'));
+            }
+        })
+        .catch(error => {
+            console.error('添加到喜歡的歌曲請求失敗:', error);
+            this.showErrorMessage('網絡錯誤，請重試');
+        });
     }
 
     async loadNextTrackPreview() {
@@ -1101,94 +1213,6 @@ class SpotifyLyricsPlayer {
     }
 
     // 新功能實現方法
-    async toggleShuffle() {
-        if (!this.isPremium) {
-            this.showPremiumRequiredMessage('隨機播放功能需要 Spotify Premium');
-            return;
-        }
-
-        try {
-            const headers = { 'Content-Type': 'application/json' };
-            if (this.sessionId) {
-                headers['X-Session-Id'] = this.sessionId;
-            }
-
-            const response = await fetch('/api/player/shuffle', {
-                method: 'PUT',
-                headers: headers,
-                body: JSON.stringify({ state: !this.shuffleState })
-            });
-
-            if (response.ok) {
-                this.shuffleState = !this.shuffleState;
-                this.updateShuffleButton();
-                setTimeout(() => this.checkCurrentTrack(), 500);
-            }
-        } catch (error) {
-            console.error('切換隨機播放失敗:', error);
-        }
-    }
-
-    async toggleRepeat() {
-        if (!this.isPremium) {
-            this.showPremiumRequiredMessage('重複播放功能需要 Spotify Premium');
-            return;
-        }
-
-        try {
-            const headers = { 'Content-Type': 'application/json' };
-            if (this.sessionId) {
-                headers['X-Session-Id'] = this.sessionId;
-            }
-
-            // 循環切換: off -> context -> track -> off
-            let nextState = 'off';
-            if (this.repeatState === 'off') nextState = 'context';
-            else if (this.repeatState === 'context') nextState = 'track';
-
-            const response = await fetch('/api/player/repeat', {
-                method: 'PUT',
-                headers: headers,
-                body: JSON.stringify({ state: nextState })
-            });
-
-            if (response.ok) {
-                this.repeatState = nextState;
-                this.updateRepeatButton();
-                setTimeout(() => this.checkCurrentTrack(), 500);
-            }
-        } catch (error) {
-            console.error('切換重複播放失敗:', error);
-        }
-    }
-
-    async addToLikedSongs() {
-        if (!this.currentTrack) return;
-
-        try {
-            const headers = { 'Content-Type': 'application/json' };
-            if (this.sessionId) {
-                headers['X-Session-Id'] = this.sessionId;
-            }
-
-            const response = await fetch('/api/player/save-track', {
-                method: 'PUT',
-                headers: headers,
-                body: JSON.stringify({ trackId: this.currentTrack.id })
-            });
-
-            if (response.ok) {
-                this.showSuccessMessage('✅ 已加入已按讚的歌曲');
-            } else {
-                const data = await response.json();
-                this.showErrorMessage(data.error || '加入播放清單失敗');
-            }
-        } catch (error) {
-            console.error('加入播放清單失敗:', error);
-            this.showErrorMessage('加入播放清單失敗');
-        }
-    }
-
     async showPlaylistModal() {
         this.playlistModal.style.display = 'flex';
         this.playlistContent.innerHTML = '<div class="loading">載入中...</div>';

@@ -220,83 +220,243 @@ app.get('/api/devices', async (req, res) => {
     }
 });
 
-// Enhanced player control
-app.put('/api/player/:action', async (req, res) => {
+// Get user playlists
+app.get('/api/playlists', async (req, res) => {
     const session = getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
     
-    const { action } = req.params;
-    const { device_id, volume_percent, state, trackId, uris, device_ids, play, isPlaying } = req.body;
+    try {
+        const response = await axios.get('https://api.spotify.com/v1/me/playlists?limit=50', {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        
+        const playlists = response.data.items.map(playlist => ({
+            id: playlist.id,
+            name: playlist.name,
+            image: playlist.images[0]?.url,
+            tracks: playlist.tracks.total
+        }));
+        
+        res.json({ playlists });
+    } catch (error) {
+        console.error('Error fetching playlists:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to fetch playlists' });
+    }
+});
+
+// Get user's liked songs
+app.get('/api/liked-songs', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
     
     try {
-        let url = `https://api.spotify.com/v1/me/player/${action}`;
-        let method = 'PUT';
-        let data = {};
+        const response = await axios.get('https://api.spotify.com/v1/me/tracks?limit=50', {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
         
-        switch (action) {
-            case 'play-pause':
-                url = isPlaying ? 
-                    'https://api.spotify.com/v1/me/player/pause' : 
-                    'https://api.spotify.com/v1/me/player/play';
-                if (device_id) data.device_ids = [device_id];
-                if (uris) data.uris = uris;
-                break;
-            case 'play':
-                url = 'https://api.spotify.com/v1/me/player/play';
-                if (device_id) data.device_ids = [device_id];
-                if (uris) data.uris = uris;
-                break;
-            case 'pause':
-                url = 'https://api.spotify.com/v1/me/player/pause';
-                break;
-            case 'next':
-                method = 'POST';
-                break;
-            case 'previous':
-                method = 'POST';
-                break;
-            case 'volume':
-                url = `https://api.spotify.com/v1/me/player/volume?volume_percent=${volume_percent}`;
-                if (device_id) url += `&device_id=${device_id}`;
-                break;
-            case 'shuffle':
-                url = `https://api.spotify.com/v1/me/player/shuffle?state=${state}`;
-                if (device_id) url += `&device_id=${device_id}`;
-                break;
-            case 'repeat':
-                url = `https://api.spotify.com/v1/me/player/repeat?state=${state}`;
-                if (device_id) url += `&device_id=${device_id}`;
-                break;
-            case 'transfer':
-                url = 'https://api.spotify.com/v1/me/player';
-                data = { device_ids, play: play || false };
-                break;
-            case 'save-track':
-                url = `https://api.spotify.com/v1/me/tracks?ids=${trackId}`;
-                method = 'PUT';
-                break;
-            default:
-                return res.status(400).json({ error: 'Invalid action' });
+        const tracks = response.data.items.map(item => ({
+            id: item.track.id,
+            name: item.track.name,
+            artist: item.track.artists.map(a => a.name).join(', '),
+            image: item.track.album.images[0]?.url,
+            duration: item.track.duration_ms
+        }));
+        
+        res.json({ tracks });
+    } catch (error) {
+        console.error('Error fetching liked songs:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to fetch liked songs' });
+    }
+});
+
+// Enhanced player control endpoints
+app.post('/api/playback/play-pause', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    try {
+        // Get current playback state first
+        const statusResponse = await axios.get('https://api.spotify.com/v1/me/player', {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        
+        const isPlaying = statusResponse.data?.is_playing;
+        const deviceId = req.body.deviceId;
+        
+        let url, method;
+        if (isPlaying) {
+            url = 'https://api.spotify.com/v1/me/player/pause';
+            method = 'PUT';
+        } else {
+            url = 'https://api.spotify.com/v1/me/player/play';
+            method = 'PUT';
         }
         
-        const config = {
+        await axios({
             method,
             url,
-            headers: { 'Authorization': `Bearer ${session.accessToken}` }
-        };
+            headers: { 'Authorization': `Bearer ${session.accessToken}` },
+            data: deviceId ? { device_ids: [deviceId] } : {}
+        });
         
-        if (Object.keys(data).length > 0) {
-            config.data = data;
-            config.headers['Content-Type'] = 'application/json';
-        }
-        
-        await axios(config);
         res.json({ success: true });
     } catch (error) {
-        console.error(`Error with ${action}:`, error.response?.data || error.message);
-        res.status(500).json({ error: `Failed to ${action}` });
+        console.error('Error controlling playback:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: 'Failed to control playback' });
+    }
+});
+
+app.post('/api/playback/previous', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    try {
+        await axios.post('https://api.spotify.com/v1/me/player/previous', {}, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error skipping to previous track:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: 'Failed to skip to previous track' });
+    }
+});
+
+app.post('/api/playback/next', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    try {
+        await axios.post('https://api.spotify.com/v1/me/player/next', {}, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error skipping to next track:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: 'Failed to skip to next track' });
+    }
+});
+
+app.post('/api/playback/volume', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const { volume, set } = req.body;
+    
+    try {
+        await axios.put(`https://api.spotify.com/v1/me/player/volume?volume_percent=${volume}`, {}, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error setting volume:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: 'Failed to set volume' });
+    }
+});
+
+app.post('/api/playback/shuffle', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    try {
+        // Get current shuffle state first
+        const statusResponse = await axios.get('https://api.spotify.com/v1/me/player', {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        
+        const currentState = statusResponse.data?.shuffle_state;
+        const newState = !currentState;
+        
+        await axios.put(`https://api.spotify.com/v1/me/player/shuffle?state=${newState}`, {}, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error toggling shuffle:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: 'Failed to toggle shuffle' });
+    }
+});
+
+app.post('/api/playback/repeat', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const repeatModes = ['off', 'context', 'track'];
+    
+    try {
+        // Get current repeat state first
+        const statusResponse = await axios.get('https://api.spotify.com/v1/me/player', {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        
+        const currentState = statusResponse.data?.repeat_state;
+        const currentIndex = repeatModes.indexOf(currentState);
+        const nextIndex = (currentIndex + 1) % repeatModes.length;
+        const newState = repeatModes[nextIndex];
+        
+        await axios.put(`https://api.spotify.com/v1/me/player/repeat?state=${newState}`, {}, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        
+        res.json({ success: true, state: newState });
+    } catch (error) {
+        console.error('Error toggling repeat:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: 'Failed to toggle repeat' });
+    }
+});
+
+// Library management
+app.post('/api/library/add', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const { trackId } = req.body;
+    
+    try {
+        await axios.put(`https://api.spotify.com/v1/me/tracks?ids=${trackId}`, {}, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error adding track to library:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: 'Failed to add track to library' });
+    }
+});
+
+app.post('/api/library/remove', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const { trackId } = req.body;
+    
+    try {
+        await axios.delete(`https://api.spotify.com/v1/me/tracks?ids=${trackId}`, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error removing track from library:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: 'Failed to remove track from library' });
     }
 });
 
@@ -399,78 +559,84 @@ try:
                 else:
                     lines.append({"text": line.strip()})
         
-        result = {
-            "success": True,
-            "lyrics": lines,
-            "type": "synced" if any("time" in line for line in lines) else "plain",
-            "source": "syncedlyrics"
-        }
-        print(json.dumps(result))
+        print(json.dumps({"success": True, "lyrics": lines, "type": "synced", "source": "syncedlyrics"}))
     else:
-        print(json.dumps({"success": False, "error": "No lyrics found"}))
+        print(json.dumps({"success": False, "error": "找不到歌詞"}))
 except Exception as e:
     print(json.dumps({"success": False, "error": str(e)}))
-            `]);
+`]);
             
-            let output = '';
-            let error = '';
+            let stdout = '';
+            let stderr = '';
             
             python.stdout.on('data', (data) => {
-                output += data.toString();
+                stdout += data.toString();
             });
             
             python.stderr.on('data', (data) => {
-                error += data.toString();
+                stderr += data.toString();
             });
             
             python.on('close', (code) => {
-                if (code === 0 && output.trim()) {
-                    try {
-                        const result = JSON.parse(output.trim());
-                        if (result.success) {
-                            resolve(result);
-                        } else {
-                            reject(new Error(result.error || 'No lyrics found'));
-                        }
-                    } catch (e) {
-                        reject(new Error('Failed to parse syncedlyrics output'));
-                    }
-                } else {
-                    reject(new Error(`syncedlyrics failed: ${error || 'Unknown error'}`));
+                if (code !== 0) {
+                    return reject(new Error(`Python script exited with code ${code}: ${stderr}`));
+                }
+                
+                try {
+                    const result = JSON.parse(stdout.trim());
+                    resolve(result);
+                } catch (parseError) {
+                    reject(new Error(`Failed to parse Python output: ${parseError.message}`));
                 }
             });
         });
     } catch (error) {
-        throw new Error(`syncedlyrics error: ${error.message}`);
+        console.error('Error in getLyricsFromSyncedLyrics:', error);
+        throw error;
     }
 }
 
 async function getLyricsFromOvh(artist, title) {
-    const response = await axios.get(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
-    
-    if (response.data.lyrics) {
-        const lines = response.data.lyrics.split('\n').filter(line => line.trim() !== '');
-        return {
-            success: true,
-            lyrics: lines.map(text => ({ text })),
-            type: 'plain',
-            source: 'lyrics.ovh'
-        };
+    try {
+        const response = await axios.get(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
+        if (response.data && response.data.lyrics) {
+            // 將普通歌詞轉換為統一格式
+            const lines = response.data.lyrics.split('\n')
+                .filter(line => line.trim() !== '')
+                .map(line => ({ text: line.trim() }));
+            
+            return {
+                success: true,
+                lyrics: lines,
+                type: 'plain',
+                source: 'lyrics.ovh'
+            };
+        } else {
+            return { success: false, error: '找不到歌詞' };
+        }
+    } catch (error) {
+        console.error('Error fetching lyrics from lyrics.ovh:', error.message);
+        return { success: false, error: '獲取歌詞失敗' };
     }
-    
-    throw new Error('No lyrics found');
 }
 
-// Color extraction endpoint
+// Extract colors from image
 app.post('/api/extract-colors', async (req, res) => {
     const { imageUrl } = req.body;
     
+    if (!imageUrl) {
+        return res.status(400).json({ error: 'Missing imageUrl parameter' });
+    }
+    
     try {
-        // Simple color extraction (in production, use a proper image processing library)
+        // For now, return a default color palette
+        // In a production environment, you might want to implement actual color extraction
         const colors = [
-            { r: 102, g: 126, b: 234 },
-            { r: 118, g: 75, b: 162 },
-            { r: 240, g: 147, b: 251 }
+            '#1db954', // Spotify green
+            '#191414', // Spotify black
+            '#ffffff', // White
+            '#535353', // Gray
+            '#1ed760'  // Lighter Spotify green
         ];
         
         res.json({ colors });
@@ -480,90 +646,22 @@ app.post('/api/extract-colors', async (req, res) => {
     }
 });
 
-// 創建自簽名證書的函數
-function createSelfSignedCert() {
-  const certDir = path.join(__dirname, 'certs');
-  const keyPath = path.join(certDir, 'key.pem');
-  const certPath = path.join(certDir, 'cert.pem');
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
 
-  // 檢查證書是否已存在
-  if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
-    return { keyPath, certPath };
-  }
+// Serve the main page
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
-  // 創建證書目錄
-  if (!fs.existsSync(certDir)) {
-    fs.mkdirSync(certDir, { recursive: true });
-  }
-
-  // 生成自簽名證書的命令
-  const { execSync } = require('child_process');
-  
-  try {
-    console.log('正在生成自簽名 SSL 證書...');
-    
-    // 使用 OpenSSL 生成私鑰和證書
-    execSync(`openssl req -x509 -newkey rsa:4096 -keyout "${keyPath}" -out "${certPath}" -days 365 -nodes -subj "/C=TW/ST=Taiwan/L=Taipei/O=SpotifyLyricsPlayer/CN=localhost"`, {
-      stdio: 'inherit'
+// Start server
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`Server is running on port ${PORT}`);
+        console.log(`Open http://localhost:${PORT} in your browser`);
     });
-    
-    console.log('SSL 證書生成成功！');
-    return { keyPath, certPath };
-  } catch (error) {
-    console.warn('無法生成 SSL 證書，將使用預設證書');
-    
-    // 如果 OpenSSL 不可用，創建簡單的自簽名證書
-    const forge = require('node-forge');
-    const pki = forge.pki;
-    
-    // 生成密鑰對
-    const keys = pki.rsa.generateKeyPair(2048);
-    
-    // 創建證書
-    const cert = pki.createCertificate();
-    cert.publicKey = keys.publicKey;
-    cert.serialNumber = '01';
-    cert.validity.notBefore = new Date();
-    cert.validity.notAfter = new Date();
-    cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 1);
-    
-    const attrs = [{
-      name: 'commonName',
-      value: 'localhost'
-    }, {
-      name: 'countryName',
-      value: 'TW'
-    }, {
-      shortName: 'ST',
-      value: 'Taiwan'
-    }, {
-      name: 'localityName',
-      value: 'Taipei'
-    }, {
-      name: 'organizationName',
-      value: 'SpotifyLyricsPlayer'
-    }];
-    
-    cert.setSubject(attrs);
-    cert.setIssuer(attrs);
-    cert.sign(keys.privateKey);
-    
-    // 保存證書和私鑰
-    const certPem = pki.certificateToPem(cert);
-    const keyPem = pki.privateKeyToPem(keys.privateKey);
-    
-    fs.writeFileSync(certPath, certPem);
-    fs.writeFileSync(keyPath, keyPem);
-    
-    console.log('使用 Node.js 生成的自簽名證書');
-    return { keyPath, certPath };
-  }
 }
 
-// 啟動服務器 (HTTP 模式，簡化部署)
-app.listen(PORT, () => {
-    console.log(`🎵 Enhanced Spotify 歌詞播放器已啟動！`);
-    console.log(`🌐 伺服器運行於: http://localhost:${PORT}`);
-    console.log(`📱 請在瀏覽器中開啟: http://localhost:${PORT}`);
-    console.log(`🛑 按 Ctrl+C 停止伺服器`);
-});
+module.exports = app;

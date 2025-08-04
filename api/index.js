@@ -217,263 +217,262 @@ app.get('/api/devices', async (req, res) => {
     }
 });
 
-// Enhanced player control
-app.put('/api/player/:action', async (req, res) => {
-    const session = getUserSession(req);
-    if (!session) {
-        return res.status(401).json({ error: 'Not authenticated' });
-    }
-    
-    const { action } = req.params;
-    const { device_id, volume_percent, state, trackId, uris, device_ids, play, isPlaying } = req.body;
-    
-    try {
-        let url = `https://api.spotify.com/v1/me/player/${action}`;
-        let method = 'PUT';
-        let data = {};
-        
-        switch (action) {
-            case 'play-pause':
-                url = isPlaying ? 
-                    'https://api.spotify.com/v1/me/player/pause' : 
-                    'https://api.spotify.com/v1/me/player/play';
-                if (device_id) data.device_ids = [device_id];
-                if (uris) data.uris = uris;
-                break;
-            case 'play':
-                url = 'https://api.spotify.com/v1/me/player/play';
-                if (device_id) data.device_ids = [device_id];
-                if (uris) data.uris = uris;
-                break;
-            case 'pause':
-                url = 'https://api.spotify.com/v1/me/player/pause';
-                break;
-            case 'next':
-                method = 'POST';
-                break;
-            case 'previous':
-                method = 'POST';
-                break;
-            case 'volume':
-                url = `https://api.spotify.com/v1/me/player/volume?volume_percent=${volume_percent}`;
-                if (device_id) url += `&device_id=${device_id}`;
-                break;
-            case 'shuffle':
-                url = `https://api.spotify.com/v1/me/player/shuffle?state=${state}`;
-                if (device_id) url += `&device_id=${device_id}`;
-                break;
-            case 'repeat':
-                url = `https://api.spotify.com/v1/me/player/repeat?state=${state}`;
-                if (device_id) url += `&device_id=${device_id}`;
-                break;
-            case 'transfer':
-                url = 'https://api.spotify.com/v1/me/player';
-                data = { device_ids, play: play || false };
-                break;
-            case 'save-track':
-                url = `https://api.spotify.com/v1/me/tracks?ids=${trackId}`;
-                method = 'PUT';
-                break;
-            default:
-                return res.status(400).json({ error: 'Invalid action' });
-        }
-        
-        const config = {
-            method,
-            url,
-            headers: { 'Authorization': `Bearer ${session.accessToken}` }
-        };
-        
-        if (Object.keys(data).length > 0) {
-            config.data = data;
-            config.headers['Content-Type'] = 'application/json';
-        }
-        
-        await axios(config);
-        res.json({ success: true });
-    } catch (error) {
-        console.error(`Error with ${action}:`, error.response?.data || error.message);
-        res.status(500).json({ error: `Failed to ${action}` });
-    }
-});
-
-// Get queue information
-app.get('/api/player/queue', async (req, res) => {
+// Get user playlists
+app.get('/api/playlists', async (req, res) => {
     const session = getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
     
     try {
-        const response = await axios.get('https://api.spotify.com/v1/me/player/queue', {
+        const response = await axios.get('https://api.spotify.com/v1/me/playlists?limit=50', {
             headers: { 'Authorization': `Bearer ${session.accessToken}` }
         });
         
-        const queue = response.data.queue?.slice(0, 20).map(track => ({
-            id: track.id,
-            name: track.name,
-            artist: track.artists.map(a => a.name).join(', '),
-            image: track.album.images[0]?.url
-        })) || [];
+        const playlists = response.data.items.map(playlist => ({
+            id: playlist.id,
+            name: playlist.name,
+            image: playlist.images[0]?.url,
+            tracks: playlist.tracks.total
+        }));
         
-        const nextTrack = queue[0] || null;
-        
-        res.json({ queue, nextTrack });
+        res.json({ playlists });
     } catch (error) {
-        console.error('Error fetching queue:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Failed to fetch queue' });
+        console.error('Error fetching playlists:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to fetch playlists' });
     }
 });
 
-// Get lyrics (enhanced with multiple sources and syncedlyrics support)
+// Get user's liked songs
+app.get('/api/liked-songs', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    try {
+        const response = await axios.get('https://api.spotify.com/v1/me/tracks?limit=50', {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        
+        const tracks = response.data.items.map(item => ({
+            id: item.track.id,
+            name: item.track.name,
+            artist: item.track.artists.map(a => a.name).join(', '),
+            image: item.track.album.images[0]?.url,
+            duration: item.track.duration_ms
+        }));
+        
+        res.json({ tracks });
+    } catch (error) {
+        console.error('Error fetching liked songs:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to fetch liked songs' });
+    }
+});
+
+// Enhanced player control endpoints
+app.post('/api/playback/play-pause', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    try {
+        // Get current playback state first
+        const statusResponse = await axios.get('https://api.spotify.com/v1/me/player', {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        
+        const isPlaying = statusResponse.data?.is_playing;
+        const deviceId = req.body.deviceId;
+        
+        let url, method;
+        if (isPlaying) {
+            url = 'https://api.spotify.com/v1/me/player/pause';
+            method = 'PUT';
+        } else {
+            url = 'https://api.spotify.com/v1/me/player/play';
+            method = 'PUT';
+        }
+        
+        await axios({
+            method,
+            url,
+            headers: { 'Authorization': `Bearer ${session.accessToken}` },
+            data: deviceId ? { device_ids: [deviceId] } : {}
+        });
+        
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error controlling playback:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: 'Failed to control playback' });
+    }
+});
+
+app.post('/api/playback/previous', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    try {
+        await axios.post('https://api.spotify.com/v1/me/player/previous', {}, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error skipping to previous track:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: 'Failed to skip to previous track' });
+    }
+});
+
+app.post('/api/playback/next', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    try {
+        await axios.post('https://api.spotify.com/v1/me/player/next', {}, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error skipping to next track:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: 'Failed to skip to next track' });
+    }
+});
+
+app.post('/api/playback/volume', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const { volume, set } = req.body;
+    
+    try {
+        await axios.put(`https://api.spotify.com/v1/me/player/volume?volume_percent=${volume}`, {}, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error setting volume:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: 'Failed to set volume' });
+    }
+});
+
+app.post('/api/playback/shuffle', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    try {
+        // Get current shuffle state first
+        const statusResponse = await axios.get('https://api.spotify.com/v1/me/player', {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        
+        const currentState = statusResponse.data?.shuffle_state;
+        const newState = !currentState;
+        
+        await axios.put(`https://api.spotify.com/v1/me/player/shuffle?state=${newState}`, {}, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error toggling shuffle:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: 'Failed to toggle shuffle' });
+    }
+});
+
+app.post('/api/playback/repeat', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const repeatModes = ['off', 'context', 'track'];
+    
+    try {
+        // Get current repeat state first
+        const statusResponse = await axios.get('https://api.spotify.com/v1/me/player', {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        
+        const currentState = statusResponse.data?.repeat_state;
+        const currentIndex = repeatModes.indexOf(currentState);
+        const nextIndex = (currentIndex + 1) % repeatModes.length;
+        const newState = repeatModes[nextIndex];
+        
+        await axios.put(`https://api.spotify.com/v1/me/player/repeat?state=${newState}`, {}, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        
+        res.json({ success: true, state: newState });
+    } catch (error) {
+        console.error('Error toggling repeat:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: 'Failed to toggle repeat' });
+    }
+});
+
+// Library management
+app.post('/api/library/add', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const { trackId } = req.body;
+    
+    try {
+        await axios.put(`https://api.spotify.com/v1/me/tracks?ids=${trackId}`, {}, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error adding track to library:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: 'Failed to add track to library' });
+    }
+});
+
+app.post('/api/library/remove', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const { trackId } = req.body;
+    
+    try {
+        await axios.delete(`https://api.spotify.com/v1/me/tracks?ids=${trackId}`, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error removing track from library:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: 'Failed to remove track from library' });
+    }
+});
+
+// Get lyrics
 app.get('/api/lyrics/:artist/:title', async (req, res) => {
     const { artist, title } = req.params;
     
     try {
-        // Try multiple lyrics sources
-        const sources = [
-            () => getLyricsFromSyncedLyrics(artist, title),
-            () => getLyricsFromOvh(artist, title)
-        ];
-        
-        for (const getSource of sources) {
-            try {
-                const result = await getSource();
-                if (result.success) {
-                    return res.json(result);
-                }
-            } catch (error) {
-                console.log(`Lyrics source failed: ${error.message}`);
-                continue;
-            }
-        }
-        
-        res.json({ success: false, error: '找不到歌詞' });
-    } catch (error) {
-        console.error('Error fetching lyrics:', error);
-        res.json({ success: false, error: '載入歌詞失敗' });
-    }
-});
-
-// Lyrics source implementations
-async function getLyricsFromSyncedLyrics(artist, title) {
-    try {
-        // 使用 syncedlyrics Python 包的 API (需要先安裝)
-        const { spawn } = require('child_process');
-        
-        return new Promise((resolve, reject) => {
-            const python = spawn('python', ['-c', `
-import syncedlyrics
-import json
-import sys
-
-try:
-    lyrics = syncedlyrics.search("${artist.replace(/"/g, '\\"')} ${title.replace(/"/g, '\\"')}")
-    if lyrics:
-        # 解析同步歌詞
-        lines = []
-        for line in lyrics.split('\\n'):
-            if line.strip():
-                if line.startswith('[') and ']' in line:
-                    # 時間戳格式: [mm:ss.xx]
-                    time_end = line.find(']')
-                    if time_end > 0:
-                        time_str = line[1:time_end]
-                        text = line[time_end+1:].strip()
-                        if text:
-                            try:
-                                # 解析時間
-                                if ':' in time_str:
-                                    parts = time_str.split(':')
-                                    minutes = int(parts[0])
-                                    seconds = float(parts[1])
-                                    time_ms = (minutes * 60 + seconds) * 1000
-                                    lines.append({"time": int(time_ms), "text": text})
-                                else:
-                                    lines.append({"text": text})
-                            except:
-                                lines.append({"text": text})
-                else:
-                    lines.append({"text": line.strip()})
-        
-        result = {
-            "success": True,
-            "lyrics": lines,
-            "type": "synced" if any("time" in line for line in lines) else "plain",
-            "source": "syncedlyrics"
-        }
-        print(json.dumps(result))
-    else:
-        print(json.dumps({"success": False, "error": "No lyrics found"}))
-except Exception as e:
-    print(json.dumps({"success": False, "error": str(e)}))
-            `]);
-            
-            let output = '';
-            let error = '';
-            
-            python.stdout.on('data', (data) => {
-                output += data.toString();
-            });
-            
-            python.stderr.on('data', (data) => {
-                error += data.toString();
-            });
-            
-            python.on('close', (code) => {
-                if (code === 0 && output.trim()) {
-                    try {
-                        const result = JSON.parse(output.trim());
-                        if (result.success) {
-                            resolve(result);
-                        } else {
-                            reject(new Error(result.error || 'No lyrics found'));
-                        }
-                    } catch (e) {
-                        reject(new Error('Failed to parse syncedlyrics output'));
-                    }
-                } else {
-                    reject(new Error(`syncedlyrics failed: ${error || 'Unknown error'}`));
-                }
-            });
+        // Simple lyrics implementation for Vercel
+        // In a production environment, you might want to integrate with a lyrics API
+        res.json({
+            success: true,
+            lyrics: [],
+            type: 'plain',
+            source: 'placeholder'
         });
     } catch (error) {
-        throw new Error(`syncedlyrics error: ${error.message}`);
-    }
-}
-
-async function getLyricsFromOvh(artist, title) {
-    const response = await axios.get(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
-    
-    if (response.data.lyrics) {
-        const lines = response.data.lyrics.split('\n').filter(line => line.trim() !== '');
-        return {
-            success: true,
-            lyrics: lines.map(text => ({ text })),
-            type: 'plain',
-            source: 'lyrics.ovh'
-        };
-    }
-    
-    throw new Error('No lyrics found');
-}
-
-// Color extraction endpoint
-app.post('/api/extract-colors', async (req, res) => {
-    const { imageUrl } = req.body;
-    
-    try {
-        // Simple color extraction (in production, use a proper image processing library)
-        const colors = [
-            { r: 102, g: 126, b: 234 },
-            { r: 118, g: 75, b: 162 },
-            { r: 240, g: 147, b: 251 }
-        ];
-        
-        res.json({ colors });
-    } catch (error) {
-        console.error('Error extracting colors:', error);
-        res.status(500).json({ error: 'Failed to extract colors' });
+        console.error('Error fetching lyrics:', error);
+        res.json({ success: false, error: 'Failed to fetch lyrics' });
     }
 });
 
