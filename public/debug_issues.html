@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Issues - Spotify Player</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: white;
+            padding: 20px;
+        }
+        .debug-section {
+            background: #2a2a2a;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border-left: 4px solid #1db954;
+        }
+        .debug-title {
+            color: #1db954;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .debug-info {
+            font-family: monospace;
+            background: #333;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 5px 0;
+        }
+        button {
+            background: #1db954;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1ed760;
+        }
+    </style>
+</head>
+<body>
+    <h1>🐛 Spotify Player Debug Tool</h1>
+    
+    <div class="debug-section">
+        <div class="debug-title">1. 音量控制問題檢查</div>
+        <button onclick="checkVolumeIssue()">檢查音量狀態</button>
+        <div id="volume-debug" class="debug-info"></div>
+    </div>
+
+    <div class="debug-section">
+        <div class="debug-title">2. 隨機播放按鈕問題檢查</div>
+        <button onclick="checkShuffleIssue()">檢查隨機播放狀態</button>
+        <div id="shuffle-debug" class="debug-info"></div>
+    </div>
+
+    <div class="debug-section">
+        <div class="debug-title">3. 背景圖片問題檢查</div>
+        <button onclick="checkBackgroundIssue()">檢查背景設置</button>
+        <div id="background-debug" class="debug-info"></div>
+    </div>
+
+    <div class="debug-section">
+        <div class="debug-title">4. API 回應檢查</div>
+        <button onclick="checkAPIResponse()">檢查 API 回應</button>
+        <div id="api-debug" class="debug-info"></div>
+    </div>
+
+    <script>
+        async function checkVolumeIssue() {
+            const debugDiv = document.getElementById('volume-debug');
+            debugDiv.innerHTML = '檢查中...';
+            
+            try {
+                const response = await fetch('/api/current-track');
+                const data = await response.json();
+                
+                let debugInfo = `
+API 回應狀態: ${response.status}
+設備資訊: ${JSON.stringify(data.device, null, 2)}
+音量值: ${data.device?.volume}
+音量類型: ${typeof data.device?.volume}
+                `;
+                
+                // 檢查頁面上的音量控制
+                const volumeSlider = document.querySelector('#volume-slider');
+                const volumeValue = document.querySelector('#volume-value');
+                
+                if (window.parent && window.parent.spotifyPlayer) {
+                    const player = window.parent.spotifyPlayer;
+                    debugInfo += `
+頁面音量滑塊值: ${volumeSlider?.value || '未找到'}
+頁面音量顯示: ${volumeValue?.textContent || '未找到'}
+播放器當前音量: ${player.currentTrack?.device?.volume || '未設置'}
+                    `;
+                }
+                
+                debugDiv.innerHTML = `<pre>${debugInfo}</pre>`;
+            } catch (error) {
+                debugDiv.innerHTML = `錯誤: ${error.message}`;
+            }
+        }
+
+        async function checkShuffleIssue() {
+            const debugDiv = document.getElementById('shuffle-debug');
+            debugDiv.innerHTML = '檢查中...';
+            
+            try {
+                const response = await fetch('/api/current-track');
+                const data = await response.json();
+                
+                let debugInfo = `
+API 回應狀態: ${response.status}
+隨機播放狀態: ${data.shuffle_state}
+智慧隨機播放: ${data.smart_shuffle}
+重複播放狀態: ${data.repeat_state}
+狀態類型: shuffle_state=${typeof data.shuffle_state}, smart_shuffle=${typeof data.smart_shuffle}
+                `;
+                
+                // 檢查頁面上的按鈕狀態
+                if (window.parent && window.parent.spotifyPlayer) {
+                    const player = window.parent.spotifyPlayer;
+                    const shuffleBtn = window.parent.document.querySelector('#shuffle-btn');
+                    
+                    debugInfo += `
+播放器隨機狀態: ${player.shuffleState}
+播放器智慧隨機: ${player.smartShuffle}
+按鈕 active 類: ${shuffleBtn?.classList.contains('active')}
+按鈕樣式: ${shuffleBtn?.style.background}
+                    `;
+                }
+                
+                debugDiv.innerHTML = `<pre>${debugInfo}</pre>`;
+            } catch (error) {
+                debugDiv.innerHTML = `錯誤: ${error.message}`;
+            }
+        }
+
+        async function checkBackgroundIssue() {
+            const debugDiv = document.getElementById('background-debug');
+            debugDiv.innerHTML = '檢查中...';
+            
+            try {
+                const response = await fetch('/api/current-track');
+                const data = await response.json();
+                
+                let debugInfo = `
+API 回應狀態: ${response.status}
+專輯封面 URL: ${data.image}
+圖片可訪問性: `;
+                
+                // 測試圖片是否可以載入
+                if (data.image) {
+                    const img = new Image();
+                    img.onload = () => {
+                        debugInfo += '✅ 可以載入\n';
+                        
+                        // 檢查背景設置
+                        const bgContainer = window.parent.document.getElementById('album-bg-container');
+                        debugInfo += `
+背景容器存在: ${!!bgContainer}
+背景容器樣式: ${bgContainer?.style.backgroundImage || '未設置'}
+Body 背景: ${window.parent.document.body.style.backgroundImage || '未設置'}
+                        `;
+                        
+                        debugDiv.innerHTML = `<pre>${debugInfo}</pre>`;
+                    };
+                    img.onerror = () => {
+                        debugInfo += '❌ 無法載入\n';
+                        debugDiv.innerHTML = `<pre>${debugInfo}</pre>`;
+                    };
+                    img.src = data.image;
+                } else {
+                    debugInfo += '❌ 沒有圖片 URL\n';
+                    debugDiv.innerHTML = `<pre>${debugInfo}</pre>`;
+                }
+                
+            } catch (error) {
+                debugDiv.innerHTML = `錯誤: ${error.message}`;
+            }
+        }
+
+        async function checkAPIResponse() {
+            const debugDiv = document.getElementById('api-debug');
+            debugDiv.innerHTML = '檢查中...';
+            
+            try {
+                const response = await fetch('/api/current-track');
+                const data = await response.json();
+                
+                const debugInfo = `
+完整 API 回應:
+${JSON.stringify(data, null, 2)}
+                `;
+                
+                debugDiv.innerHTML = `<pre>${debugInfo}</pre>`;
+            } catch (error) {
+                debugDiv.innerHTML = `錯誤: ${error.message}`;
+            }
+        }
+
+        // 自動檢查
+        window.onload = () => {
+            setTimeout(() => {
+                checkAPIResponse();
+            }, 1000);
+        };
+    </script>
+</body>
+</html>

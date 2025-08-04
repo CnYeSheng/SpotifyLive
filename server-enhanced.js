@@ -1,7 +1,4 @@
 const express = require('express');
-const https = require('https');
-const fs = require('fs');
-const path = require('path');
 const cors = require('cors');
 const axios = require('axios');
 require('dotenv').config();
@@ -91,6 +88,46 @@ app.get('/callback', async (req, res) => {
     }
 });
 
+// Refresh access token
+async function refreshAccessToken(session) {
+    if (!session.refreshToken) return false;
+    
+    try {
+        const response = await axios.post('https://accounts.spotify.com/api/token',
+            new URLSearchParams({
+                grant_type: 'refresh_token',
+                refresh_token: session.refreshToken,
+                client_id: CLIENT_ID,
+                client_secret: CLIENT_SECRET
+            }),
+            {
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            }
+        );
+        
+        session.accessToken = response.data.access_token;
+        if (response.data.refresh_token) {
+            session.refreshToken = response.data.refresh_token;
+        }
+        session.expiresAt = Date.now() + (response.data.expires_in * 1000);
+        return true;
+    } catch (error) {
+        console.error('Error refreshing token:', error.response?.data || error.message);
+        return false;
+    }
+}
+
+// Check authentication status
+app.get('/api/auth-status', (req, res) => {
+    const session = getUserSession(req);
+    res.json({ 
+        authenticated: !!session,
+        sessionId: session ? req.headers['x-session-id'] || req.query.sessionId : null
+    });
+});
+
 // Get currently playing track with enhanced information
 app.get('/api/current-track', async (req, res) => {
     const session = getUserSession(req);
@@ -161,46 +198,6 @@ app.get('/api/current-track', async (req, res) => {
     }
 });
 
-// Refresh access token
-async function refreshAccessToken(session) {
-    if (!session.refreshToken) return false;
-    
-    try {
-        const response = await axios.post('https://accounts.spotify.com/api/token',
-            new URLSearchParams({
-                grant_type: 'refresh_token',
-                refresh_token: session.refreshToken,
-                client_id: CLIENT_ID,
-                client_secret: CLIENT_SECRET
-            }),
-            {
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                }
-            }
-        );
-        
-        session.accessToken = response.data.access_token;
-        if (response.data.refresh_token) {
-            session.refreshToken = response.data.refresh_token;
-        }
-        session.expiresAt = Date.now() + (response.data.expires_in * 1000);
-        return true;
-    } catch (error) {
-        console.error('Error refreshing token:', error.response?.data || error.message);
-        return false;
-    }
-}
-
-// Check authentication status
-app.get('/api/auth-status', (req, res) => {
-    const session = getUserSession(req);
-    res.json({ 
-        authenticated: !!session,
-        sessionId: session ? req.headers['x-session-id'] || req.query.sessionId : null
-    });
-});
-
 // Get available devices
 app.get('/api/devices', async (req, res) => {
     const session = getUserSession(req);
@@ -228,7 +225,7 @@ app.put('/api/player/:action', async (req, res) => {
     }
     
     const { action } = req.params;
-    const { device_id, volume_percent, state, trackId, uris, device_ids, play, isPlaying } = req.body;
+    const { device_id, volume_percent, state, trackId, uris, device_ids, play } = req.body;
     
     try {
         let url = `https://api.spotify.com/v1/me/player/${action}`;
@@ -237,7 +234,7 @@ app.put('/api/player/:action', async (req, res) => {
         
         switch (action) {
             case 'play-pause':
-                url = isPlaying ? 
+                url = req.body.isPlaying ? 
                     'https://api.spotify.com/v1/me/player/pause' : 
                     'https://api.spotify.com/v1/me/player/play';
                 if (device_id) data.device_ids = [device_id];
@@ -328,15 +325,16 @@ app.get('/api/player/queue', async (req, res) => {
     }
 });
 
-// Get lyrics (enhanced with multiple sources and syncedlyrics support)
+// Get lyrics (enhanced with multiple sources)
 app.get('/api/lyrics/:artist/:title', async (req, res) => {
     const { artist, title } = req.params;
     
     try {
         // Try multiple lyrics sources
         const sources = [
-            () => getLyricsFromSyncedLyrics(artist, title),
-            () => getLyricsFromOvh(artist, title)
+            () => getLyricsFromOvh(artist, title),
+            () => getLyricsFromMusixmatch(artist, title),
+            () => getLyricsFromGenius(artist, title)
         ];
         
         for (const getSource of sources) {
@@ -359,92 +357,6 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
 });
 
 // Lyrics source implementations
-async function getLyricsFromSyncedLyrics(artist, title) {
-    try {
-        // 使用 syncedlyrics Python 包的 API (需要先安裝)
-        const { spawn } = require('child_process');
-        
-        return new Promise((resolve, reject) => {
-            const python = spawn('python', ['-c', `
-import syncedlyrics
-import json
-import sys
-
-try:
-    lyrics = syncedlyrics.search("${artist.replace(/"/g, '\\"')} ${title.replace(/"/g, '\\"')}")
-    if lyrics:
-        # 解析同步歌詞
-        lines = []
-        for line in lyrics.split('\\n'):
-            if line.strip():
-                if line.startswith('[') and ']' in line:
-                    # 時間戳格式: [mm:ss.xx]
-                    time_end = line.find(']')
-                    if time_end > 0:
-                        time_str = line[1:time_end]
-                        text = line[time_end+1:].strip()
-                        if text:
-                            try:
-                                # 解析時間
-                                if ':' in time_str:
-                                    parts = time_str.split(':')
-                                    minutes = int(parts[0])
-                                    seconds = float(parts[1])
-                                    time_ms = (minutes * 60 + seconds) * 1000
-                                    lines.append({"time": int(time_ms), "text": text})
-                                else:
-                                    lines.append({"text": text})
-                            except:
-                                lines.append({"text": text})
-                else:
-                    lines.append({"text": line.strip()})
-        
-        result = {
-            "success": True,
-            "lyrics": lines,
-            "type": "synced" if any("time" in line for line in lines) else "plain",
-            "source": "syncedlyrics"
-        }
-        print(json.dumps(result))
-    else:
-        print(json.dumps({"success": False, "error": "No lyrics found"}))
-except Exception as e:
-    print(json.dumps({"success": False, "error": str(e)}))
-            `]);
-            
-            let output = '';
-            let error = '';
-            
-            python.stdout.on('data', (data) => {
-                output += data.toString();
-            });
-            
-            python.stderr.on('data', (data) => {
-                error += data.toString();
-            });
-            
-            python.on('close', (code) => {
-                if (code === 0 && output.trim()) {
-                    try {
-                        const result = JSON.parse(output.trim());
-                        if (result.success) {
-                            resolve(result);
-                        } else {
-                            reject(new Error(result.error || 'No lyrics found'));
-                        }
-                    } catch (e) {
-                        reject(new Error('Failed to parse syncedlyrics output'));
-                    }
-                } else {
-                    reject(new Error(`syncedlyrics failed: ${error || 'Unknown error'}`));
-                }
-            });
-        });
-    } catch (error) {
-        throw new Error(`syncedlyrics error: ${error.message}`);
-    }
-}
-
 async function getLyricsFromOvh(artist, title) {
     const response = await axios.get(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
     
@@ -459,6 +371,16 @@ async function getLyricsFromOvh(artist, title) {
     }
     
     throw new Error('No lyrics found');
+}
+
+async function getLyricsFromMusixmatch(artist, title) {
+    // Placeholder for Musixmatch API (requires API key)
+    throw new Error('Musixmatch not implemented');
+}
+
+async function getLyricsFromGenius(artist, title) {
+    // Placeholder for Genius API (requires API key)
+    throw new Error('Genius not implemented');
 }
 
 // Color extraction endpoint
@@ -480,87 +402,6 @@ app.post('/api/extract-colors', async (req, res) => {
     }
 });
 
-// 創建自簽名證書的函數
-function createSelfSignedCert() {
-  const certDir = path.join(__dirname, 'certs');
-  const keyPath = path.join(certDir, 'key.pem');
-  const certPath = path.join(certDir, 'cert.pem');
-
-  // 檢查證書是否已存在
-  if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
-    return { keyPath, certPath };
-  }
-
-  // 創建證書目錄
-  if (!fs.existsSync(certDir)) {
-    fs.mkdirSync(certDir, { recursive: true });
-  }
-
-  // 生成自簽名證書的命令
-  const { execSync } = require('child_process');
-  
-  try {
-    console.log('正在生成自簽名 SSL 證書...');
-    
-    // 使用 OpenSSL 生成私鑰和證書
-    execSync(`openssl req -x509 -newkey rsa:4096 -keyout "${keyPath}" -out "${certPath}" -days 365 -nodes -subj "/C=TW/ST=Taiwan/L=Taipei/O=SpotifyLyricsPlayer/CN=localhost"`, {
-      stdio: 'inherit'
-    });
-    
-    console.log('SSL 證書生成成功！');
-    return { keyPath, certPath };
-  } catch (error) {
-    console.warn('無法生成 SSL 證書，將使用預設證書');
-    
-    // 如果 OpenSSL 不可用，創建簡單的自簽名證書
-    const forge = require('node-forge');
-    const pki = forge.pki;
-    
-    // 生成密鑰對
-    const keys = pki.rsa.generateKeyPair(2048);
-    
-    // 創建證書
-    const cert = pki.createCertificate();
-    cert.publicKey = keys.publicKey;
-    cert.serialNumber = '01';
-    cert.validity.notBefore = new Date();
-    cert.validity.notAfter = new Date();
-    cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 1);
-    
-    const attrs = [{
-      name: 'commonName',
-      value: 'localhost'
-    }, {
-      name: 'countryName',
-      value: 'TW'
-    }, {
-      shortName: 'ST',
-      value: 'Taiwan'
-    }, {
-      name: 'localityName',
-      value: 'Taipei'
-    }, {
-      name: 'organizationName',
-      value: 'SpotifyLyricsPlayer'
-    }];
-    
-    cert.setSubject(attrs);
-    cert.setIssuer(attrs);
-    cert.sign(keys.privateKey);
-    
-    // 保存證書和私鑰
-    const certPem = pki.certificateToPem(cert);
-    const keyPem = pki.privateKeyToPem(keys.privateKey);
-    
-    fs.writeFileSync(certPath, certPem);
-    fs.writeFileSync(keyPath, keyPem);
-    
-    console.log('使用 Node.js 生成的自簽名證書');
-    return { keyPath, certPath };
-  }
-}
-
-// 啟動服務器 (HTTP 模式，簡化部署)
 app.listen(PORT, () => {
     console.log(`🎵 Enhanced Spotify 歌詞播放器已啟動！`);
     console.log(`🌐 伺服器運行於: http://localhost:${PORT}`);

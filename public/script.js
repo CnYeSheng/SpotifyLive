@@ -113,6 +113,11 @@ class SpotifyLyricsPlayer {
         this.pauseIcon = document.getElementById('pause-icon');
         this.prevBtn = document.getElementById('prev-btn');
         this.nextBtn = document.getElementById('next-btn');
+        this.shuffleBtn = document.getElementById('shuffle-btn');
+        this.repeatBtn = document.getElementById('repeat-btn');
+        this.addToPlaylistBtn = document.getElementById('add-to-playlist-btn');
+        this.playlistBtn = document.getElementById('playlist-btn');
+        this.devicesBtn = document.getElementById('devices-btn');
         this.volumeSlider = document.getElementById('volume-slider');
         this.volumeValue = document.getElementById('volume-value');
         this.deviceInfo = document.getElementById('device-info');
@@ -125,6 +130,18 @@ class SpotifyLyricsPlayer {
         this.fontSizeModal = document.getElementById('font-size-modal');
         this.closeModalBtn = document.getElementById('close-modal');
         this.fontOptions = document.querySelectorAll('.font-option');
+        this.playlistModal = document.getElementById('playlist-modal');
+        this.closePlaylistModalBtn = document.getElementById('close-playlist-modal');
+        this.playlistContent = document.getElementById('playlist-content');
+        this.devicesModal = document.getElementById('devices-modal');
+        this.closeDevicesModalBtn = document.getElementById('close-devices-modal');
+        this.devicesContent = document.getElementById('devices-content');
+        
+        // 播放狀態
+        this.shuffleState = false;
+        this.repeatState = 'off'; // 'off', 'context', 'track'
+        this.smartShuffle = false;
+        this.isPremium = false;
     }
 
     bindEvents() {
@@ -197,6 +214,49 @@ class SpotifyLyricsPlayer {
         this.volumeSlider?.addEventListener('change', (e) => {
             const volume = parseInt(e.target.value);
             this.setVolume(volume);
+        });
+
+        // 新功能按鈕事件
+        this.shuffleBtn?.addEventListener('click', () => {
+            this.toggleShuffle();
+        });
+
+        this.repeatBtn?.addEventListener('click', () => {
+            this.toggleRepeat();
+        });
+
+        this.addToPlaylistBtn?.addEventListener('click', () => {
+            this.addToLikedSongs();
+        });
+
+        this.playlistBtn?.addEventListener('click', () => {
+            this.showPlaylistModal();
+        });
+
+        this.devicesBtn?.addEventListener('click', () => {
+            this.showDevicesModal();
+        });
+
+        // 模態框關閉事件
+        this.closePlaylistModalBtn?.addEventListener('click', () => {
+            this.playlistModal.style.display = 'none';
+        });
+
+        this.closeDevicesModalBtn?.addEventListener('click', () => {
+            this.devicesModal.style.display = 'none';
+        });
+
+        // 點擊模態框背景關閉
+        this.playlistModal?.addEventListener('click', (e) => {
+            if (e.target === this.playlistModal) {
+                this.playlistModal.style.display = 'none';
+            }
+        });
+
+        this.devicesModal?.addEventListener('click', (e) => {
+            if (e.target === this.devicesModal) {
+                this.devicesModal.style.display = 'none';
+            }
         });
     }
 
@@ -355,12 +415,34 @@ class SpotifyLyricsPlayer {
             this.deviceInfo.style.display = 'block';
             
             // 更新音量滑塊
-            if (this.currentTrack.device.volume !== null && this.volumeSlider) {
+            if (this.currentTrack.device.volume !== null && this.currentTrack.device.volume !== undefined && this.volumeSlider) {
                 this.volumeSlider.value = this.currentTrack.device.volume;
                 this.volumeValue.textContent = `${this.currentTrack.device.volume}%`;
             }
         } else if (this.deviceInfo) {
             this.deviceInfo.style.display = 'none';
+        }
+
+        // 更新播放狀態和 Premium 狀態
+        if (this.currentTrack.shuffle_state !== undefined) {
+            this.shuffleState = this.currentTrack.shuffle_state;
+            this.updateShuffleButton();
+        }
+        
+        if (this.currentTrack.repeat_state !== undefined) {
+            this.repeatState = this.currentTrack.repeat_state;
+            this.updateRepeatButton();
+        }
+
+        if (this.currentTrack.is_premium !== undefined) {
+            this.isPremium = this.currentTrack.is_premium;
+            this.updatePremiumButtons();
+        }
+
+        // 檢查智慧隨機播放
+        if (this.currentTrack.smart_shuffle !== undefined) {
+            this.smartShuffle = this.currentTrack.smart_shuffle;
+            this.updateShuffleButton();
         }
     }
 
@@ -894,26 +976,75 @@ class SpotifyLyricsPlayer {
         return sortedColors;
     }
 
-    // 更新動態背景
+    // 更新動態背景 - 使用專輯封面霧化效果
     updateDynamicBackground(colors) {
         const body = document.body;
         
-        // 創建漸層顏色
+        if (this.currentTrack && this.currentTrack.image) {
+            // 創建背景容器
+            let bgContainer = document.getElementById('album-bg-container');
+            if (!bgContainer) {
+                bgContainer = document.createElement('div');
+                bgContainer.id = 'album-bg-container';
+                bgContainer.style.cssText = `
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    z-index: -1;
+                    transition: opacity 1s ease;
+                `;
+                document.body.appendChild(bgContainer);
+            }
+            
+            // 設置專輯封面背景
+            bgContainer.style.backgroundImage = `url(${this.currentTrack.image})`;
+            bgContainer.style.backgroundSize = 'cover';
+            bgContainer.style.backgroundPosition = 'center';
+            bgContainer.style.backgroundRepeat = 'no-repeat';
+            bgContainer.style.filter = 'blur(30px) brightness(0.3)';
+            bgContainer.style.transform = 'scale(1.1)'; // 稍微放大避免邊緣模糊
+            bgContainer.style.opacity = '1';
+            
+            // 重置 body 背景為純色
+            body.style.backgroundImage = 'none';
+            body.style.backgroundColor = '#000000';
+        } else {
+            // 降級到顏色漸層背景
+            // 移除專輯背景容器
+            const bgContainer = document.getElementById('album-bg-container');
+            if (bgContainer) {
+                bgContainer.style.opacity = '0';
+                setTimeout(() => {
+                    if (bgContainer.parentNode) {
+                        bgContainer.parentNode.removeChild(bgContainer);
+                    }
+                }, 1000);
+            }
+            
+            const color1 = `rgb(${colors[0].r}, ${colors[0].g}, ${colors[0].b})`;
+            const color2 = `rgb(${colors[1].r}, ${colors[1].g}, ${colors[1].b})`;
+            const color3 = `rgb(${colors[2].r}, ${colors[2].g}, ${colors[2].b})`;
+            
+            const backgroundStyle = `
+                radial-gradient(circle at 20% 80%, ${color1} 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, ${color2} 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, ${color3} 0%, transparent 50%)
+            `;
+            
+            body.style.backgroundImage = backgroundStyle;
+            body.style.backgroundSize = '120% 120%';
+            body.style.backgroundPosition = 'center';
+            body.style.backgroundAttachment = 'fixed';
+            body.style.backgroundColor = '#000000';
+        }
+        
+        // 更新 CSS 變數以供其他元素使用
         const color1 = `rgb(${colors[0].r}, ${colors[0].g}, ${colors[0].b})`;
         const color2 = `rgb(${colors[1].r}, ${colors[1].g}, ${colors[1].b})`;
         const color3 = `rgb(${colors[2].r}, ${colors[2].g}, ${colors[2].b})`;
         
-        // 創建動態背景樣式
-        const backgroundStyle = `
-            radial-gradient(circle at 20% 80%, ${color1} 0%, transparent 50%),
-            radial-gradient(circle at 80% 20%, ${color2} 0%, transparent 50%),
-            radial-gradient(circle at 40% 40%, ${color3} 0%, transparent 50%)
-        `;
-        
-        // 平滑過渡到新背景
-        body.style.backgroundImage = backgroundStyle;
-        
-        // 更新 CSS 變數以供其他元素使用
         document.documentElement.style.setProperty('--album-color-1', color1);
         document.documentElement.style.setProperty('--album-color-2', color2);
         document.documentElement.style.setProperty('--album-color-3', color3);
@@ -967,6 +1098,356 @@ class SpotifyLyricsPlayer {
         if (this.currentTrack && this.currentTrack.isPlaying) {
             animate();
         }
+    }
+
+    // 新功能實現方法
+    async toggleShuffle() {
+        if (!this.isPremium) {
+            this.showPremiumRequiredMessage('隨機播放功能需要 Spotify Premium');
+            return;
+        }
+
+        try {
+            const headers = { 'Content-Type': 'application/json' };
+            if (this.sessionId) {
+                headers['X-Session-Id'] = this.sessionId;
+            }
+
+            const response = await fetch('/api/player/shuffle', {
+                method: 'PUT',
+                headers: headers,
+                body: JSON.stringify({ state: !this.shuffleState })
+            });
+
+            if (response.ok) {
+                this.shuffleState = !this.shuffleState;
+                this.updateShuffleButton();
+                setTimeout(() => this.checkCurrentTrack(), 500);
+            }
+        } catch (error) {
+            console.error('切換隨機播放失敗:', error);
+        }
+    }
+
+    async toggleRepeat() {
+        if (!this.isPremium) {
+            this.showPremiumRequiredMessage('重複播放功能需要 Spotify Premium');
+            return;
+        }
+
+        try {
+            const headers = { 'Content-Type': 'application/json' };
+            if (this.sessionId) {
+                headers['X-Session-Id'] = this.sessionId;
+            }
+
+            // 循環切換: off -> context -> track -> off
+            let nextState = 'off';
+            if (this.repeatState === 'off') nextState = 'context';
+            else if (this.repeatState === 'context') nextState = 'track';
+
+            const response = await fetch('/api/player/repeat', {
+                method: 'PUT',
+                headers: headers,
+                body: JSON.stringify({ state: nextState })
+            });
+
+            if (response.ok) {
+                this.repeatState = nextState;
+                this.updateRepeatButton();
+                setTimeout(() => this.checkCurrentTrack(), 500);
+            }
+        } catch (error) {
+            console.error('切換重複播放失敗:', error);
+        }
+    }
+
+    async addToLikedSongs() {
+        if (!this.currentTrack) return;
+
+        try {
+            const headers = { 'Content-Type': 'application/json' };
+            if (this.sessionId) {
+                headers['X-Session-Id'] = this.sessionId;
+            }
+
+            const response = await fetch('/api/player/save-track', {
+                method: 'PUT',
+                headers: headers,
+                body: JSON.stringify({ trackId: this.currentTrack.id })
+            });
+
+            if (response.ok) {
+                this.showSuccessMessage('✅ 已加入已按讚的歌曲');
+            } else {
+                const data = await response.json();
+                this.showErrorMessage(data.error || '加入播放清單失敗');
+            }
+        } catch (error) {
+            console.error('加入播放清單失敗:', error);
+            this.showErrorMessage('加入播放清單失敗');
+        }
+    }
+
+    async showPlaylistModal() {
+        this.playlistModal.style.display = 'flex';
+        this.playlistContent.innerHTML = '<div class="loading">載入中...</div>';
+
+        try {
+            const headers = {};
+            if (this.sessionId) {
+                headers['X-Session-Id'] = this.sessionId;
+            }
+
+            const response = await fetch('/api/player/queue', { headers });
+            if (response.ok) {
+                const data = await response.json();
+                this.displayPlaylist(data.queue || []);
+            } else {
+                this.playlistContent.innerHTML = '<div class="loading">無法載入播放清單</div>';
+            }
+        } catch (error) {
+            console.error('載入播放清單失敗:', error);
+            this.playlistContent.innerHTML = '<div class="loading">載入失敗</div>';
+        }
+    }
+
+    displayPlaylist(tracks) {
+        if (!tracks || tracks.length === 0) {
+            this.playlistContent.innerHTML = '<div class="loading">播放清單為空</div>';
+            return;
+        }
+
+        const playlistHTML = tracks.map((track, index) => `
+            <div class="playlist-item ${track.id === this.currentTrack?.id ? 'current' : ''}" data-track-id="${track.id}">
+                <img src="${track.image || ''}" alt="${track.name}" onerror="this.style.display='none'">
+                <div class="playlist-item-info">
+                    <div class="playlist-item-title">${this.escapeHtml(track.name)}</div>
+                    <div class="playlist-item-artist">${this.escapeHtml(track.artist)}</div>
+                </div>
+            </div>
+        `).join('');
+
+        this.playlistContent.innerHTML = playlistHTML;
+
+        // 添加點擊事件
+        this.playlistContent.querySelectorAll('.playlist-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const trackId = item.dataset.trackId;
+                this.playTrack(trackId);
+            });
+        });
+    }
+
+    async showDevicesModal() {
+        this.devicesModal.style.display = 'flex';
+        this.devicesContent.innerHTML = '<div class="loading">載入中...</div>';
+
+        try {
+            const headers = {};
+            if (this.sessionId) {
+                headers['X-Session-Id'] = this.sessionId;
+            }
+
+            const response = await fetch('/api/devices', { headers });
+            if (response.ok) {
+                const data = await response.json();
+                this.displayDevices(data.devices || []);
+            } else {
+                this.devicesContent.innerHTML = '<div class="loading">無法載入設備</div>';
+            }
+        } catch (error) {
+            console.error('載入設備失敗:', error);
+            this.devicesContent.innerHTML = '<div class="loading">載入失敗</div>';
+        }
+    }
+
+    displayDevices(devices) {
+        if (!devices || devices.length === 0) {
+            this.devicesContent.innerHTML = '<div class="loading">沒有可用設備</div>';
+            return;
+        }
+
+        const devicesHTML = devices.map(device => `
+            <div class="device-item ${device.is_active ? 'active' : ''}" data-device-id="${device.id}">
+                <div class="device-icon">
+                    ${this.getDeviceIcon(device.type)}
+                </div>
+                <div class="device-info-modal">
+                    <div class="device-name">${this.escapeHtml(device.name)}</div>
+                    <div class="device-type">${this.escapeHtml(device.type)} ${device.volume_percent !== null ? `• ${device.volume_percent}%` : ''}</div>
+                </div>
+            </div>
+        `).join('');
+
+        this.devicesContent.innerHTML = devicesHTML;
+
+        // 添加點擊事件
+        this.devicesContent.querySelectorAll('.device-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const deviceId = item.dataset.deviceId;
+                this.transferPlayback(deviceId);
+            });
+        });
+    }
+
+    getDeviceIcon(type) {
+        const icons = {
+            'Computer': '💻',
+            'Smartphone': '📱',
+            'Speaker': '🔊',
+            'TV': '📺',
+            'Tablet': '📱',
+            'CastAudio': '📻',
+            'CastVideo': '📺',
+            'Automobile': '🚗',
+            'Unknown': '🎵'
+        };
+        return icons[type] || icons['Unknown'];
+    }
+
+    async transferPlayback(deviceId) {
+        if (!this.isPremium) {
+            this.showPremiumRequiredMessage('設備投放功能需要 Spotify Premium');
+            return;
+        }
+
+        try {
+            const headers = { 'Content-Type': 'application/json' };
+            if (this.sessionId) {
+                headers['X-Session-Id'] = this.sessionId;
+            }
+
+            const response = await fetch('/api/player/transfer', {
+                method: 'PUT',
+                headers: headers,
+                body: JSON.stringify({ device_ids: [deviceId], play: true })
+            });
+
+            if (response.ok) {
+                this.devicesModal.style.display = 'none';
+                this.showSuccessMessage('✅ 已切換播放設備');
+                setTimeout(() => this.checkCurrentTrack(), 1000);
+            } else {
+                const data = await response.json();
+                this.showErrorMessage(data.error || '切換設備失敗');
+            }
+        } catch (error) {
+            console.error('切換設備失敗:', error);
+            this.showErrorMessage('切換設備失敗');
+        }
+    }
+
+    async playTrack(trackId) {
+        if (!this.isPremium) {
+            this.showPremiumRequiredMessage('播放指定歌曲需要 Spotify Premium');
+            return;
+        }
+
+        try {
+            const headers = { 'Content-Type': 'application/json' };
+            if (this.sessionId) {
+                headers['X-Session-Id'] = this.sessionId;
+            }
+
+            const response = await fetch('/api/player/play', {
+                method: 'PUT',
+                headers: headers,
+                body: JSON.stringify({ uris: [`spotify:track:${trackId}`] })
+            });
+
+            if (response.ok) {
+                this.playlistModal.style.display = 'none';
+                setTimeout(() => this.checkCurrentTrack(), 500);
+            }
+        } catch (error) {
+            console.error('播放歌曲失敗:', error);
+        }
+    }
+
+    updateShuffleButton() {
+        if (this.shuffleBtn) {
+            // 檢查是否為智慧隨機播放
+            const isSmartShuffle = this.smartShuffle || false;
+            const isRegularShuffle = this.shuffleState && !isSmartShuffle;
+            
+            // 強制更新按鈕狀態
+            this.shuffleBtn.classList.remove('active');
+            if (this.shuffleState) {
+                this.shuffleBtn.classList.add('active');
+            }
+            
+            if (isSmartShuffle) {
+                this.shuffleBtn.title = '智慧隨機播放';
+                this.shuffleBtn.style.setProperty('background', 'linear-gradient(135deg, #1db954, #1ed760)', 'important');
+            } else if (isRegularShuffle) {
+                this.shuffleBtn.title = '隨機播放';
+                this.shuffleBtn.style.removeProperty('background');
+            } else {
+                this.shuffleBtn.title = '開啟隨機播放';
+                this.shuffleBtn.style.removeProperty('background');
+            }
+        }
+    }
+
+    updateRepeatButton() {
+        if (this.repeatBtn) {
+            this.repeatBtn.classList.remove('active');
+            if (this.repeatState !== 'off') {
+                this.repeatBtn.classList.add('active');
+            }
+            
+            const titles = {
+                'off': '開啟重複播放',
+                'context': '重複播放清單',
+                'track': '單首重複播放'
+            };
+            this.repeatBtn.title = titles[this.repeatState] || '重複播放';
+        }
+    }
+
+    updatePremiumButtons() {
+        const premiumButtons = [this.shuffleBtn, this.repeatBtn, this.devicesBtn];
+        premiumButtons.forEach(btn => {
+            if (btn) {
+                btn.classList.toggle('disabled', !this.isPremium);
+            }
+        });
+    }
+
+    showPremiumRequiredMessage(message) {
+        this.showErrorMessage(`${message}\n請升級到 Spotify Premium 以使用此功能`);
+    }
+
+    showErrorMessage(message) {
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #ff4757, #ff3742);
+            color: white;
+            padding: 16px 24px;
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(255, 71, 87, 0.3);
+            z-index: 1000;
+            font-weight: 600;
+            animation: slideIn 0.3s ease;
+            max-width: 300px;
+            white-space: pre-line;
+        `;
+        errorDiv.textContent = message;
+        
+        document.body.appendChild(errorDiv);
+        
+        setTimeout(() => {
+            errorDiv.style.animation = 'slideIn 0.3s ease reverse';
+            setTimeout(() => {
+                if (errorDiv.parentNode) {
+                    errorDiv.parentNode.removeChild(errorDiv);
+                }
+            }, 300);
+        }, 4000);
     }
 }
 
