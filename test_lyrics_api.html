@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>歌詞 API 測試</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+        .test-section {
+            background: #2a2a2a;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 10px;
+        }
+        input, button {
+            padding: 10px;
+            margin: 5px;
+            border-radius: 5px;
+            border: 1px solid #444;
+            background: #333;
+            color: white;
+        }
+        button {
+            background: #1db954;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #1ed760;
+        }
+        .result {
+            background: #333;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .lyrics-line {
+            padding: 2px 0;
+            border-bottom: 1px solid #444;
+        }
+        .error {
+            color: #ff6b6b;
+        }
+        .success {
+            color: #51cf66;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎵 歌詞 API 測試工具</h1>
+    
+    <div class="test-section">
+        <h2>測試歌詞獲取</h2>
+        <div>
+            <input type="text" id="artist" placeholder="歌手名稱" value="周杰倫">
+            <input type="text" id="title" placeholder="歌曲名稱" value="青花瓷">
+            <button onclick="testLyrics()">獲取歌詞</button>
+        </div>
+        <div id="lyricsResult" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>直接測試外部 API</h2>
+        <button onclick="testDirectAPI()">測試 wmcc API 連接</button>
+        <div id="directResult" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>測試本地 API</h2>
+        <button onclick="testLocalAPI()">測試本地歌詞 API</button>
+        <div id="localResult" class="result"></div>
+    </div>
+
+    <script>
+        async function testLyrics() {
+            const artist = document.getElementById('artist').value;
+            const title = document.getElementById('title').value;
+            const resultDiv = document.getElementById('lyricsResult');
+            
+            if (!artist || !title) {
+                resultDiv.innerHTML = '<span class="error">請輸入歌手和歌曲名稱</span>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '🔄 正在獲取歌詞...';
+            
+            try {
+                const response = await fetch(`/api/lyrics/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
+                const data = await response.json();
+                
+                if (data.success && data.lyrics) {
+                    let html = `<div class="success">✅ 成功獲取 ${data.lyrics.length} 行歌詞 (來源: ${data.source})</div>\n`;
+                    html += `<div>類型: ${data.type}</div>\n\n`;
+                    
+                    data.lyrics.forEach((line, index) => {
+                        const text = typeof line === 'string' ? line : line.text;
+                        const time = line.time ? `[${Math.floor(line.time/60000)}:${String(Math.floor((line.time%60000)/1000)).padStart(2, '0')}] ` : '';
+                        html += `<div class="lyrics-line">${time}${text}</div>`;
+                    });
+                    
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = `<span class="error">❌ ${data.error || '獲取歌詞失敗'}</span>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">❌ 請求失敗: ${error.message}</span>`;
+            }
+        }
+        
+        async function testDirectAPI() {
+            const resultDiv = document.getElementById('directResult');
+            resultDiv.innerHTML = '🔄 正在測試外部 API...';
+            
+            try {
+                // 直接測試外部 API
+                const testUrl = 'https://api.lyrics.wmcc.jp.eu.org/api/lyrics/青花瓷/周杰倫';
+                console.log('測試 URL:', testUrl);
+                
+                const response = await fetch(testUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    }
+                });
+                
+                console.log('響應狀態:', response.status);
+                
+                if (response.ok) {
+                    let data;
+                    try {
+                        data = await response.json();
+                        resultDiv.innerHTML = `<div class="success">✅ 外部 API 連接成功</div>\n狀態碼: ${response.status}\n響應數據: ${JSON.stringify(data, null, 2)}`;
+                    } catch (parseError) {
+                        const textData = await response.text();
+                        resultDiv.innerHTML = `<div class="success">✅ 外部 API 連接成功 (文本格式)</div>\n狀態碼: ${response.status}\n響應數據: ${textData.substring(0, 500)}...`;
+                    }
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ 外部 API 響應錯誤</div>\n狀態碼: ${response.status}`;
+                }
+            } catch (error) {
+                console.error('直接 API 測試失敗:', error);
+                
+                // 如果直接調用失敗，嘗試本地代理
+                try {
+                    resultDiv.innerHTML += '\n\n🔄 嘗試本地代理...';
+                    const response = await fetch('/api/test-lyrics');
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        resultDiv.innerHTML += `\n<div class="success">✅ 本地代理成功</div>\n狀態碼: ${data.status}\n響應數據: ${JSON.stringify(data.data, null, 2)}`;
+                    } else {
+                        resultDiv.innerHTML += `\n<div class="error">❌ 本地代理失敗</div>\n錯誤: ${data.error}`;
+                    }
+                } catch (proxyError) {
+                    resultDiv.innerHTML += `\n<span class="error">❌ 本地代理也失敗: ${proxyError.message}</span>`;
+                }
+            }
+        }
+        
+        async function testLocalAPI() {
+            const resultDiv = document.getElementById('localResult');
+            resultDiv.innerHTML = '🔄 正在測試本地 API...';
+            
+            try {
+                const response = await fetch('/api/health');
+                const data = await response.json();
+                
+                if (data.status === 'OK') {
+                    resultDiv.innerHTML = `<div class="success">✅ 本地 API 正常運行</div>\n時間戳: ${data.timestamp}`;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ 本地 API 異常</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">❌ 本地 API 測試失敗: ${error.message}</span>`;
+            }
+        }
+        
+        // 頁面載入時自動測試
+        window.addEventListener('load', () => {
+            testLocalAPI();
+        });
+    </script>
+</body>
+</html>

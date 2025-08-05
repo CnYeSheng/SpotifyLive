@@ -235,7 +235,7 @@ function getSyncedLyricsFromPython(artist, title) {
 }
 
 // 歌詞 API 路由
-app.get('/api/lyrics/:artist/:title', async (req, res) => {
+app.get('https://lyric.wmcc.jp.eu.org/api/lyrics/:artist/:title', async (req, res) => {
   const { artist, title } = req.params;
   
   console.log(`請求歌詞: ${artist} - ${title}`);

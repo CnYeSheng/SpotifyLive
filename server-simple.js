@@ -248,7 +248,7 @@ app.post('/api/player/:action', async (req, res) => {
 });
 
 // Get lyrics using Python script
-app.get('/api/lyrics/:artist/:title', async (req, res) => {
+app.get('https://lyric.wmcc.jp.eu.org/api/lyrics/:artist/:title', async (req, res) => {
     const { artist, title } = req.params;
     
     try {

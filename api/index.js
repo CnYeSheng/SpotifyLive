@@ -457,24 +457,170 @@ app.post('/api/library/remove', async (req, res) => {
     }
 });
 
-// Get lyrics
+// Get lyrics from wmcc API
 app.get('/api/lyrics/:artist/:title', async (req, res) => {
     const { artist, title } = req.params;
     
     try {
-        // Simple lyrics implementation for Vercel
-        // In a production environment, you might want to integrate with a lyrics API
-        res.json({
-            success: true,
-            lyrics: [],
-            type: 'plain',
-            source: 'placeholder'
+        console.log(`🎤 請求歌詞: ${artist} - ${title}`);
+        
+        // 從指定的 API 獲取歌詞
+        const lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`;
+        console.log(`📡 請求 URL: ${lyricsUrl}`);
+        
+        const response = await axios.get(lyricsUrl, {
+            timeout: 20000, // 減少超時時間到8秒
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json, text/plain, */*'
+            }
         });
+        
+        if (response.data) {
+            console.log(`✅ 成功獲取歌詞，數據類型: ${typeof response.data}`);
+            
+            // 處理不同的響應格式
+            let lyrics = [];
+            let lyricsType = 'plain';
+            
+            if (typeof response.data === 'string') {
+                // 如果是字符串，檢查是否為 LRC 格式
+                const lrcResult = parseLrcFormat(response.data);
+                if (lrcResult.isLrc) {
+                    lyrics = lrcResult.lyrics;
+                    lyricsType = 'synced';
+                } else {
+                    // 普通文本歌詞
+                    lyrics = response.data.split('\n')
+                        .filter(line => line.trim() !== '')
+                        .map(line => ({ text: line.trim() }));
+                }
+            } else if (response.data.lyrics) {
+                // 如果有 lyrics 字段
+                if (Array.isArray(response.data.lyrics)) {
+                    lyrics = response.data.lyrics;
+                    lyricsType = response.data.type || 'plain';
+                } else if (typeof response.data.lyrics === 'string') {
+                    // 檢查字符串是否為 LRC 格式
+                    const lrcResult = parseLrcFormat(response.data.lyrics);
+                    if (lrcResult.isLrc) {
+                        lyrics = lrcResult.lyrics;
+                        lyricsType = 'synced';
+                    } else {
+                        lyrics = response.data.lyrics.split('\n')
+                            .filter(line => line.trim() !== '')
+                            .map(line => ({ text: line.trim() }));
+                    }
+                }
+            } else if (Array.isArray(response.data)) {
+                // 如果直接是數組
+                lyrics = response.data;
+            } else {
+                // 嘗試將整個響應作為歌詞文本
+                const textContent = JSON.stringify(response.data);
+                const lrcResult = parseLrcFormat(textContent);
+                if (lrcResult.isLrc) {
+                    lyrics = lrcResult.lyrics;
+                    lyricsType = 'synced';
+                } else {
+                    lyrics = textContent.split('\n')
+                        .filter(line => line.trim() !== '')
+                        .map(line => ({ text: line.trim() }));
+                }
+            }
+            
+            if (lyrics.length > 0) {
+                console.log(`✅ 解析歌詞成功: ${lyrics.length} 行`);
+                res.json({
+                    success: true,
+                    lyrics: lyrics,
+                    type: lyricsType,
+                    source: 'wmcc.jp.eu.org'
+                });
+            } else {
+                console.log(`❌ 歌詞內容為空`);
+                res.json({ success: false, error: '歌詞內容為空' });
+            }
+        } else {
+            console.log(`❌ API 響應無數據`);
+            res.json({ success: false, error: '找不到歌詞' });
+        }
     } catch (error) {
-        console.error('Error fetching lyrics:', error);
-        res.json({ success: false, error: 'Failed to fetch lyrics' });
+        console.error('❌ 獲取歌詞失敗:', error.message);
+        if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+            res.json({ success: false, error: '歌詞服務暫時無法連接' });
+        } else if (error.response?.status === 404) {
+            res.json({ success: false, error: '找不到該歌曲的歌詞' });
+        } else {
+            res.json({ success: false, error: '載入歌詞失敗: ' + error.message });
+        }
     }
 });
+
+// 添加 CORS 處理中間件
+app.use('/api/lyrics', (req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    if (req.method === 'OPTIONS') {
+        res.sendStatus(200);
+    } else {
+        next();
+    }
+});
+
+// LRC 格式解析函數
+function parseLrcFormat(lrcText) {
+    if (!lrcText || typeof lrcText !== 'string') {
+        return { isLrc: false, lyrics: [] };
+    }
+    
+    const lines = lrcText.split('\n');
+    const lyrics = [];
+    let hasTimeStamps = false;
+    
+    for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (!trimmedLine) continue;
+        
+        // 檢查 LRC 時間戳格式 [mm:ss.xx] 或 [mm:ss]
+        const timeMatch = trimmedLine.match(/^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\](.*)/);
+        
+        if (timeMatch) {
+            hasTimeStamps = true;
+            const minutes = parseInt(timeMatch[1]);
+            const seconds = parseInt(timeMatch[2]);
+            const milliseconds = timeMatch[3] ? parseInt(timeMatch[3].padEnd(3, '0')) : 0;
+            const text = timeMatch[4].trim();
+            
+            const timeMs = (minutes * 60 + seconds) * 1000 + milliseconds;
+            
+            if (text) {
+                lyrics.push({
+                    time: timeMs,
+                    text: text
+                });
+            }
+        } else {
+            // 非時間戳行，可能是純文本歌詞或元數據
+            if (!trimmedLine.startsWith('[') || !trimmedLine.includes(']')) {
+                lyrics.push({
+                    text: trimmedLine
+                });
+            }
+        }
+    }
+    
+    // 如果有時間戳，按時間排序
+    if (hasTimeStamps) {
+        lyrics.sort((a, b) => (a.time || 0) - (b.time || 0));
+    }
+    
+    return {
+        isLrc: hasTimeStamps,
+        lyrics: lyrics
+    };
+}
 
 // Export for Vercel
 module.exports = app;

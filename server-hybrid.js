@@ -139,7 +139,7 @@ async function refreshAccessToken() {
 }
 
 // Get lyrics (using a lyrics API service)
-app.get('/api/lyrics/:artist/:title', async (req, res) => {
+app.get('https://lyric.wmcc.jp.eu.org/api/lyrics/:artist/:title', async (req, res) => {
   const { artist, title } = req.params;
   
   try {

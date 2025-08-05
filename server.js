@@ -6,6 +6,90 @@ const cors = require('cors');
 const axios = require('axios');
 require('dotenv').config();
 
+// Rate limiter for Spotify API
+class SpotifyRateLimiter {
+    constructor() {
+        this.sessionCalls = new Map();
+        this.globalCalls = [];
+        this.maxCallsPerMinute = 30;
+        this.maxCallsPerSession = 10;
+        this.retryAfterMs = 1000;
+    }
+
+    canMakeCall(sessionId) {
+        const now = Date.now();
+        const oneMinuteAgo = now - 60000;
+
+        this.globalCalls = this.globalCalls.filter(time => time > oneMinuteAgo);
+        
+        if (sessionId) {
+            const sessionCalls = this.sessionCalls.get(sessionId) || [];
+            const recentSessionCalls = sessionCalls.filter(time => time > oneMinuteAgo);
+            this.sessionCalls.set(sessionId, recentSessionCalls);
+
+            if (recentSessionCalls.length >= this.maxCallsPerSession) {
+                return false;
+            }
+        }
+
+        if (this.globalCalls.length >= this.maxCallsPerMinute) {
+            return false;
+        }
+
+        return true;
+    }
+
+    recordCall(sessionId) {
+        const now = Date.now();
+        this.globalCalls.push(now);
+        
+        if (sessionId) {
+            const sessionCalls = this.sessionCalls.get(sessionId) || [];
+            sessionCalls.push(now);
+            this.sessionCalls.set(sessionId, sessionCalls);
+        }
+    }
+
+    handleRateLimit(retryAfter) {
+        if (retryAfter) {
+            this.retryAfterMs = parseInt(retryAfter) * 1000;
+        } else {
+            this.retryAfterMs = Math.min(this.retryAfterMs * 2, 30000);
+        }
+        return this.retryAfterMs;
+    }
+}
+
+const spotifyRateLimiter = new SpotifyRateLimiter();
+
+// Enhanced Spotify API call wrapper
+async function makeSpotifyAPICall(url, options, sessionId) {
+    if (!spotifyRateLimiter.canMakeCall(sessionId)) {
+        const error = new Error('Rate limited');
+        error.status = 429;
+        error.retryAfter = 5000;
+        throw error;
+    }
+
+    try {
+        spotifyRateLimiter.recordCall(sessionId);
+        const response = await axios(url, options);
+        spotifyRateLimiter.retryAfterMs = 1000;
+        return response;
+    } catch (error) {
+        if (error.response?.status === 429) {
+            const retryAfter = error.response.headers['retry-after'];
+            const delay = spotifyRateLimiter.handleRateLimit(retryAfter);
+            
+            const rateLimitError = new Error('Spotify API rate limited');
+            rateLimitError.status = 429;
+            rateLimitError.retryAfter = delay;
+            throw rateLimitError;
+        }
+        throw error;
+    }
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -98,6 +182,8 @@ app.get('/api/current-track', async (req, res) => {
         return res.status(401).json({ error: 'Not authenticated' });
     }
     
+    const sessionId = req.headers['x-session-id'] || req.query.sessionId;
+    
     // Check if token needs refresh
     if (Date.now() >= session.expiresAt) {
         const refreshed = await refreshAccessToken(session);
@@ -107,13 +193,18 @@ app.get('/api/current-track', async (req, res) => {
     }
     
     try {
-        const [playerResponse, userResponse] = await Promise.all([
-            axios.get('https://api.spotify.com/v1/me/player', {
+        // 一次性獲取所有需要的數據，避免分批請求
+        const [playerResponse, userResponse, queueResponse] = await Promise.all([
+            makeSpotifyAPICall('https://api.spotify.com/v1/me/player', {
                 headers: { 'Authorization': `Bearer ${session.accessToken}` }
-            }),
-            axios.get('https://api.spotify.com/v1/me', {
+            }, sessionId),
+            makeSpotifyAPICall('https://api.spotify.com/v1/me', {
                 headers: { 'Authorization': `Bearer ${session.accessToken}` }
-            })
+            }, sessionId),
+            // 同時獲取播放隊列信息
+            makeSpotifyAPICall('https://api.spotify.com/v1/me/player/queue', {
+                headers: { 'Authorization': `Bearer ${session.accessToken}` }
+            }, sessionId).catch(() => null) // 隊列信息失敗不影響主要功能
         ]);
         
         if (playerResponse.status === 204 || !playerResponse.data || !playerResponse.data.item) {
@@ -143,11 +234,33 @@ app.get('/api/current-track', async (req, res) => {
                 name: device.name,
                 type: device.type,
                 volume: device.volume_percent
+            } : null,
+            // 包含隊列信息（如果可用）
+            queue: queueResponse?.data?.queue?.slice(0, 5).map(queueTrack => ({
+                id: queueTrack.id,
+                name: queueTrack.name,
+                artist: queueTrack.artists.map(a => a.name).join(', '),
+                image: queueTrack.album.images[0]?.url
+            })) || [],
+            nextTrack: queueResponse?.data?.queue?.[0] ? {
+                id: queueResponse.data.queue[0].id,
+                name: queueResponse.data.queue[0].name,
+                artist: queueResponse.data.queue[0].artists.map(a => a.name).join(', ')
             } : null
         };
         
         res.json(currentTrack);
     } catch (error) {
+        // Handle rate limiting
+        if (error.status === 429) {
+            console.log(`⚠️ Rate limited, retry after ${error.retryAfter}ms`);
+            return res.status(429).json({ 
+                error: 'Too many requests', 
+                retryAfter: error.retryAfter,
+                message: 'API rate limit exceeded, please wait before retrying'
+            });
+        }
+        
         if (error.response?.status === 401) {
             const refreshed = await refreshAccessToken(session);
             if (!refreshed) {
@@ -156,6 +269,18 @@ app.get('/api/current-track', async (req, res) => {
             // Retry the request
             return res.redirect(307, req.originalUrl);
         }
+        
+        if (error.response?.status === 429) {
+            const retryAfter = error.response.headers['retry-after'] ? 
+                parseInt(error.response.headers['retry-after']) * 1000 : 5000;
+            console.log(`⚠️ Spotify API rate limited, retry after ${retryAfter}ms`);
+            return res.status(429).json({ 
+                error: 'Too many requests', 
+                retryAfter: retryAfter,
+                message: 'Spotify API rate limit exceeded, please wait before retrying'
+            });
+        }
+        
         console.error('Error fetching current track:', error.response?.data || error.message);
         res.status(500).json({ error: 'Failed to fetch current track' });
     }
@@ -488,137 +613,196 @@ app.get('/api/player/queue', async (req, res) => {
     }
 });
 
-// Get lyrics (enhanced with multiple sources and syncedlyrics support)
+// 添加 CORS 處理中間件
+app.use('/api/lyrics', (req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    if (req.method === 'OPTIONS') {
+        res.sendStatus(200);
+    } else {
+        next();
+    }
+});
+
+// Get lyrics from wmcc API (本地代理)
 app.get('/api/lyrics/:artist/:title', async (req, res) => {
     const { artist, title } = req.params;
     
     try {
-        // Try multiple lyrics sources
-        const sources = [
-            () => getLyricsFromSyncedLyrics(artist, title),
-            () => getLyricsFromOvh(artist, title)
-        ];
+        console.log(`🎤 請求歌詞: ${artist} - ${title}`);
         
-        for (const getSource of sources) {
-            try {
-                const result = await getSource();
-                if (result.success) {
-                    return res.json(result);
-                }
-            } catch (error) {
-                console.log(`Lyrics source failed: ${error.message}`);
-                continue;
+        // 從指定的 API 獲取歌詞
+        const lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`;
+        console.log(`📡 請求 URL: ${lyricsUrl}`);
+        
+        const response = await axios.get(lyricsUrl, {
+            timeout: 20000, // 減少超時時間到8秒
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json, text/plain, */*'
             }
-        }
+        });
         
-        res.json({ success: false, error: '找不到歌詞' });
+        if (response.data) {
+            console.log(`✅ 成功獲取歌詞，數據類型: ${typeof response.data}`);
+            
+            // 處理不同的響應格式
+            let lyrics = [];
+            let lyricsType = 'plain';
+            
+            if (typeof response.data === 'string') {
+                // 如果是字符串，檢查是否為 LRC 格式
+                const lrcResult = parseLrcFormat(response.data);
+                if (lrcResult.isLrc) {
+                    lyrics = lrcResult.lyrics;
+                    lyricsType = 'synced';
+                } else {
+                    // 普通文本歌詞
+                    lyrics = response.data.split('\n')
+                        .filter(line => line.trim() !== '')
+                        .map(line => ({ text: line.trim() }));
+                }
+            } else if (response.data.lyrics) {
+                // 如果有 lyrics 字段
+                if (Array.isArray(response.data.lyrics)) {
+                    lyrics = response.data.lyrics;
+                    lyricsType = response.data.type || 'plain';
+                } else if (typeof response.data.lyrics === 'string') {
+                    // 檢查字符串是否為 LRC 格式
+                    const lrcResult = parseLrcFormat(response.data.lyrics);
+                    if (lrcResult.isLrc) {
+                        lyrics = lrcResult.lyrics;
+                        lyricsType = 'synced';
+                    } else {
+                        lyrics = response.data.lyrics.split('\n')
+                            .filter(line => line.trim() !== '')
+                            .map(line => ({ text: line.trim() }));
+                    }
+                }
+            } else if (Array.isArray(response.data)) {
+                // 如果直接是數組
+                lyrics = response.data;
+            } else {
+                // 嘗試將整個響應作為歌詞文本
+                const textContent = JSON.stringify(response.data);
+                const lrcResult = parseLrcFormat(textContent);
+                if (lrcResult.isLrc) {
+                    lyrics = lrcResult.lyrics;
+                    lyricsType = 'synced';
+                } else {
+                    lyrics = textContent.split('\n')
+                        .filter(line => line.trim() !== '')
+                        .map(line => ({ text: line.trim() }));
+                }
+            }
+            
+            if (lyrics.length > 0) {
+                console.log(`✅ 解析歌詞成功: ${lyrics.length} 行`);
+                res.json({
+                    success: true,
+                    lyrics: lyrics,
+                    type: lyricsType,
+                    source: 'wmcc.jp.eu.org'
+                });
+            } else {
+                console.log(`❌ 歌詞內容為空`);
+                res.json({ success: false, error: '歌詞內容為空' });
+            }
+        } else {
+            console.log(`❌ API 響應無數據`);
+            res.json({ success: false, error: '找不到歌詞' });
+        }
     } catch (error) {
-        console.error('Error fetching lyrics:', error);
-        res.json({ success: false, error: '載入歌詞失敗' });
+        console.error('❌ 獲取歌詞失敗:', error.message);
+        if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+            res.json({ success: false, error: '歌詞服務暫時無法連接' });
+        } else if (error.response?.status === 404) {
+            res.json({ success: false, error: '找不到該歌曲的歌詞' });
+        } else {
+            res.json({ success: false, error: '載入歌詞失敗: ' + error.message });
+        }
     }
 });
 
-// Lyrics source implementations
-async function getLyricsFromSyncedLyrics(artist, title) {
-    try {
-        // 使用 syncedlyrics Python 包的 API (需要先安裝)
-        const { spawn } = require('child_process');
+// LRC 格式解析函數
+function parseLrcFormat(lrcText) {
+    if (!lrcText || typeof lrcText !== 'string') {
+        return { isLrc: false, lyrics: [] };
+    }
+    
+    const lines = lrcText.split('\n');
+    const lyrics = [];
+    let hasTimeStamps = false;
+    
+    for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (!trimmedLine) continue;
         
-        return new Promise((resolve, reject) => {
-            const python = spawn('python', ['-c', `
-import syncedlyrics
-import json
-import sys
+        // 檢查 LRC 時間戳格式 [mm:ss.xx] 或 [mm:ss]
+        const timeMatch = trimmedLine.match(/^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\](.*)/);
+        
+        if (timeMatch) {
+            hasTimeStamps = true;
+            const minutes = parseInt(timeMatch[1]);
+            const seconds = parseInt(timeMatch[2]);
+            const milliseconds = timeMatch[3] ? parseInt(timeMatch[3].padEnd(3, '0')) : 0;
+            const text = timeMatch[4].trim();
+            
+            const timeMs = (minutes * 60 + seconds) * 1000 + milliseconds;
+            
+            if (text) {
+                lyrics.push({
+                    time: timeMs,
+                    text: text
+                });
+            }
+        } else {
+            // 非時間戳行，可能是純文本歌詞或元數據
+            if (!trimmedLine.startsWith('[') || !trimmedLine.includes(']')) {
+                lyrics.push({
+                    text: trimmedLine
+                });
+            }
+        }
+    }
+    
+    // 如果有時間戳，按時間排序
+    if (hasTimeStamps) {
+        lyrics.sort((a, b) => (a.time || 0) - (b.time || 0));
+    }
+    
+    return {
+        isLrc: hasTimeStamps,
+        lyrics: lyrics
+    };
+}
 
-try:
-    lyrics = syncedlyrics.search("${artist.replace(/"/g, '\\"')} ${title.replace(/"/g, '\\"')}")
-    if lyrics:
-        # 解析同步歌詞
-        lines = []
-        for line in lyrics.split('\\n'):
-            if line.strip():
-                if line.startswith('[') and ']' in line:
-                    # 時間戳格式: [mm:ss.xx]
-                    time_end = line.find(']')
-                    if time_end > 0:
-                        time_str = line[1:time_end]
-                        text = line[time_end+1:].strip()
-                        if text:
-                            try:
-                                # 解析時間
-                                if ':' in time_str:
-                                    parts = time_str.split(':')
-                                    minutes = int(parts[0])
-                                    seconds = float(parts[1])
-                                    time_ms = (minutes * 60 + seconds) * 1000
-                                    lines.append({"time": int(time_ms), "text": text})
-                                else:
-                                    lines.append({"text": text})
-                            except:
-                                lines.append({"text": text})
-                else:
-                    lines.append({"text": line.strip()})
-        
-        print(json.dumps({"success": True, "lyrics": lines, "type": "synced", "source": "syncedlyrics"}))
-    else:
-        print(json.dumps({"success": False, "error": "找不到歌詞"}))
-except Exception as e:
-    print(json.dumps({"success": False, "error": str(e)}))
-`]);
-            
-            let stdout = '';
-            let stderr = '';
-            
-            python.stdout.on('data', (data) => {
-                stdout += data.toString();
-            });
-            
-            python.stderr.on('data', (data) => {
-                stderr += data.toString();
-            });
-            
-            python.on('close', (code) => {
-                if (code !== 0) {
-                    return reject(new Error(`Python script exited with code ${code}: ${stderr}`));
-                }
-                
-                try {
-                    const result = JSON.parse(stdout.trim());
-                    resolve(result);
-                } catch (parseError) {
-                    reject(new Error(`Failed to parse Python output: ${parseError.message}`));
-                }
-            });
+// 測試歌詞 API 連接
+app.get('/api/test-lyrics', async (req, res) => {
+    try {
+        const testUrl = 'https://api.lyrics.wmcc.jp.eu.org/api/lyrics/test/test';
+        const response = await axios.get(testUrl, {
+            timeout: 5000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+        res.json({ 
+            success: true, 
+            message: '歌詞 API 連接正常',
+            status: response.status,
+            data: response.data 
         });
     } catch (error) {
-        console.error('Error in getLyricsFromSyncedLyrics:', error);
-        throw error;
+        res.json({ 
+            success: false, 
+            message: '歌詞 API 連接失敗',
+            error: error.message,
+            status: error.response?.status 
+        });
     }
-}
-
-async function getLyricsFromOvh(artist, title) {
-    try {
-        const response = await axios.get(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
-        if (response.data && response.data.lyrics) {
-            // 將普通歌詞轉換為統一格式
-            const lines = response.data.lyrics.split('\n')
-                .filter(line => line.trim() !== '')
-                .map(line => ({ text: line.trim() }));
-            
-            return {
-                success: true,
-                lyrics: lines,
-                type: 'plain',
-                source: 'lyrics.ovh'
-            };
-        } else {
-            return { success: false, error: '找不到歌詞' };
-        }
-    } catch (error) {
-        console.error('Error fetching lyrics from lyrics.ovh:', error.message);
-        return { success: false, error: '獲取歌詞失敗' };
-    }
-}
+});
 
 // Extract colors from image
 app.post('/api/extract-colors', async (req, res) => {

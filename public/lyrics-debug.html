@@ -208,7 +208,7 @@
             resultDiv.innerHTML = '<div class="result info">正在搜尋歌詞...</div>';
             
             try {
-                const response = await fetch(`/api/lyrics/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
+                const response = await fetch(`https://lyric.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
                 const data = await response.json();
                 
                 if (data.success && data.lyrics) {

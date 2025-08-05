@@ -373,17 +373,29 @@ body {
 
 .sync-indicator {
     text-align: center;
-    color: var(--primary-color);
+    color: white;
     font-weight: 600;
     font-size: 0.9rem;
     margin-bottom: 30px;
     padding: 12px 20px;
-    background: linear-gradient(135deg, rgba(0, 122, 255, 0.1), rgba(88, 86, 214, 0.1));
+    background: linear-gradient(135deg, #1db954, #1ed760);
     border-radius: 25px;
-    border: 1px solid rgba(0, 122, 255, 0.3);
+    border: 1px solid rgba(29, 185, 84, 0.3);
     display: inline-block;
-    animation: pulse 2s infinite;
-    /* backdrop-filter: blur(10px); */
+    animation: syncIndicatorPulse 2s infinite;
+    box-shadow: 0 4px 12px rgba(29, 185, 84, 0.3);
+    backdrop-filter: blur(10px);
+}
+
+@keyframes syncIndicatorPulse {
+    0%, 100% {
+        box-shadow: 0 4px 12px rgba(29, 185, 84, 0.3);
+        transform: scale(1);
+    }
+    50% {
+        box-shadow: 0 4px 20px rgba(29, 185, 84, 0.5);
+        transform: scale(1.02);
+    }
 }
 
 @keyframes pulse {
@@ -535,6 +547,42 @@ body {
     transform: translateX(8px);
     font-size: 38px;
     transition: all 0.2s ease;
+    text-shadow: 0 0 10px rgba(0, 122, 255, 0.3);
+    animation: lyricsHighlight 0.3s ease;
+}
+
+.lyrics-line.upcoming {
+    color: #1ed760;
+    opacity: 0.8;
+    font-weight: 500;
+    transform: scale(1.02);
+    transition: all 0.3s ease;
+    background: rgba(30, 215, 96, 0.05);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 4px 0;
+    border-left: 3px solid #1ed760;
+}
+
+.lyrics-line.past {
+    color: #888;
+    opacity: 0.4;
+    transition: all 0.3s ease;
+}
+
+@keyframes lyricsHighlight {
+    0% {
+        transform: translateX(8px) scale(1);
+        background: linear-gradient(135deg, rgba(0, 122, 255, 0.05), rgba(88, 86, 214, 0.05));
+    }
+    50% {
+        transform: translateX(12px) scale(1.02);
+        background: linear-gradient(135deg, rgba(0, 122, 255, 0.25), rgba(88, 86, 214, 0.15));
+    }
+    100% {
+        transform: translateX(8px) scale(1);
+        background: linear-gradient(135deg, rgba(0, 122, 255, 0.15), rgba(88, 86, 214, 0.1));
+    }
 }
 
 @keyframes highlight {
