@@ -541,59 +541,16 @@ body {
 .lyrics-line.current {
     color: var(--text-primary);
     font-weight: 600;
-    background: linear-gradient(135deg, rgba(0, 122, 255, 0.15), rgba(88, 86, 214, 0.1));
-    border-left: 4px solid var(--primary-color);
-    padding-left: 16px;
-    transform: translateX(8px);
-    font-size: 38px;
-    transition: all 0.2s ease;
-    text-shadow: 0 0 10px rgba(0, 122, 255, 0.3);
-    animation: lyricsHighlight 0.3s ease;
-}
-
-.lyrics-line.upcoming {
-    color: #1ed760;
-    opacity: 0.8;
-    font-weight: 500;
-    transform: scale(1.02);
-    transition: all 0.3s ease;
-    background: rgba(30, 215, 96, 0.05);
+    /* 移除动画和变换效果 */
+    /* transform: translateX(8px); */
+    /* background: linear-gradient(135deg, rgba(0, 122, 255, 0.15), rgba(88, 86, 214, 0.1)); */
+    background: rgba(0, 122, 255, 0.15);
     border-radius: 8px;
     padding: 8px 12px;
     margin: 4px 0;
     border-left: 3px solid #1ed760;
-}
-
-.lyrics-line.past {
-    color: #888;
-    opacity: 0.4;
-    transition: all 0.3s ease;
-}
-
-@keyframes lyricsHighlight {
-    0% {
-        transform: translateX(8px) scale(1);
-        background: linear-gradient(135deg, rgba(0, 122, 255, 0.05), rgba(88, 86, 214, 0.05));
-    }
-    50% {
-        transform: translateX(12px) scale(1.02);
-        background: linear-gradient(135deg, rgba(0, 122, 255, 0.25), rgba(88, 86, 214, 0.15));
-    }
-    100% {
-        transform: translateX(8px) scale(1);
-        background: linear-gradient(135deg, rgba(0, 122, 255, 0.15), rgba(88, 86, 214, 0.1));
-    }
-}
-
-@keyframes highlight {
-    0% { 
-        background: transparent;
-        color: var(--text-tertiary);
-    }
-    100% { 
-        background: linear-gradient(135deg, rgba(0, 122, 255, 0.15), rgba(88, 86, 214, 0.1));
-        color: var(--text-primary);
-    }
+    /* 移除动画 */
+    /* animation: lyricsHighlight 2s ease infinite; */
 }
 
 /*
@@ -608,6 +565,41 @@ body {
     border-left: 3px solid #1ed760;
 }
 */
+
+.lyrics-line.past {
+    color: #888;
+    opacity: 0.4;
+    transition: all 0.3s ease;
+}
+
+/* 注释掉或删除歌词高亮动画关键帧 */
+/*
+@keyframes lyricsHighlight {
+    0% {
+        transform: translateX(8px) scale(1);
+        background: linear-gradient(135deg, rgba(0, 122, 255, 0.05), rgba(88, 86, 214, 0.05));
+    }
+    50% {
+        transform: translateX(12px) scale(1.02);
+        background: linear-gradient(135deg, rgba(0, 122, 255, 0.25), rgba(88, 86, 214, 0.15));
+    }
+    100% {
+        transform: translateX(8px) scale(1);
+        background: linear-gradient(135deg, rgba(0, 122, 255, 0.15), rgba(88, 86, 214, 0.1));
+    }
+}
+*/
+
+@keyframes highlight {
+    0% { 
+        background: transparent;
+        color: var(--text-tertiary);
+    }
+    100% { 
+        background: linear-gradient(135deg, rgba(0, 122, 255, 0.15), rgba(88, 86, 214, 0.1));
+        color: var(--text-primary);
+    }
+}
 
 .lyrics-placeholder {
     text-align: center;

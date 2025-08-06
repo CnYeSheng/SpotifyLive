@@ -678,10 +678,10 @@ class SpotifyLyricsPlayer {
             return;
         }
         
-        // 檢查是否最近剛請求過同一首歌
+        // 檢查是否最近剛請求過同一首歌 (延長時間到15秒避免重複請求)
         if (this.lastLyricsRequest && 
             this.lastLyricsRequest.trackKey === trackKey && 
-            Date.now() - this.lastLyricsRequest.time < 5000) { // 延長時間到5秒
+            Date.now() - this.lastLyricsRequest.time < 15000) {
             console.log('⏳ 最近剛請求過此歌曲，跳過重複請求');
             return;
         }
@@ -693,13 +693,18 @@ class SpotifyLyricsPlayer {
             time: Date.now()
         };
         
-        // 設置載入超時保護
+        // 設置載入超時保護 (延長到40秒以適應較慢網絡)
         const loadingTimeout = setTimeout(() => {
             if (this.isLoadingLyrics) {
                 console.log('⚠️ 歌詞載入超時，重置狀態');
                 this.isLoadingLyrics = false;
+                // 清除可能存在的載入超時ID
+                if (this.lyricsLoadTimeout) {
+                    clearTimeout(this.lyricsLoadTimeout);
+                    this.lyricsLoadTimeout = null;
+                }
             }
-        }, 15000); // 15秒超時
+        }, 40000);
 
         this.updateStatus('lyrics', null);
         this.showLyricsPlaceholder('🎵 正在載入歌詞...');
@@ -755,6 +760,11 @@ class SpotifyLyricsPlayer {
         } finally {
             clearTimeout(loadingTimeout);
             this.isLoadingLyrics = false;
+            // 確保清除載入超時
+            if (this.lyricsLoadTimeout) {
+                clearTimeout(this.lyricsLoadTimeout);
+                this.lyricsLoadTimeout = null;
+            }
         }
     }
 
@@ -881,26 +891,11 @@ class SpotifyLyricsPlayer {
             line.classList.remove('current', 'upcoming', 'past');
         });
 
-        // 添加當前行高亮和上下文提示
+        // 只添加當前行高亮，不添加upcoming和past類
         if (this.currentLyricIndex >= 0 && this.currentLyricIndex < this.lyrics.length) {
             const currentLine = this.lyricsContent.querySelector(`[data-index="${this.currentLyricIndex}"]`);
             if (currentLine) {
                 currentLine.classList.add('current');
-                
-                // 為同步歌詞添加上下文提示
-                if (this.lyricsType === 'synced') {
-                    // 標記即將到來的歌詞
-                    const nextLine = this.lyricsContent.querySelector(`[data-index="${this.currentLyricIndex + 1}"]`);
-                    if (nextLine) {
-                        nextLine.classList.add('upcoming');
-                    }
-                    
-                    // 標記已經過去的歌詞
-                    const prevLine = this.lyricsContent.querySelector(`[data-index="${this.currentLyricIndex - 1}"]`);
-                    if (prevLine) {
-                        prevLine.classList.add('past');
-                    }
-                }
                 
                 if (this.autoScroll) {
                     currentLine.scrollIntoView({
@@ -1348,6 +1343,15 @@ class SpotifyLyricsPlayer {
             return;
         }
         
+        // 檢查是否最近剛請求過 (延長時間到15秒避免重複請求)
+        const trackKey = this.currentTrack ? `${this.currentTrack.id}-${this.currentTrack.name}-${this.currentTrack.artist}` : null;
+        if (this.lastLyricsRequest && 
+            this.lastLyricsRequest.trackKey === trackKey && 
+            Date.now() - this.lastLyricsRequest.time < 15000) {
+            console.log('⏳ 最近剛請求過此歌曲，跳過重複請求');
+            return;
+        }
+        
         this.lyricsLoadTimeout = setTimeout(() => {
             if (this.currentTrack && !this.isLoadingLyrics) {
                 console.log('⏰ 執行延遲的歌詞載入');
@@ -1356,7 +1360,7 @@ class SpotifyLyricsPlayer {
                 console.log('⏸️ 跳過歌詞載入：歌曲已切換或正在載入中');
             }
             this.lyricsLoadTimeout = null;
-        }, 1500); // 增加延遲到1.5秒，確保歌曲信息完全穩定
+        }, 2000); // 設置為2秒延遲，給Spotify API一點時間穩定
     }
 
     showNextTrackPreview() {
