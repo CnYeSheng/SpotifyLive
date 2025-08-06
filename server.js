@@ -118,7 +118,7 @@ function getUserSession(req) {
 }
 
 // Spotify authorization URL with enhanced scopes
-app.get('/auth', (req, res) => {
+app.get('/api/auth', (req, res) => {
     const sessionId = generateSessionId();
     const scopes = [
         'user-read-currently-playing',
