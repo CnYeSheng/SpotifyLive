@@ -125,6 +125,7 @@ app.get('/api/auth', (req, res) => {
         'user-read-playback-state',
         'user-modify-playback-state',
         'user-read-playback-position',
+        'user-read-private',  // 這個權限用於檢測會員狀態
         'user-library-modify',
         'user-library-read',
         'playlist-read-private',
