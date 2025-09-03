@@ -593,24 +593,61 @@ app.get('/api/player/queue', async (req, res) => {
         return res.status(401).json({ error: 'Not authenticated' });
     }
     
+    const sessionId = req.headers['x-session-id'] || req.query.sessionId;
+    
+    // Check if token needs refresh
+    if (Date.now() >= session.expiresAt) {
+        const refreshed = await refreshAccessToken(session);
+        if (!refreshed) {
+            return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+        }
+    }
+    
     try {
-        const response = await axios.get('https://api.spotify.com/v1/me/player/queue', {
+        const response = await makeSpotifyAPICall('https://api.spotify.com/v1/me/player/queue', {
             headers: { 'Authorization': `Bearer ${session.accessToken}` }
-        });
+        }, sessionId);
         
-        const queue = response.data.queue?.slice(0, 20).map(track => ({
+        if (!response.data || !response.data.queue) {
+            return res.json({ queue: [], nextTrack: null });
+        }
+        
+        const queue = response.data.queue.slice(0, 20).map(track => ({
             id: track.id,
             name: track.name,
             artist: track.artists.map(a => a.name).join(', '),
-            image: track.album.images[0]?.url
-        })) || [];
+            image: track.album.images[0]?.url,
+            duration: track.duration_ms
+        }));
         
         const nextTrack = queue[0] || null;
         
         res.json({ queue, nextTrack });
     } catch (error) {
+        // Handle rate limiting
+        if (error.status === 429) {
+            console.log(`⚠️ Queue API rate limited, retry after ${error.retryAfter}ms`);
+            return res.status(429).json({ 
+                error: 'Too many requests', 
+                retryAfter: error.retryAfter,
+                message: 'API rate limit exceeded, please wait before retrying'
+            });
+        }
+        
+        if (error.response?.status === 401) {
+            const refreshed = await refreshAccessToken(session);
+            if (!refreshed) {
+                return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+            }
+            // Retry the request
+            return res.redirect(307, req.originalUrl);
+        }
+        
         console.error('Error fetching queue:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Failed to fetch queue' });
+        res.status(error.response?.status || 500).json({ 
+            error: 'Failed to fetch queue',
+            details: error.response?.data?.error?.message || error.message
+        });
     }
 });
 
@@ -850,6 +887,126 @@ app.post('/api/extract-colors', async (req, res) => {
     } catch (error) {
         console.error('Error extracting colors:', error);
         res.status(500).json({ error: 'Failed to extract colors' });
+    }
+});
+
+// Play specific track
+app.put('/api/player/play', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const { uris, device_id } = req.body;
+    const sessionId = req.headers['x-session-id'] || req.query.sessionId;
+    
+    // Check if token needs refresh
+    if (Date.now() >= session.expiresAt) {
+        const refreshed = await refreshAccessToken(session);
+        if (!refreshed) {
+            return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+        }
+    }
+    
+    try {
+        const requestBody = {};
+        if (uris) requestBody.uris = uris;
+        if (device_id) requestBody.device_id = device_id;
+        
+        await makeSpotifyAPICall('https://api.spotify.com/v1/me/player/play', {
+            method: 'PUT',
+            headers: { 
+                'Authorization': `Bearer ${session.accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            data: requestBody
+        }, sessionId);
+        
+        res.json({ success: true });
+    } catch (error) {
+        // Handle rate limiting
+        if (error.status === 429) {
+            console.log(`⚠️ Play API rate limited, retry after ${error.retryAfter}ms`);
+            return res.status(429).json({ 
+                error: 'Too many requests', 
+                retryAfter: error.retryAfter,
+                message: 'API rate limit exceeded, please wait before retrying'
+            });
+        }
+        
+        if (error.response?.status === 401) {
+            const refreshed = await refreshAccessToken(session);
+            if (!refreshed) {
+                return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+            }
+            // Retry the request
+            return res.redirect(307, req.originalUrl);
+        }
+        
+        console.error('Error playing track:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({ 
+            success: false, 
+            error: 'Failed to play track',
+            details: error.response?.data?.error?.message || error.message
+        });
+    }
+});
+
+// Transfer playback to device
+app.put('/api/player/transfer', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const { device_ids, play } = req.body;
+    const sessionId = req.headers['x-session-id'] || req.query.sessionId;
+    
+    // Check if token needs refresh
+    if (Date.now() >= session.expiresAt) {
+        const refreshed = await refreshAccessToken(session);
+        if (!refreshed) {
+            return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+        }
+    }
+    
+    try {
+        await makeSpotifyAPICall('https://api.spotify.com/v1/me/player', {
+            method: 'PUT',
+            headers: { 
+                'Authorization': `Bearer ${session.accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            data: { device_ids, play: play !== false }
+        }, sessionId);
+        
+        res.json({ success: true });
+    } catch (error) {
+        // Handle rate limiting
+        if (error.status === 429) {
+            console.log(`⚠️ Transfer API rate limited, retry after ${error.retryAfter}ms`);
+            return res.status(429).json({ 
+                error: 'Too many requests', 
+                retryAfter: error.retryAfter,
+                message: 'API rate limit exceeded, please wait before retrying'
+            });
+        }
+        
+        if (error.response?.status === 401) {
+            const refreshed = await refreshAccessToken(session);
+            if (!refreshed) {
+                return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+            }
+            // Retry the request
+            return res.redirect(307, req.originalUrl);
+        }
+        
+        console.error('Error transferring playback:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({ 
+            success: false, 
+            error: 'Failed to transfer playback',
+            details: error.response?.data?.error?.message || error.message
+        });
     }
 });
 

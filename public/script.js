@@ -613,6 +613,9 @@ class SpotifyLyricsPlayer {
             this.smartShuffle = this.currentTrack.smart_shuffle;
             this.updateShuffleButton();
         }
+
+        // 更新播放清單按鈕狀態
+        this.updatePlaylistButton();
     }
 
     updateProgress() {
@@ -1196,6 +1199,11 @@ class SpotifyLyricsPlayer {
 
     async sendShuffleRequest() {
         try {
+            // 立即更新按鈕狀態以提供即時反饋
+            const newState = !this.shuffleState;
+            this.shuffleState = newState;
+            this.updateShuffleButton();
+            
             const response = await fetch(`${this.apiBase}/api/playback/shuffle`, {
                 method: 'POST',
                 headers: {
@@ -1207,12 +1215,19 @@ class SpotifyLyricsPlayer {
             const data = await response.json();
             if (data.success) {
                 console.log('隨機播放切換成功');
-                setTimeout(() => this.checkCurrentTrackWithRateLimit(), 1000);
+                // 減少延遲時間，更快更新狀態
+                setTimeout(() => this.checkCurrentTrackWithRateLimit(), 500);
             } else {
                 console.error('隨機播放切換失敗:', data.error);
+                // 如果失敗，恢復原始狀態
+                this.shuffleState = !newState;
+                this.updateShuffleButton();
             }
         } catch (error) {
             console.error('隨機播放切換請求失敗:', error);
+            // 如果失敗，恢復原始狀態
+            this.shuffleState = !this.shuffleState;
+            this.updateShuffleButton();
         }
     }
 
@@ -1230,6 +1245,16 @@ class SpotifyLyricsPlayer {
 
     async sendRepeatRequest() {
         try {
+            // 立即更新按鈕狀態以提供即時反饋
+            const repeatModes = ['off', 'context', 'track'];
+            const currentIndex = repeatModes.indexOf(this.repeatState);
+            const nextIndex = (currentIndex + 1) % repeatModes.length;
+            const newState = repeatModes[nextIndex];
+            const originalState = this.repeatState;
+            
+            this.repeatState = newState;
+            this.updateRepeatButton();
+            
             const response = await fetch(`${this.apiBase}/api/playback/repeat`, {
                 method: 'POST',
                 headers: {
@@ -1241,12 +1266,22 @@ class SpotifyLyricsPlayer {
             const data = await response.json();
             if (data.success) {
                 console.log('重複播放切換成功');
-                setTimeout(() => this.checkCurrentTrackWithRateLimit(), 1000);
+                // 減少延遲時間，更快更新狀態
+                setTimeout(() => this.checkCurrentTrackWithRateLimit(), 500);
             } else {
                 console.error('重複播放切換失敗:', data.error);
+                // 如果失敗，恢復原始狀態
+                this.repeatState = originalState;
+                this.updateRepeatButton();
             }
         } catch (error) {
             console.error('重複播放切換請求失敗:', error);
+            // 如果失敗，恢復原始狀態
+            const repeatModes = ['off', 'context', 'track'];
+            const currentIndex = repeatModes.indexOf(this.repeatState);
+            const prevIndex = currentIndex === 0 ? repeatModes.length - 1 : currentIndex - 1;
+            this.repeatState = repeatModes[prevIndex];
+            this.updateRepeatButton();
         }
     }
 
@@ -1614,13 +1649,19 @@ class SpotifyLyricsPlayer {
             const response = await fetch(`${this.apiBase}/api/player/queue`, { headers });
             if (response.ok) {
                 const data = await response.json();
-                this.displayPlaylist(data.queue || []);
+                if (data.queue && data.queue.length > 0) {
+                    this.displayPlaylist(data.queue);
+                } else {
+                    this.playlistContent.innerHTML = '<div class="loading">播放清單為空</div>';
+                }
             } else {
-                this.playlistContent.innerHTML = '<div class="loading">無法載入播放清單</div>';
+                const errorData = await response.json().catch(() => ({}));
+                console.error('載入播放清單失敗:', response.status, errorData);
+                this.playlistContent.innerHTML = `<div class="loading">無法載入播放清單 (${response.status})</div>`;
             }
         } catch (error) {
             console.error('載入播放清單失敗:', error);
-            this.playlistContent.innerHTML = '<div class="loading">載入失敗</div>';
+            this.playlistContent.innerHTML = '<div class="loading">網絡錯誤，請重試</div>';
         }
     }
 
@@ -1645,7 +1686,11 @@ class SpotifyLyricsPlayer {
         this.playlistContent.querySelectorAll('.playlist-item').forEach(item => {
             item.addEventListener('click', () => {
                 const trackId = item.dataset.trackId;
-                this.playTrack(trackId);
+                if (trackId && trackId !== 'undefined') {
+                    this.playTrack(trackId);
+                } else {
+                    this.showErrorMessage('無法播放此歌曲：歌曲ID無效');
+                }
             });
         });
     }
@@ -1821,6 +1866,22 @@ class SpotifyLyricsPlayer {
                 btn.classList.toggle('disabled', !this.isPremium);
             }
         });
+    }
+
+    updatePlaylistButton() {
+        if (!this.playlistBtn || !this.currentTrack) return;
+        
+        // 檢查當前歌曲是否在播放清單中
+        const isInQueue = this.currentTrack.queue && 
+                         this.currentTrack.queue.some(track => track.id === this.currentTrack.id);
+        
+        this.playlistBtn.classList.toggle('active', isInQueue);
+        
+        if (isInQueue) {
+            this.playlistBtn.title = '當前歌曲在播放清單中';
+        } else {
+            this.playlistBtn.title = '查看播放清單';
+        }
     }
 
     showPremiumRequiredMessage(message) {
