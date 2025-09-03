@@ -623,5 +623,73 @@ function parseLrcFormat(lrcText) {
     };
 }
 
+// Check if track is in user's library
+app.get('/api/library/check/:trackId', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const { trackId } = req.params;
+    
+    // Check if token needs refresh
+    if (Date.now() >= session.expiresAt) {
+        const refreshed = await refreshAccessToken(session);
+        if (!refreshed) {
+            return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+        }
+    }
+    
+    try {
+        const response = await axios.get(`https://api.spotify.com/v1/me/tracks/contains?ids=${trackId}`, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        
+        const isLiked = response.data && response.data[0] === true;
+        res.json({ isLiked });
+    } catch (error) {
+        if (error.response?.status === 401) {
+            const refreshed = await refreshAccessToken(session);
+            if (!refreshed) {
+                return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+            }
+            // Retry the request
+            return res.redirect(307, req.originalUrl);
+        }
+        
+        console.error('Error checking if track is liked:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({ 
+            error: 'Failed to check track status',
+            details: error.response?.data?.error?.message || error.message
+        });
+    }
+});
+
+// Extract colors from image
+app.post('/api/extract-colors', async (req, res) => {
+    const { imageUrl } = req.body;
+    
+    if (!imageUrl) {
+        return res.status(400).json({ error: 'Missing imageUrl parameter' });
+    }
+    
+    try {
+        // For now, return a default color palette
+        // In a production environment, you might want to implement actual color extraction
+        const colors = [
+            { r: 29, g: 185, b: 84 },   // Spotify green
+            { r: 25, g: 20, b: 20 },    // Spotify black
+            { r: 255, g: 255, b: 255 }, // White
+            { r: 83, g: 83, b: 83 },    // Gray
+            { r: 30, g: 215, b: 96 }    // Lighter Spotify green
+        ];
+        
+        res.json({ colors });
+    } catch (error) {
+        console.error('Error extracting colors:', error);
+        res.status(500).json({ error: 'Failed to extract colors' });
+    }
+});
+
 // Export for Vercel
 module.exports = app;
