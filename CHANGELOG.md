@@ -1,5 +1,39 @@
 # 更新日誌 (Changelog)
 
+## [v2.1.1] - 2024-12-19
+
+### 🐛 緊急修復 (Critical Fixes)
+
+#### 1. API 端點 404 錯誤修復
+- **問題**: `/api/player/queue` 和 `/api/player/transfer` 返回 404 錯誤
+- **修復**: 
+  - 更新 `/api/devices` 端點使用速率限制器
+  - 確保所有播放器 API 端點正確配置
+  - 添加完整的錯誤處理和 token 刷新邏輯
+
+#### 2. 加入播放清單按鈕狀態問題
+- **問題**: 音樂在播放清單中時"加入播放清單"按鈕沒有亮，點了也沒亮
+- **修復**:
+  - 新增 `/api/library/check/:trackId` 端點檢查歌曲是否已按讚
+  - 新增 `checkIfTrackIsLiked()` 方法動態檢查歌曲狀態
+  - 按鈕會根據歌曲狀態顯示不同圖標（➕ 或 ❤️）
+  - 添加歌曲後自動更新按鈕狀態
+
+#### 3. 移除 apple-music-enhancements.js 依賴
+- **問題**: 不再需要 apple-music-enhancements.js 文件
+- **修復**:
+  - 從 `public/index.html` 中移除該腳本引用
+  - 清理不必要的依賴
+
+#### 4. 設備切換功能修復
+- **問題**: 無法切換設備，API 返回 401 和 404 錯誤
+- **修復**:
+  - 更新 `/api/devices` 端點使用統一的錯誤處理
+  - 修復 `/api/player/transfer` 端點的速率限制
+  - 改進 JSON 解析錯誤處理
+
+---
+
 ## [v2.1.0] - 2024-12-19
 
 ### 🐛 修復問題 (Bug Fixes)

@@ -334,15 +334,47 @@ app.get('/api/devices', async (req, res) => {
         return res.status(401).json({ error: 'Not authenticated' });
     }
     
+    const sessionId = req.headers['x-session-id'] || req.query.sessionId;
+    
+    // Check if token needs refresh
+    if (Date.now() >= session.expiresAt) {
+        const refreshed = await refreshAccessToken(session);
+        if (!refreshed) {
+            return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+        }
+    }
+    
     try {
-        const response = await axios.get('https://api.spotify.com/v1/me/player/devices', {
+        const response = await makeSpotifyAPICall('https://api.spotify.com/v1/me/player/devices', {
             headers: { 'Authorization': `Bearer ${session.accessToken}` }
-        });
+        }, sessionId);
         
-        res.json({ devices: response.data.devices });
+        res.json({ devices: response.data.devices || [] });
     } catch (error) {
+        // Handle rate limiting
+        if (error.status === 429) {
+            console.log(`⚠️ Devices API rate limited, retry after ${error.retryAfter}ms`);
+            return res.status(429).json({ 
+                error: 'Too many requests', 
+                retryAfter: error.retryAfter,
+                message: 'API rate limit exceeded, please wait before retrying'
+            });
+        }
+        
+        if (error.response?.status === 401) {
+            const refreshed = await refreshAccessToken(session);
+            if (!refreshed) {
+                return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+            }
+            // Retry the request
+            return res.redirect(307, req.originalUrl);
+        }
+        
         console.error('Error fetching devices:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Failed to fetch devices' });
+        res.status(error.response?.status || 500).json({ 
+            error: 'Failed to fetch devices',
+            details: error.response?.data?.error?.message || error.message
+        });
     }
 });
 
@@ -583,6 +615,59 @@ app.post('/api/library/remove', async (req, res) => {
     } catch (error) {
         console.error('Error removing track from library:', error.response?.data || error.message);
         res.status(500).json({ success: false, error: 'Failed to remove track from library' });
+    }
+});
+
+// Check if track is in user's library
+app.get('/api/library/check/:trackId', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const { trackId } = req.params;
+    const sessionId = req.headers['x-session-id'] || req.query.sessionId;
+    
+    // Check if token needs refresh
+    if (Date.now() >= session.expiresAt) {
+        const refreshed = await refreshAccessToken(session);
+        if (!refreshed) {
+            return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+        }
+    }
+    
+    try {
+        const response = await makeSpotifyAPICall(`https://api.spotify.com/v1/me/tracks/contains?ids=${trackId}`, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        }, sessionId);
+        
+        const isLiked = response.data && response.data[0] === true;
+        res.json({ isLiked });
+    } catch (error) {
+        // Handle rate limiting
+        if (error.status === 429) {
+            console.log(`⚠️ Library check API rate limited, retry after ${error.retryAfter}ms`);
+            return res.status(429).json({ 
+                error: 'Too many requests', 
+                retryAfter: error.retryAfter,
+                message: 'API rate limit exceeded, please wait before retrying'
+            });
+        }
+        
+        if (error.response?.status === 401) {
+            const refreshed = await refreshAccessToken(session);
+            if (!refreshed) {
+                return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+            }
+            // Retry the request
+            return res.redirect(307, req.originalUrl);
+        }
+        
+        console.error('Error checking if track is liked:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({ 
+            error: 'Failed to check track status',
+            details: error.response?.data?.error?.message || error.message
+        });
     }
 });
 

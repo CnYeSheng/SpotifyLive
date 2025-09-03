@@ -616,6 +616,9 @@ class SpotifyLyricsPlayer {
 
         // 更新播放清單按鈕狀態
         this.updatePlaylistButton();
+        
+        // 檢查當前歌曲是否在已按讚的歌曲中
+        this.checkIfTrackIsLiked();
     }
 
     updateProgress() {
@@ -1312,6 +1315,8 @@ class SpotifyLyricsPlayer {
             if (data.success) {
                 console.log('已添加到喜歡的歌曲');
                 this.showSuccessMessage('❤️ 已添加到喜歡的歌曲');
+                // 更新按鈕狀態
+                this.checkIfTrackIsLiked();
             } else {
                 console.error('添加到喜歡的歌曲失敗:', data.error);
                 this.showErrorMessage('添加失敗: ' + (data.error || '未知錯誤'));
@@ -1881,6 +1886,35 @@ class SpotifyLyricsPlayer {
             this.playlistBtn.title = '當前歌曲在播放清單中';
         } else {
             this.playlistBtn.title = '查看播放清單';
+        }
+    }
+
+    async checkIfTrackIsLiked() {
+        if (!this.addToPlaylistBtn || !this.currentTrack || !this.sessionId) return;
+        
+        try {
+            const response = await fetch(`${this.apiBase}/api/library/check/${this.currentTrack.id}`, {
+                headers: {
+                    'X-Session-Id': this.sessionId
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                const isLiked = data.isLiked;
+                
+                this.addToPlaylistBtn.classList.toggle('active', isLiked);
+                
+                if (isLiked) {
+                    this.addToPlaylistBtn.title = '已在喜歡的歌曲中';
+                    this.addToPlaylistBtn.innerHTML = '❤️';
+                } else {
+                    this.addToPlaylistBtn.title = '加入喜歡的歌曲';
+                    this.addToPlaylistBtn.innerHTML = '➕';
+                }
+            }
+        } catch (error) {
+            console.error('檢查歌曲是否已按讚失敗:', error);
         }
     }
 
