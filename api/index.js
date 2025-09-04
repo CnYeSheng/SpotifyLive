@@ -96,13 +96,13 @@ app.get('/api/current-track', async (req, res) => {
         return res.status(401).json({ error: 'Not authenticated' });
     }
     
-    // Check if token needs refresh (提前 10 分鐘檢查)
-    const tenMinutesFromNow = Date.now() + (10 * 60 * 1000);
-    if (tenMinutesFromNow >= session.expiresAt) {
-        console.log('🔄 Token 即將過期，主動刷新...');
+    // Check if token needs refresh (提前 15 分鐘檢查)
+    const fifteenMinutesFromNow = Date.now() + (15 * 60 * 1000);
+    if (fifteenMinutesFromNow >= session.expiresAt) {
+        console.log('🔄 Current-track - Token 即將過期，主動刷新...');
         const refreshed = await refreshAccessToken(session);
         if (!refreshed) {
-            console.log('❌ Token 刷新失敗，要求重新認證');
+            console.log('❌ Current-track - Token 刷新失敗，要求重新認證');
             return res.status(401).json({ error: 'Token expired, please re-authenticate' });
         }
     }
@@ -190,8 +190,8 @@ async function refreshAccessToken(session) {
             session.refreshToken = response.data.refresh_token;
             console.log('✅ 獲得新的 refresh token');
         }
-        // 提前 5 分鐘過期，確保有足夠時間刷新
-        session.expiresAt = Date.now() + ((response.data.expires_in - 300) * 1000);
+        // 提前 10 分鐘過期，確保有足夠時間刷新
+        session.expiresAt = Date.now() + ((response.data.expires_in - 600) * 1000);
         console.log(`✅ Token 刷新成功，新的過期時間: ${new Date(session.expiresAt).toLocaleString()}`);
         return true;
     } catch (error) {
@@ -647,9 +647,9 @@ app.get('/api/library/check/:trackId', async (req, res) => {
     
     const { trackId } = req.params;
     
-    // Check if token needs refresh (提前 10 分鐘檢查)
-    const tenMinutesFromNow = Date.now() + (10 * 60 * 1000);
-    if (tenMinutesFromNow >= session.expiresAt) {
+    // Check if token needs refresh (提前 15 分鐘檢查)
+    const fifteenMinutesFromNow = Date.now() + (15 * 60 * 1000);
+    if (fifteenMinutesFromNow >= session.expiresAt) {
         console.log('🔄 Library check - Token 即將過期，主動刷新...');
         const refreshed = await refreshAccessToken(session);
         if (!refreshed) {
