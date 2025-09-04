@@ -39,16 +39,32 @@ class SpotifyLyricsPlayer {
         this.tokenRefreshInterval = null;
         this.lastTokenRefresh = 0;
         this.isHandlingAuthError = false; // 防止重複處理認證錯誤
-        
+
         // 日誌輔助函數
-        this.log = (message, type = 'info') => {
-            const timestamp = new Date().toLocaleTimeString();
-            console.log(`[${timestamp}] ${message}`);
-        };
+    this.log = (message, type = 'info') => {
+        const now = new Date();
+
+        // 轉換到台北時區
+        const taipeiTime = new Date(
+            now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' })
+        );
+
+        const year   = taipeiTime.getFullYear();
+        const month  = String(taipeiTime.getMonth() + 1).padStart(2, '0');
+        const day    = String(taipeiTime.getDate()).padStart(2, '0');
+        const hour   = String(taipeiTime.getHours()).padStart(2, '0');
+        const minute = String(taipeiTime.getMinutes()).padStart(2, '0');
+        const second = String(taipeiTime.getSeconds()).padStart(2, '0');
+
+        const timestamp = `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+        console.log(`[${timestamp}] ${message}`);
+    };
+
         
         // 检测运行环境
-        this.isVercel = window.location.hostname.includes('vercel.app');
-        this.isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        this.isVercel = window.location.hostname.includes('vercel.app') || window.location.hostname.includes('wmcc.jp.eu.org');
+        this.isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.includes('cyss.us.eu.org');
+
         
         // 设置 API 基础路径
         if (this.isLocal) {
