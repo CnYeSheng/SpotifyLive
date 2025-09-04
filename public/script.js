@@ -686,10 +686,10 @@ class SpotifyLyricsPlayer {
                 this.updateTrackInfo();
                 // 重置歌詞狀態
                 this.lyrics = [];
-                // 延遲自動獲取歌詞 (2秒後)
+                // 延遲自動獲取歌詞 (1.5秒後)
                 setTimeout(() => {
                     this.loadLyrics();
-                }, 2000);
+                }, 1500);
                 this.currentLyricsTrackId = null;
                 this.isLoadingLyrics = false;
                 
