@@ -96,13 +96,13 @@ app.get('/api/current-track', async (req, res) => {
         return res.status(401).json({ error: 'Not authenticated' });
     }
     
-    // Check if token needs refresh (提前 15 分鐘檢查)
-    const fifteenMinutesFromNow = Date.now() + (15 * 60 * 1000);
-    if (fifteenMinutesFromNow >= session.expiresAt) {
-        console.log('🔄 Current-track - Token 即將過期，主動刷新...');
+    // Check if token needs refresh (提前 25 分鐘檢查)
+    const twentyFiveMinutesFromNow = Date.now() + (25 * 60 * 1000);
+    if (twentyFiveMinutesFromNow >= session.expiresAt) {
+        console.log(`[${new Date().toLocaleTimeString()}] 🔄 Current-track - Token 即將過期，主動刷新...`);
         const refreshed = await refreshAccessToken(session);
         if (!refreshed) {
-            console.log('❌ Current-track - Token 刷新失敗，要求重新認證');
+            console.log(`[${new Date().toLocaleTimeString()}] ❌ Current-track - Token 刷新失敗，要求重新認證`);
             return res.status(401).json({ error: 'Token expired, please re-authenticate' });
         }
     }
@@ -188,17 +188,17 @@ async function refreshAccessToken(session) {
         session.accessToken = response.data.access_token;
         if (response.data.refresh_token) {
             session.refreshToken = response.data.refresh_token;
-            console.log('✅ 獲得新的 refresh token');
+            console.log(`[${new Date().toLocaleTimeString()}] ✅ 獲得新的 refresh token`);
         }
-        // 提前 10 分鐘過期，確保有足夠時間刷新
-        session.expiresAt = Date.now() + ((response.data.expires_in - 600) * 1000);
-        console.log(`✅ Token 刷新成功，新的過期時間: ${new Date(session.expiresAt).toLocaleString()}`);
+        // 提前 20 分鐘過期，確保有足夠時間刷新
+        session.expiresAt = Date.now() + ((response.data.expires_in - 1200) * 1000);
+        console.log(`[${new Date().toLocaleTimeString()}] ✅ Token 刷新成功，新的過期時間: ${new Date(session.expiresAt).toLocaleString()}`);
         return true;
     } catch (error) {
-        console.error('❌ Token 刷新失敗:', error.response?.data || error.message);
+        console.error(`[${new Date().toLocaleTimeString()}] ❌ Token 刷新失敗:`, error.response?.data || error.message);
         // 如果 refresh token 也過期了，清除會話
         if (error.response?.status === 400) {
-            console.log('🗑️ Refresh token 已過期，清除會話');
+            console.log(`[${new Date().toLocaleTimeString()}] 🗑️ Refresh token 已過期，清除會話`);
             // 這裡可以添加清除會話的邏輯
         }
         return false;
@@ -647,13 +647,13 @@ app.get('/api/library/check/:trackId', async (req, res) => {
     
     const { trackId } = req.params;
     
-    // Check if token needs refresh (提前 15 分鐘檢查)
-    const fifteenMinutesFromNow = Date.now() + (15 * 60 * 1000);
-    if (fifteenMinutesFromNow >= session.expiresAt) {
-        console.log('🔄 Library check - Token 即將過期，主動刷新...');
+    // Check if token needs refresh (提前 25 分鐘檢查)
+    const twentyFiveMinutesFromNow = Date.now() + (25 * 60 * 1000);
+    if (twentyFiveMinutesFromNow >= session.expiresAt) {
+        console.log(`[${new Date().toLocaleTimeString()}] 🔄 Library check - Token 即將過期，主動刷新...`);
         const refreshed = await refreshAccessToken(session);
         if (!refreshed) {
-            console.log('❌ Library check - Token 刷新失敗，要求重新認證');
+            console.log(`[${new Date().toLocaleTimeString()}] ❌ Library check - Token 刷新失敗，要求重新認證`);
             return res.status(401).json({ error: 'Token expired, please re-authenticate' });
         }
     }

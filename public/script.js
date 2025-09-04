@@ -40,6 +40,12 @@ class SpotifyLyricsPlayer {
         this.lastTokenRefresh = 0;
         this.isHandlingAuthError = false; // 防止重複處理認證錯誤
         
+        // 日誌輔助函數
+        this.log = (message, type = 'info') => {
+            const timestamp = new Date().toLocaleTimeString();
+            console.log(`[${timestamp}] ${message}`);
+        };
+        
         // 检测运行环境
         this.isVercel = window.location.hostname.includes('vercel.app');
         this.isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -331,17 +337,17 @@ class SpotifyLyricsPlayer {
     async handleAuthError() {
         // 防止重複處理認證錯誤
         if (this.isHandlingAuthError) {
-            console.log('⏳ 正在處理認證錯誤，跳過重複請求');
+            this.log('⏳ 正在處理認證錯誤，跳過重複請求');
             return false;
         }
         
         this.isHandlingAuthError = true;
-        console.log('🔍 處理認證錯誤...');
+        this.log('🔍 處理認證錯誤...');
         
         try {
             // 檢查是否有 sessionId
             if (!this.sessionId) {
-                console.log('❌ 沒有 sessionId，需要重新登入');
+                this.log('❌ 沒有 sessionId，需要重新登入');
                 this.showAuthSection();
                 localStorage.removeItem('spotify_session_id');
                 return false;
@@ -353,7 +359,7 @@ class SpotifyLyricsPlayer {
             });
             const data = await response.json();
             if (!data.authenticated) {
-                console.log('❌ Session 已失效，需要重新登入');
+                this.log('❌ Session 已失效，需要重新登入');
                 this.showAuthSection();
                 this.stopTracking();
                 localStorage.removeItem('spotify_session_id');
@@ -361,7 +367,7 @@ class SpotifyLyricsPlayer {
                 return false;
             }
             
-            console.log('✅ Session 仍然有效，但可能需要刷新 token...');
+            this.log('✅ Session 仍然有效，但可能需要刷新 token...');
             
             // 等待一小段時間讓服務端處理 token 刷新
             await new Promise(resolve => setTimeout(resolve, 1000));
@@ -372,10 +378,10 @@ class SpotifyLyricsPlayer {
             });
             
             if (testResponse.ok) {
-                console.log('✅ Token 狀態正常');
+                this.log('✅ Token 狀態正常');
                 return true;
             } else if (testResponse.status === 401) {
-                console.log('❌ Token 仍然無效，需要重新登入');
+                this.log('❌ Token 仍然無效，需要重新登入');
                 this.showAuthSection();
                 this.stopTracking();
                 localStorage.removeItem('spotify_session_id');
@@ -385,7 +391,7 @@ class SpotifyLyricsPlayer {
             
             return true;
         } catch (error) {
-            console.error('認證處理失敗:', error);
+            this.log(`❌ 認證處理失敗: ${error.message}`);
             this.showAuthSection();
             this.stopTracking();
             localStorage.removeItem('spotify_session_id');
@@ -507,7 +513,7 @@ class SpotifyLyricsPlayer {
             this.proactiveTokenRefresh();
         }, 30 * 60 * 1000); // 30 分鐘
         
-        console.log('🔄 Token 刷新定時器已啟動 (每 30 分鐘檢查一次)');
+        this.log('🔄 Token 刷新定時器已啟動 (每 30 分鐘檢查一次)');
     }
 
     async proactiveTokenRefresh() {
@@ -519,7 +525,7 @@ class SpotifyLyricsPlayer {
             return;
         }
         
-        console.log('🔄 執行主動 token 檢查...');
+        this.log('🔄 執行主動 token 檢查...');
         this.lastTokenRefresh = now;
         
         try {
@@ -531,13 +537,13 @@ class SpotifyLyricsPlayer {
             if (response.ok) {
                 const data = await response.json();
                 if (data.authenticated) {
-                    console.log('✅ Token 狀態良好');
+                    this.log('✅ Token 狀態良好');
                 } else {
-                    console.log('⚠️ 認證狀態異常，可能需要重新登入');
+                    this.log('⚠️ 認證狀態異常，可能需要重新登入');
                 }
             }
         } catch (error) {
-            console.error('主動 token 檢查失敗:', error);
+            this.log(`❌ 主動 token 檢查失敗: ${error.message}`);
         }
     }
 
@@ -548,25 +554,25 @@ class SpotifyLyricsPlayer {
         // 檢查是否在速率限制期間
         if (this.isRateLimited && now < this.retryAfterUntil) {
             const waitSec = Math.ceil((this.retryAfterUntil - now) / 1000);
-            console.log(`⏸️ 速率限制中，還需等待 ${waitSec} 秒`);
+            this.log(`⏸️ 速率限制中，還需等待 ${waitSec} 秒`);
             return;
         }
         
         // 如果速率限制已過期，重置狀態
         if (this.isRateLimited && now >= this.retryAfterUntil) {
             this.isRateLimited = false;
-            console.log('✅ 速率限制已解除');
+            this.log('✅ 速率限制已解除');
         }
         
         // 如果正在檢查中，跳過
         if (this.isCheckingTrack) {
-            console.log('⏳ 正在檢查中，跳過此次請求');
+            this.log('⏳ 正在檢查中，跳過此次請求');
             return;
         }
         
         // 檢查最小間隔
         if (now - this.lastCheckTime < this.currentCheckInterval) {
-            console.log('⏳ 間隔時間不足，跳過此次請求');
+            this.log('⏳ 間隔時間不足，跳過此次請求');
             return;
         }
         
@@ -591,9 +597,10 @@ class SpotifyLyricsPlayer {
             const response = await fetch(`${this.apiBase}/api/current-track`, { headers });
             
             if (response.status === 401) {
-                console.log('🔑 檢測到認證問題，嘗試自動修復...');
+                this.log('🔑 檢測到認證問題，嘗試自動修復...');
                 const authFixed = await this.handleAuthError();
                 if (!authFixed) {
+                    this.log('❌ 認證修復失敗，停止追蹤');
                     return;
                 }
                 // 如果修復成功，重新嘗試請求
@@ -601,8 +608,11 @@ class SpotifyLyricsPlayer {
                     headers: { 'X-Session-Id': this.sessionId } 
                 });
                 if (retryResponse.status === 401) {
+                    this.log('❌ 重試後仍然 401，強制重新登入');
                     this.showAuthSection();
                     this.stopTracking();
+                    localStorage.removeItem('spotify_session_id');
+                    this.sessionId = null;
                     return;
                 }
                 // 使用重試的響應繼續處理
@@ -672,14 +682,14 @@ class SpotifyLyricsPlayer {
             
             // 只在新歌曲時更新這些內容
             if (isNewTrack) {
-                console.log('🎵 新歌曲，更新所有信息');
+                this.log('🎵 新歌曲，更新所有信息');
                 this.updateTrackInfo();
                 // 重置歌詞狀態
                 this.lyrics = [];
-                // 延遲自動獲取歌詞 (1.5秒後)
+                // 延遲自動獲取歌詞 (2秒後)
                 setTimeout(() => {
                     this.loadLyrics();
-                }, 1500);
+                }, 2000);
                 this.currentLyricsTrackId = null;
                 this.isLoadingLyrics = false;
                 
@@ -714,9 +724,13 @@ class SpotifyLyricsPlayer {
             }
 
         } catch (error) {
-            console.error('獲取當前播放失敗:', error);
+            this.log(`❌ 獲取當前播放失敗: ${error.message}`);
             this.updateStatus('spotify', false);
-            this.scheduleRetry(this.minCheckInterval);
+            // 如果是認證錯誤，嘗試修復
+            if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+                this.log('🔑 檢測到認證相關錯誤，嘗試修復...');
+                this.handleAuthError();
+            }
         } finally {
             this.isCheckingTrack = false;
         }
@@ -2148,7 +2162,7 @@ class SpotifyLyricsPlayer {
             });
             
             if (response.status === 401) {
-                console.log('🔑 Library check 認證問題，嘗試修復...');
+                this.log('🔑 Library check 認證問題，嘗試修復...');
                 const authFixed = await this.handleAuthError();
                 if (authFixed) {
                     // 重新嘗試請求
@@ -2162,11 +2176,11 @@ class SpotifyLyricsPlayer {
                         // 直接更新按讚狀態
                         this.updateLikeButtonState(retryData.isLiked);
                     } else if (retryResponse.status === 401) {
-                        console.log('❌ Library check 重試後仍然 401，停止檢查');
+                        this.log('❌ Library check 重試後仍然 401，停止檢查');
                         return;
                     }
                 } else {
-                    console.log('❌ Library check 認證修復失敗');
+                    this.log('❌ Library check 認證修復失敗');
                 }
                 return;
             }
@@ -2176,10 +2190,10 @@ class SpotifyLyricsPlayer {
                 this.updateLikeButtonState(data.isLiked);
             }
         } catch (error) {
-            console.error('檢查歌曲是否已按讚失敗:', error);
+            this.log(`❌ 檢查歌曲是否已按讚失敗: ${error.message}`);
             // 如果是網路錯誤，不要顯示錯誤，靜默失敗
             if (error.name !== 'TypeError') {
-                console.log('🔇 Library check 靜默失敗，不影響主要功能');
+                this.log('🔇 Library check 靜默失敗，不影響主要功能');
             }
         }
     }
