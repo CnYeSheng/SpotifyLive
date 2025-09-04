@@ -661,9 +661,14 @@ class SpotifyLyricsPlayer {
             
             // 只在新歌曲時更新這些內容
             if (isNewTrack) {
+                console.log('🎵 新歌曲，更新所有信息');
                 this.updateTrackInfo();
                 // 重置歌詞狀態
                 this.lyrics = [];
+                // 延遲自動獲取歌詞 (1.5秒後)
+                setTimeout(() => {
+                    this.autoLoadLyrics();
+                }, 1500);
                 this.currentLyricsTrackId = null;
                 this.isLoadingLyrics = false;
                 
@@ -1816,6 +1821,27 @@ class SpotifyLyricsPlayer {
             }
 
             const response = await fetch(`${this.apiBase}/api/player/queue`, { headers });
+            
+            if (response.status === 401) {
+                console.log('🔑 Queue 認證問題，嘗試修復...');
+                const authFixed = await this.handleAuthError();
+                if (authFixed) {
+                    // 重新嘗試請求
+                    const retryResponse = await fetch(`${this.apiBase}/api/player/queue`, { headers });
+                    if (retryResponse.ok) {
+                        const retryData = await retryResponse.json();
+                        if (retryData.queue && retryData.queue.length > 0) {
+                            this.displayPlaylist(retryData.queue);
+                        } else {
+                            this.playlistContent.innerHTML = '<div class="loading">播放清單為空</div>';
+                        }
+                        return;
+                    }
+                }
+                this.playlistContent.innerHTML = '<div class="loading">認證失敗</div>';
+                return;
+            }
+            
             if (response.ok) {
                 const data = await response.json();
                 if (data.queue && data.queue.length > 0) {
@@ -1875,6 +1901,23 @@ class SpotifyLyricsPlayer {
             }
 
             const response = await fetch(`${this.apiBase}/api/devices`, { headers });
+            
+            if (response.status === 401) {
+                console.log('🔑 Devices 認證問題，嘗試修復...');
+                const authFixed = await this.handleAuthError();
+                if (authFixed) {
+                    // 重新嘗試請求
+                    const retryResponse = await fetch(`${this.apiBase}/api/devices`, { headers });
+                    if (retryResponse.ok) {
+                        const retryData = await retryResponse.json();
+                        this.displayDevices(retryData.devices || []);
+                        return;
+                    }
+                }
+                this.devicesContent.innerHTML = '<div class="loading">認證失敗</div>';
+                return;
+            }
+            
             if (response.ok) {
                 const data = await response.json();
                 this.displayDevices(data.devices || []);
@@ -1944,16 +1987,43 @@ class SpotifyLyricsPlayer {
 
             const response = await fetch(`${this.apiBase}/api/player/transfer`, {
                 method: 'PUT',
-                headers: headers,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Session-Id': this.sessionId
+                },
                 body: JSON.stringify({ device_ids: [deviceId], play: true })
             });
+            
+            if (response.status === 401) {
+                console.log('🔑 Transfer 認證問題，嘗試修復...');
+                const authFixed = await this.handleAuthError();
+                if (authFixed) {
+                    // 重新嘗試請求
+                    const retryResponse = await fetch(`${this.apiBase}/api/player/transfer`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Session-Id': this.sessionId
+                        },
+                        body: JSON.stringify({ device_ids: [deviceId], play: true })
+                    });
+                    if (retryResponse.ok) {
+                        this.devicesModal.style.display = 'none';
+                        this.showSuccessMessage('✅ 已切換播放設備');
+                        setTimeout(() => this.checkCurrentTrackWithRateLimit(), 2000);
+                        return;
+                    }
+                }
+                this.showErrorMessage('設備切換認證失敗');
+                return;
+            }
 
             if (response.ok) {
                 this.devicesModal.style.display = 'none';
                 this.showSuccessMessage('✅ 已切換播放設備');
                 setTimeout(() => this.checkCurrentTrackWithRateLimit(), 2000);
             } else {
-                const data = await response.json();
+                const data = await response.json().catch(() => ({}));
                 this.showErrorMessage(data.error || '切換設備失敗');
             }
         } catch (error) {

@@ -709,5 +709,133 @@ app.post('/api/extract-colors', async (req, res) => {
     }
 });
 
+// Get user's available devices
+app.get('/api/devices', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    // Check if token needs refresh
+    const tenMinutesFromNow = Date.now() + (10 * 60 * 1000);
+    if (tenMinutesFromNow >= session.expiresAt) {
+        console.log('🔄 Devices - Token 即將過期，主動刷新...');
+        const refreshed = await refreshAccessToken(session);
+        if (!refreshed) {
+            console.log('❌ Devices - Token 刷新失敗，要求重新認證');
+            return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+        }
+    }
+    
+    try {
+        const response = await axios.get('https://api.spotify.com/v1/me/player/devices', {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json(response.data);
+    } catch (error) {
+        if (error.response?.status === 401) {
+            const refreshed = await refreshAccessToken(session);
+            if (!refreshed) {
+                return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+            }
+            // Retry the request
+            return res.redirect(307, req.originalUrl);
+        }
+        
+        console.error('Error getting devices:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({ 
+            error: 'Failed to get devices',
+            details: error.response?.data?.error?.message || error.message
+        });
+    }
+});
+
+// Get user's queue
+app.get('/api/player/queue', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    // Check if token needs refresh
+    const tenMinutesFromNow = Date.now() + (10 * 60 * 1000);
+    if (tenMinutesFromNow >= session.expiresAt) {
+        console.log('🔄 Queue - Token 即將過期，主動刷新...');
+        const refreshed = await refreshAccessToken(session);
+        if (!refreshed) {
+            console.log('❌ Queue - Token 刷新失敗，要求重新認證');
+            return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+        }
+    }
+    
+    try {
+        const response = await axios.get('https://api.spotify.com/v1/me/player/queue', {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json(response.data);
+    } catch (error) {
+        if (error.response?.status === 401) {
+            const refreshed = await refreshAccessToken(session);
+            if (!refreshed) {
+                return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+            }
+            // Retry the request
+            return res.redirect(307, req.originalUrl);
+        }
+        
+        console.error('Error getting queue:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({ 
+            error: 'Failed to get queue',
+            details: error.response?.data?.error?.message || error.message
+        });
+    }
+});
+
+// Transfer playback to device
+app.put('/api/player/transfer', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const { device_ids, play } = req.body;
+    
+    // Check if token needs refresh
+    const tenMinutesFromNow = Date.now() + (10 * 60 * 1000);
+    if (tenMinutesFromNow >= session.expiresAt) {
+        console.log('🔄 Transfer - Token 即將過期，主動刷新...');
+        const refreshed = await refreshAccessToken(session);
+        if (!refreshed) {
+            console.log('❌ Transfer - Token 刷新失敗，要求重新認證');
+            return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+        }
+    }
+    
+    try {
+        await axios.put('https://api.spotify.com/v1/me/player', {
+            device_ids,
+            play: play || false
+        }, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        if (error.response?.status === 401) {
+            const refreshed = await refreshAccessToken(session);
+            if (!refreshed) {
+                return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+            }
+            // Retry the request
+            return res.redirect(307, req.originalUrl);
+        }
+        
+        console.error('Error transferring playback:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({ 
+            error: 'Failed to transfer playback',
+            details: error.response?.data?.error?.message || error.message
+        });
+    }
+});
+
 // Export for Vercel
 module.exports = app;
