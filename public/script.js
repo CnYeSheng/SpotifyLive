@@ -343,6 +343,7 @@ class SpotifyLyricsPlayer {
             if (!data.authenticated) {
                 console.log('❌ Session 已失效，需要重新登入');
                 this.showAuthSection();
+                this.stopTracking();
                 localStorage.removeItem('spotify_session_id');
                 this.sessionId = null;
                 return false;
@@ -353,9 +354,26 @@ class SpotifyLyricsPlayer {
         } catch (error) {
             console.error('檢查認證狀態失敗:', error);
             this.showAuthSection();
+            this.stopTracking();
             localStorage.removeItem('spotify_session_id');
             this.sessionId = null;
             return false;
+        }
+    }
+
+    updateLikeButtonState(isLiked) {
+        if (this.addToPlaylistBtn) {
+            this.addToPlaylistBtn.classList.toggle('active', isLiked);
+            
+            if (isLiked) {
+                this.addToPlaylistBtn.title = '已在喜歡的歌曲中';
+                this.addToPlaylistBtn.innerHTML = '❤️';
+                this.addToPlaylistBtn.classList.add('liked');
+            } else {
+                this.addToPlaylistBtn.title = '加入喜歡的歌曲';
+                this.addToPlaylistBtn.innerHTML = '➕';
+                this.addToPlaylistBtn.classList.remove('liked');
+            }
         }
     }
 
@@ -507,7 +525,14 @@ class SpotifyLyricsPlayer {
                 }
                 // 使用重試的響應繼續處理
                 const retryData = await retryResponse.json();
-                this.processTrackResponse(retryData, retryResponse);
+                // 直接處理重試的數據
+                if (!retryData.name) {
+                    this.showNoMusicSection();
+                    return;
+                }
+                this.currentTrack = retryData;
+                this.currentTrack.lastUpdated = Date.now();
+                this.updateTrackInfo();
                 return;
             }
 
@@ -1979,6 +2004,7 @@ class SpotifyLyricsPlayer {
                     });
                     if (retryResponse.ok) {
                         const retryData = await retryResponse.json();
+                        // 直接更新按讚狀態
                         this.updateLikeButtonState(retryData.isLiked);
                     }
                 }
@@ -1987,17 +2013,7 @@ class SpotifyLyricsPlayer {
             
             if (response.ok) {
                 const data = await response.json();
-                const isLiked = data.isLiked;
-                
-                this.addToPlaylistBtn.classList.toggle('active', isLiked);
-                
-                if (isLiked) {
-                    this.addToPlaylistBtn.title = '已在喜歡的歌曲中';
-                    this.addToPlaylistBtn.innerHTML = '❤️';
-                } else {
-                    this.addToPlaylistBtn.title = '加入喜歡的歌曲';
-                    this.addToPlaylistBtn.innerHTML = '➕';
-                }
+                this.updateLikeButtonState(data.isLiked);
             }
         } catch (error) {
             console.error('檢查歌曲是否已按讚失敗:', error);
