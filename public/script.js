@@ -35,6 +35,10 @@ class SpotifyLyricsPlayer {
         this.isNearTrackEnd = false;
         this.lastUserAction = 0;
         
+        // Token 刷新控制
+        this.tokenRefreshInterval = null;
+        this.lastTokenRefresh = 0;
+        
         // 检测运行环境
         this.isVercel = window.location.hostname.includes('vercel.app');
         this.isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -311,6 +315,7 @@ class SpotifyLyricsPlayer {
                 }
                 this.showPlayerSection();
                 this.startTracking();
+                this.startTokenRefreshTimer();
             } else {
                 this.showAuthSection();
                 localStorage.removeItem('spotify_session_id');
@@ -349,7 +354,29 @@ class SpotifyLyricsPlayer {
                 return false;
             }
             
-            console.log('✅ Session 仍然有效，可能是暫時性問題');
+            console.log('✅ Session 仍然有效，嘗試觸發 token 刷新...');
+            
+            // 嘗試觸發一次 API 調用來刷新 token
+            try {
+                const testResponse = await fetch('/api/current-track', {
+                    headers: { 'X-Session-Id': this.sessionId }
+                });
+                
+                if (testResponse.ok) {
+                    console.log('✅ Token 刷新成功');
+                    return true;
+                } else if (testResponse.status === 401) {
+                    console.log('❌ Token 刷新失敗，需要重新登入');
+                    this.showAuthSection();
+                    this.stopTracking();
+                    localStorage.removeItem('spotify_session_id');
+                    this.sessionId = null;
+                    return false;
+                }
+            } catch (testError) {
+                console.error('測試 API 調用失敗:', testError);
+            }
+            
             return true;
         } catch (error) {
             console.error('檢查認證狀態失敗:', error);
@@ -456,6 +483,50 @@ class SpotifyLyricsPlayer {
         if (this.lyricsLoadTimeout) {
             clearTimeout(this.lyricsLoadTimeout);
             this.lyricsLoadTimeout = null;
+        }
+        if (this.tokenRefreshInterval) {
+            clearInterval(this.tokenRefreshInterval);
+            this.tokenRefreshInterval = null;
+        }
+    }
+
+    startTokenRefreshTimer() {
+        // 每 30 分鐘檢查一次 token 狀態
+        this.tokenRefreshInterval = setInterval(() => {
+            this.proactiveTokenRefresh();
+        }, 30 * 60 * 1000); // 30 分鐘
+        
+        console.log('🔄 Token 刷新定時器已啟動 (每 30 分鐘檢查一次)');
+    }
+
+    async proactiveTokenRefresh() {
+        if (!this.sessionId) return;
+        
+        const now = Date.now();
+        // 避免過於頻繁的刷新請求
+        if (now - this.lastTokenRefresh < 10 * 60 * 1000) {
+            return;
+        }
+        
+        console.log('🔄 執行主動 token 檢查...');
+        this.lastTokenRefresh = now;
+        
+        try {
+            // 嘗試一個輕量級的 API 調用來觸發 token 刷新
+            const response = await fetch('/api/auth-status', {
+                headers: { 'X-Session-Id': this.sessionId }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.authenticated) {
+                    console.log('✅ Token 狀態良好');
+                } else {
+                    console.log('⚠️ 認證狀態異常，可能需要重新登入');
+                }
+            }
+        } catch (error) {
+            console.error('主動 token 檢查失敗:', error);
         }
     }
 
