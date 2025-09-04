@@ -62,7 +62,7 @@ class SpotifyLyricsPlayer {
 
         
         // 检测运行环境
-        this.isVercel = window.location.hostname.includes('vercel.app') || window.location.hostname.includes('wmcc.jp.eu.org');
+        this.isVercel = window.location.hostname.includes('vercel.app');
         this.isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.includes('cyss.us.eu.org');
 
         
