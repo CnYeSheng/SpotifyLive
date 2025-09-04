@@ -37,7 +37,25 @@ class SpotifyLyricsPlayer {
         
         // 检测运行环境
         this.isVercel = window.location.hostname.includes('vercel.app');
-        this.apiBase = this.isVercel ? '/api' : '';
+        this.isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        
+        // 设置 API 基础路径
+        if (this.isLocal) {
+            this.apiBase = ''; // 本地开发环境
+        } else if (this.isVercel) {
+            this.apiBase = '/api'; // Vercel 环境
+        } else {
+            this.apiBase = ''; // 其他环境，使用相对路径
+        }
+        
+        // 调试信息
+        console.log('🌐 环境检测:', {
+            hostname: window.location.hostname,
+            isLocal: this.isLocal,
+            isVercel: this.isVercel,
+            apiBase: this.apiBase,
+            fullApiUrl: window.location.origin + this.apiBase
+        });
         
         this.initializeElements();
         this.bindEvents();
@@ -304,6 +322,43 @@ class SpotifyLyricsPlayer {
         }
     }
 
+    async handleAuthError() {
+        console.log('🔍 處理認證錯誤...');
+        
+        // 檢查是否有 sessionId
+        if (!this.sessionId) {
+            console.log('❌ 沒有 sessionId，需要重新登入');
+            this.showAuthSection();
+            localStorage.removeItem('spotify_session_id');
+            return false;
+        }
+
+        // 嘗試檢查認證狀態
+        try {
+            const response = await fetch('/api/auth-status', {
+                headers: { 'X-Session-Id': this.sessionId }
+            });
+            const data = await response.json();
+            
+            if (!data.authenticated) {
+                console.log('❌ Session 已失效，需要重新登入');
+                this.showAuthSection();
+                localStorage.removeItem('spotify_session_id');
+                this.sessionId = null;
+                return false;
+            }
+            
+            console.log('✅ Session 仍然有效，可能是暫時性問題');
+            return true;
+        } catch (error) {
+            console.error('檢查認證狀態失敗:', error);
+            this.showAuthSection();
+            localStorage.removeItem('spotify_session_id');
+            this.sessionId = null;
+            return false;
+        }
+    }
+
     showAuthSection() {
         this.authSection.style.display = 'flex';
         this.playerSection.style.display = 'none';
@@ -436,10 +491,23 @@ class SpotifyLyricsPlayer {
             const response = await fetch(`${this.apiBase}/api/current-track`, { headers });
             
             if (response.status === 401) {
-                this.showAuthSection();
-                this.stopTracking();
-                localStorage.removeItem('spotify_session_id');
-                this.sessionId = null;
+                console.log('🔑 檢測到認證問題，嘗試自動修復...');
+                const authFixed = await this.handleAuthError();
+                if (!authFixed) {
+                    return;
+                }
+                // 如果修復成功，重新嘗試請求
+                const retryResponse = await fetch(`${this.apiBase}/api/current-track`, { 
+                    headers: { 'X-Session-Id': this.sessionId } 
+                });
+                if (retryResponse.status === 401) {
+                    this.showAuthSection();
+                    this.stopTracking();
+                    return;
+                }
+                // 使用重試的響應繼續處理
+                const retryData = await retryResponse.json();
+                this.processTrackResponse(retryData, retryResponse);
                 return;
             }
 
@@ -1898,6 +1966,24 @@ class SpotifyLyricsPlayer {
                     'X-Session-Id': this.sessionId
                 }
             });
+            
+            if (response.status === 401) {
+                console.log('🔑 Library check 認證問題，嘗試修復...');
+                const authFixed = await this.handleAuthError();
+                if (authFixed) {
+                    // 重新嘗試請求
+                    const retryResponse = await fetch(`${this.apiBase}/api/library/check/${this.currentTrack.id}`, {
+                        headers: {
+                            'X-Session-Id': this.sessionId
+                        }
+                    });
+                    if (retryResponse.ok) {
+                        const retryData = await retryResponse.json();
+                        this.updateLikeButtonState(retryData.isLiked);
+                    }
+                }
+                return;
+            }
             
             if (response.ok) {
                 const data = await response.json();
