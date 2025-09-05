@@ -1010,7 +1010,7 @@ class SpotifyLyricsPlayer {
         if (currentTime !== undefined) {
             if (this.lyricsType === 'synced') {
                 // 增強的同步歌詞邏輯，添加1.5秒延遲
-                const delayedTime = currentTime - 1500; // 延遲1.5秒
+                const delayedTime = currentTime - 1000; // 延遲1秒
                 let bestMatch = -1;
                 let minDistance = Infinity;
                 
@@ -1057,7 +1057,7 @@ class SpotifyLyricsPlayer {
             } else {
                 // 普通歌詞的時間估算邏輯，也添加1.5秒延遲
                 if (this.currentTrack && this.currentTrack.duration > 0) {
-                    const timeOffset = 500 + 1500; // 原有500ms + 新增1500ms延遲
+                    const timeOffset = 500 + 1000; // 原有500ms + 新增1000ms延遲
                     const adjustedProgress = Math.max(0, (currentTime - timeOffset) / this.currentTrack.duration);
                     targetIndex = Math.floor(adjustedProgress * this.lyrics.length);
                     targetIndex = Math.max(0, Math.min(targetIndex, this.lyrics.length - 1));
