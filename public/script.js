@@ -96,11 +96,19 @@ class SpotifyLyricsPlayer {
             this.sessionId = urlParams.get('session');
             if (this.sessionId) {
                 localStorage.setItem('spotify_session_id', this.sessionId);
+                this.log(`✅ 新 sessionId 已保存: ${this.sessionId.substring(0, 8)}...`);
             }
             window.history.replaceState({}, document.title, window.location.pathname);
             this.showSuccessMessage('🎉 Spotify 連接成功！');
         } else {
-            this.sessionId = localStorage.getItem('spotify_session_id');
+            // 嘗試從 localStorage 恢復 sessionId
+            const storedSessionId = localStorage.getItem('spotify_session_id');
+            if (storedSessionId) {
+                this.sessionId = storedSessionId;
+                this.log(`🔄 從 localStorage 恢復 sessionId: ${this.sessionId.substring(0, 8)}...`);
+            } else {
+                this.log('❌ 沒有找到保存的 sessionId');
+            }
         }
     }
 
@@ -209,7 +217,9 @@ class SpotifyLyricsPlayer {
     bindEvents() {
         // 登入按鈕
         this.loginBtn?.addEventListener('click', () => {
-            window.location.href = '/api/auth';
+            const authUrl = `${this.apiBase}/api/auth`;
+            this.log(`🔗 重定向到登入頁面: ${authUrl}`);
+            window.location.href = authUrl;
         });
 
         // 重新檢查按鈕 - 添加防抖
@@ -323,9 +333,23 @@ class SpotifyLyricsPlayer {
 
     async checkAuthStatus() {
         try {
+            // 確保有 sessionId 才進行檢查
+            if (!this.sessionId) {
+                const storedSessionId = localStorage.getItem('spotify_session_id');
+                if (storedSessionId) {
+                    this.sessionId = storedSessionId;
+                    this.log(`🔄 checkAuthStatus 恢復 sessionId: ${this.sessionId.substring(0, 8)}...`);
+                } else {
+                    this.log('❌ checkAuthStatus 沒有 sessionId，顯示登入頁面');
+                    this.showAuthSection();
+                    return;
+                }
+            }
+            
             const headers = {};
             if (this.sessionId) {
                 headers['X-Session-Id'] = this.sessionId;
+                this.log(`🔍 使用 sessionId 檢查認證狀態: ${this.sessionId.substring(0, 8)}...`);
             }
             
             const response = await fetch('/api/auth-status', { headers });
@@ -335,17 +359,20 @@ class SpotifyLyricsPlayer {
                 if (data.sessionId && !this.sessionId) {
                     this.sessionId = data.sessionId;
                     localStorage.setItem('spotify_session_id', this.sessionId);
+                    this.log(`✅ 從服務端獲得新 sessionId: ${this.sessionId.substring(0, 8)}...`);
                 }
+                this.log('✅ 認證狀態有效，啟動播放器');
                 this.showPlayerSection();
                 this.startTracking();
                 this.startTokenRefreshTimer();
             } else {
+                this.log('❌ 認證狀態無效，清除 sessionId');
                 this.showAuthSection();
                 localStorage.removeItem('spotify_session_id');
                 this.sessionId = null;
             }
         } catch (error) {
-            console.error('檢查認證狀態失敗:', error);
+            this.log(`❌ 檢查認證狀態失敗: ${error.message}`);
             this.showAuthSection();
         }
     }
@@ -361,12 +388,18 @@ class SpotifyLyricsPlayer {
         this.log('🔍 處理認證錯誤...');
         
         try {
-            // 檢查是否有 sessionId
+            // 檢查是否有 sessionId，如果沒有嘗試從 localStorage 恢復
             if (!this.sessionId) {
-                this.log('❌ 沒有 sessionId，需要重新登入');
-                this.showAuthSection();
-                localStorage.removeItem('spotify_session_id');
-                return false;
+                const storedSessionId = localStorage.getItem('spotify_session_id');
+                if (storedSessionId) {
+                    this.sessionId = storedSessionId;
+                    this.log(`🔄 從 localStorage 恢復 sessionId: ${this.sessionId.substring(0, 8)}...`);
+                } else {
+                    this.log('❌ 沒有 sessionId，需要重新登入');
+                    this.showAuthSection();
+                    localStorage.removeItem('spotify_session_id');
+                    return false;
+                }
             }
 
             // 靜默檢查認證狀態，不改變UI
