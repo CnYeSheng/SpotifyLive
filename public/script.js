@@ -369,11 +369,12 @@ class SpotifyLyricsPlayer {
                 return false;
             }
 
-            // 嘗試檢查認證狀態
+            // 靜默檢查認證狀態，不改變UI
             const response = await fetch('/api/auth-status', {
                 headers: { 'X-Session-Id': this.sessionId }
             });
             const data = await response.json();
+            
             if (!data.authenticated) {
                 this.log('❌ Session 已失效，需要重新登入');
                 this.showAuthSection();
@@ -383,41 +384,27 @@ class SpotifyLyricsPlayer {
                 return false;
             }
             
-            this.log('✅ Session 仍然有效，但可能需要刷新 token...');
+            this.log('✅ Session 有效，等待服務端 token 刷新...');
             
-            // 等待一小段時間讓服務端處理 token 刷新
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // 等待服務端處理 token 刷新，不顯示登入頁面
+            await new Promise(resolve => setTimeout(resolve, 2000));
             
-            // 嘗試觸發一次 API 調用來測試 token 狀態
-            const testResponse = await fetch('/api/current-track', {
-                headers: { 'X-Session-Id': this.sessionId }
-            });
-            
-            if (testResponse.ok) {
-                this.log('✅ Token 狀態正常');
-                return true;
-            } else if (testResponse.status === 401) {
-                this.log('❌ Token 仍然無效，需要重新登入');
-                this.showAuthSection();
-                this.stopTracking();
-                localStorage.removeItem('spotify_session_id');
-                this.sessionId = null;
-                return false;
-            }
-            
+            this.log('✅ 認證錯誤處理完成，繼續正常操作');
             return true;
+            
         } catch (error) {
             this.log(`❌ 認證處理失敗: ${error.message}`);
+            // 只有在真正失敗時才顯示登入頁面
             this.showAuthSection();
             this.stopTracking();
             localStorage.removeItem('spotify_session_id');
             this.sessionId = null;
             return false;
         } finally {
-            // 重置認證處理狀態
+            // 重置認證處理狀態，延長時間避免頻繁重試
             setTimeout(() => {
                 this.isHandlingAuthError = false;
-            }, 2000); // 2秒後允許再次處理認證錯誤
+            }, 5000); // 5秒後允許再次處理認證錯誤
         }
     }
 
@@ -613,34 +600,14 @@ class SpotifyLyricsPlayer {
             const response = await fetch(`${this.apiBase}/api/current-track`, { headers });
             
             if (response.status === 401) {
-                this.log('🔑 檢測到認證問題，嘗試自動修復...');
+                this.log('🔑 檢測到認證問題，靜默處理...');
                 const authFixed = await this.handleAuthError();
                 if (!authFixed) {
                     this.log('❌ 認證修復失敗，停止追蹤');
                     return;
                 }
-                // 如果修復成功，重新嘗試請求
-                const retryResponse = await fetch(`${this.apiBase}/api/current-track`, { 
-                    headers: { 'X-Session-Id': this.sessionId } 
-                });
-                if (retryResponse.status === 401) {
-                    this.log('❌ 重試後仍然 401，強制重新登入');
-                    this.showAuthSection();
-                    this.stopTracking();
-                    localStorage.removeItem('spotify_session_id');
-                    this.sessionId = null;
-                    return;
-                }
-                // 使用重試的響應繼續處理
-                const retryData = await retryResponse.json();
-                // 直接處理重試的數據
-                if (!retryData.name) {
-                    this.showNoMusicSection();
-                    return;
-                }
-                this.currentTrack = retryData;
-                this.currentTrack.lastUpdated = Date.now();
-                this.updateTrackInfo();
+                // 認證修復成功，但不立即重試，等待下次輪詢
+                this.log('✅ 認證已修復，等待下次輪詢');
                 return;
             }
 
@@ -1042,7 +1009,8 @@ class SpotifyLyricsPlayer {
 
         if (currentTime !== undefined) {
             if (this.lyricsType === 'synced') {
-                // 增強的同步歌詞邏輯
+                // 增強的同步歌詞邏輯，添加1.5秒延遲
+                const delayedTime = currentTime - 1500; // 延遲1.5秒
                 let bestMatch = -1;
                 let minDistance = Infinity;
                 
@@ -1053,15 +1021,15 @@ class SpotifyLyricsPlayer {
                     const nextLine = this.lyrics[i + 1];
                     const tolerance = 300; // 增加容錯範圍到300ms
                     
-                    // 檢查當前時間是否在這一行的時間範圍內
-                    if (line.time <= currentTime + tolerance) {
-                        if (!nextLine || !nextLine.time || nextLine.time > currentTime + tolerance) {
+                    // 檢查延遲後的時間是否在這一行的時間範圍內
+                    if (line.time <= delayedTime + tolerance) {
+                        if (!nextLine || !nextLine.time || nextLine.time > delayedTime + tolerance) {
                             targetIndex = i;
                             break;
                         } else {
                             // 如果在兩行之間，選擇距離更近的
-                            const distanceToCurrent = Math.abs(currentTime - line.time);
-                            const distanceToNext = Math.abs(currentTime - nextLine.time);
+                            const distanceToCurrent = Math.abs(delayedTime - line.time);
+                            const distanceToNext = Math.abs(delayedTime - nextLine.time);
                             
                             if (distanceToCurrent < minDistance) {
                                 minDistance = distanceToCurrent;
@@ -1080,16 +1048,16 @@ class SpotifyLyricsPlayer {
                 if (targetIndex === -1) {
                     for (let i = this.lyrics.length - 1; i >= 0; i--) {
                         const line = this.lyrics[i];
-                        if (line.time && line.time <= currentTime) {
+                        if (line.time && line.time <= delayedTime) {
                             targetIndex = i;
                             break;
                         }
                     }
                 }
             } else {
-                // 普通歌詞的時間估算邏輯
+                // 普通歌詞的時間估算邏輯，也添加1.5秒延遲
                 if (this.currentTrack && this.currentTrack.duration > 0) {
-                    const timeOffset = 500;
+                    const timeOffset = 500 + 1500; // 原有500ms + 新增1500ms延遲
                     const adjustedProgress = Math.max(0, (currentTime - timeOffset) / this.currentTrack.duration);
                     targetIndex = Math.floor(adjustedProgress * this.lyrics.length);
                     targetIndex = Math.max(0, Math.min(targetIndex, this.lyrics.length - 1));
@@ -1864,22 +1832,13 @@ class SpotifyLyricsPlayer {
             const response = await fetch(`${this.apiBase}/api/player/queue`, { headers });
             
             if (response.status === 401) {
-                console.log('🔑 Queue 認證問題，嘗試修復...');
+                console.log('🔑 Queue 認證問題，靜默處理...');
                 const authFixed = await this.handleAuthError();
                 if (authFixed) {
-                    // 重新嘗試請求
-                    const retryResponse = await fetch(`${this.apiBase}/api/player/queue`, { headers });
-                    if (retryResponse.ok) {
-                        const retryData = await retryResponse.json();
-                        if (retryData.queue && retryData.queue.length > 0) {
-                            this.displayPlaylist(retryData.queue);
-                        } else {
-                            this.playlistContent.innerHTML = '<div class="loading">播放清單為空</div>';
-                        }
-                        return;
-                    }
+                    this.playlistContent.innerHTML = '<div class="loading">認證已修復，請重新打開播放清單</div>';
+                } else {
+                    this.playlistContent.innerHTML = '<div class="loading">認證失敗，請重新登入</div>';
                 }
-                this.playlistContent.innerHTML = '<div class="loading">認證失敗</div>';
                 return;
             }
             
@@ -1944,18 +1903,13 @@ class SpotifyLyricsPlayer {
             const response = await fetch(`${this.apiBase}/api/devices`, { headers });
             
             if (response.status === 401) {
-                console.log('🔑 Devices 認證問題，嘗試修復...');
+                console.log('🔑 Devices 認證問題，靜默處理...');
                 const authFixed = await this.handleAuthError();
                 if (authFixed) {
-                    // 重新嘗試請求
-                    const retryResponse = await fetch(`${this.apiBase}/api/devices`, { headers });
-                    if (retryResponse.ok) {
-                        const retryData = await retryResponse.json();
-                        this.displayDevices(retryData.devices || []);
-                        return;
-                    }
+                    this.devicesContent.innerHTML = '<div class="loading">認證已修復，請重新打開設備清單</div>';
+                } else {
+                    this.devicesContent.innerHTML = '<div class="loading">認證失敗，請重新登入</div>';
                 }
-                this.devicesContent.innerHTML = '<div class="loading">認證失敗</div>';
                 return;
             }
             

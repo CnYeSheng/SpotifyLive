@@ -287,11 +287,41 @@ app.get('/api/current-track', async (req, res) => {
     }
 });
 
-// Refresh access token
+// Authentication middleware
+function authenticateSpotify(req, res, next) {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    // Proactively refresh token if it expires within 5 minutes
+    const fiveMinutesFromNow = Date.now() + (5 * 60 * 1000);
+    if (session.expiresAt <= fiveMinutesFromNow) {
+        console.log('🔄 Token expires soon, refreshing proactively...');
+        refreshAccessToken(session).then(refreshed => {
+            if (!refreshed) {
+                return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+            }
+            req.session = session;
+            next();
+        }).catch(() => {
+            return res.status(401).json({ error: 'Token refresh failed' });
+        });
+    } else {
+        req.session = session;
+        next();
+    }
+}
+
+// Enhanced refresh access token with better logging
 async function refreshAccessToken(session) {
-    if (!session.refreshToken) return false;
+    if (!session.refreshToken) {
+        console.log('❌ No refresh token available');
+        return false;
+    }
     
     try {
+        console.log('🔄 Refreshing access token...');
         const response = await axios.post('https://accounts.spotify.com/api/token',
             new URLSearchParams({
                 grant_type: 'refresh_token',
@@ -311,9 +341,11 @@ async function refreshAccessToken(session) {
             session.refreshToken = response.data.refresh_token;
         }
         session.expiresAt = Date.now() + (response.data.expires_in * 1000);
+        
+        console.log('✅ Token refreshed successfully, expires at:', new Date(session.expiresAt).toISOString());
         return true;
     } catch (error) {
-        console.error('Error refreshing token:', error.response?.data || error.message);
+        console.error('❌ Error refreshing token:', error.response?.data || error.message);
         return false;
     }
 }
