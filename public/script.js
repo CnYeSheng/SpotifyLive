@@ -64,6 +64,7 @@ class SpotifyLyricsPlayer {
         // 检测运行环境
         this.isVercel = window.location.hostname.includes('vercel.app');
         this.isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.includes('cyss.us.eu.org');
+        this.isLiveWmcc = window.location.hostname.includes('live.wmcc.jp.eu.org');
 
         
         // 设置 API 基础路径
@@ -71,6 +72,8 @@ class SpotifyLyricsPlayer {
             this.apiBase = ''; // 本地开发环境
         } else if (this.isVercel) {
             this.apiBase = '/api'; // Vercel 环境
+        } else if (this.isLiveWmcc) {
+            this.apiBase = ''; // live.wmcc.jp.eu.org 环境，使用相对路径
         } else {
             this.apiBase = ''; // 其他环境，使用相对路径
         }
@@ -80,8 +83,10 @@ class SpotifyLyricsPlayer {
             hostname: window.location.hostname,
             isLocal: this.isLocal,
             isVercel: this.isVercel,
+            isLiveWmcc: this.isLiveWmcc,
             apiBase: this.apiBase,
-            fullApiUrl: window.location.origin + this.apiBase
+            fullApiUrl: window.location.origin + this.apiBase,
+            playEndpoint: window.location.origin + this.apiBase + '/api/player/play'
         });
         
         this.initializeElements();
@@ -2066,24 +2071,72 @@ class SpotifyLyricsPlayer {
             return;
         }
 
+        this.log(`🎵 嘗試播放歌曲: ${trackId}`);
+
         try {
             const headers = { 'Content-Type': 'application/json' };
             if (this.sessionId) {
                 headers['X-Session-Id'] = this.sessionId;
             }
 
-            const response = await fetch(`${this.apiBase}/api/player/play`, {
+            const playUrl = `${this.apiBase}/api/player/play`;
+            this.log(`📡 播放請求 URL: ${playUrl}`);
+
+            const response = await fetch(playUrl, {
                 method: 'PUT',
                 headers: headers,
                 body: JSON.stringify({ uris: [`spotify:track:${trackId}`] })
             });
 
+            this.log(`📡 播放響應狀態: ${response.status}`);
+
+            if (response.status === 404) {
+                this.log('❌ 播放端點不存在 (404)');
+                this.showErrorMessage('播放功能暫時無法使用，請檢查服務端配置');
+                return;
+            }
+
+            if (response.status === 401) {
+                this.log('🔑 播放認證問題，嘗試修復...');
+                const authFixed = await this.handleAuthError();
+                if (authFixed) {
+                    // 重新嘗試播放
+                    const retryResponse = await fetch(playUrl, {
+                        method: 'PUT',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'X-Session-Id': this.sessionId 
+                        },
+                        body: JSON.stringify({ uris: [`spotify:track:${trackId}`] })
+                    });
+                    
+                    if (retryResponse.ok) {
+                        this.log('✅ 重試播放成功');
+                        this.playlistModal.style.display = 'none';
+                        this.showSuccessMessage('🎵 開始播放歌曲');
+                        setTimeout(() => this.checkCurrentTrackWithRateLimit(), 1000);
+                        return;
+                    } else {
+                        this.log(`❌ 重試播放失敗: ${retryResponse.status}`);
+                    }
+                }
+                this.showErrorMessage('播放認證失敗，請重新登入');
+                return;
+            }
+
             if (response.ok) {
+                this.log('✅ 播放請求成功');
                 this.playlistModal.style.display = 'none';
+                this.showSuccessMessage('🎵 開始播放歌曲');
                 setTimeout(() => this.checkCurrentTrackWithRateLimit(), 1000);
+            } else {
+                const errorData = await response.json().catch(() => ({}));
+                this.log(`❌ 播放失敗: ${response.status} - ${errorData.error || response.statusText}`);
+                this.showErrorMessage(`播放失敗: ${errorData.error || `HTTP ${response.status}`}`);
             }
         } catch (error) {
-            console.error('播放歌曲失敗:', error);
+            this.log(`❌ 播放請求異常: ${error.message}`);
+            this.showErrorMessage('播放請求失敗，請檢查網絡連接');
         }
     }
 
