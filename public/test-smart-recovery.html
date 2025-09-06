@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能認證恢復測試</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            color: white;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .status-card {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .status-title {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .status-content {
+            font-family: 'Courier New', monospace;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 10px;
+            white-space: pre-wrap;
+            overflow-x: auto;
+            min-height: 100px;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin: 20px 0;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #1db954, #1ed760);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(29, 185, 84, 0.3);
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(29, 185, 84, 0.4);
+        }
+        
+        .btn.danger {
+            background: linear-gradient(135deg, #ff6b6b, #ee5a52);
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+        }
+        
+        .btn.danger:hover {
+            box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
+        }
+        
+        .btn.warning {
+            background: linear-gradient(135deg, #ffa726, #ff9800);
+            box-shadow: 0 4px 15px rgba(255, 167, 38, 0.3);
+        }
+        
+        .btn.warning:hover {
+            box-shadow: 0 6px 20px rgba(255, 167, 38, 0.4);
+        }
+        
+        .log-container {
+            height: 300px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 10px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            line-height: 1.4;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 0;
+        }
+        
+        .log-success { color: #4ade80; }
+        .log-error { color: #f87171; }
+        .log-warning { color: #fbbf24; }
+        .log-info { color: #60a5fa; }
+        
+        .indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .indicator.green { background: #4ade80; }
+        .indicator.red { background: #f87171; }
+        .indicator.yellow { background: #fbbf24; }
+        .indicator.gray { background: #6b7280; }
+        
+        .recovery-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .stat-item {
+            text-align: center;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+        }
+        
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 智能認證恢復測試</h1>
+        
+        <div class="status-grid">
+            <div class="status-card">
+                <div class="status-title">
+                    <span class="indicator" id="auth-indicator"></span>
+                    認證狀態
+                </div>
+                <div class="status-content" id="auth-status">檢查中...</div>
+            </div>
+            
+            <div class="status-card">
+                <div class="status-title">
+                    <span class="indicator" id="recovery-indicator"></span>
+                    恢復統計
+                </div>
+                <div class="recovery-stats">
+                    <div class="stat-item">
+                        <div class="stat-value" id="success-count">0</div>
+                        <div class="stat-label">成功恢復</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="failure-count">0</div>
+                        <div class="stat-label">恢復失敗</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="consecutive-errors">0</div>
+                        <div class="stat-label">連續錯誤</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="status-card">
+            <div class="status-title">
+                🧪 測試控制
+            </div>
+            <div class="button-group">
+                <button class="btn" onclick="checkAuthStatus()">🔍 檢查認證狀態</button>
+                <button class="btn" onclick="testSmartRecovery()">🔧 測試智能恢復</button>
+                <button class="btn" onclick="simulateAuthError()">⚠️ 模擬認證錯誤</button>
+                <button class="btn warning" onclick="triggerMultipleErrors()">🔥 觸發多次錯誤</button>
+                <button class="btn danger" onclick="resetStats()">🗑️ 重置統計</button>
+            </div>
+        </div>
+        
+        <div class="status-card">
+            <div class="status-title">
+                📊 當前播放器狀態
+            </div>
+            <div class="status-content" id="player-status">載入中...</div>
+        </div>
+        
+        <div class="status-card">
+            <div class="status-title">
+                📋 實時日誌
+                <button class="btn" onclick="clearLogs()" style="margin-left: auto; padding: 5px 15px; font-size: 0.8em;">清除</button>
+            </div>
+            <div class="log-container" id="log-container"></div>
+        </div>
+    </div>
+
+    <script>
+        let logContainer;
+        let stats = {
+            successCount: 0,
+            failureCount: 0,
+            consecutiveErrors: 0
+        };
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            logContainer = document.getElementById('log-container');
+            addLog('🚀 智能認證恢復測試系統已載入', 'info');
+            
+            // 定期更新狀態
+            setInterval(updatePlayerStatus, 5000);
+            updatePlayerStatus();
+            checkAuthStatus();
+        });
+        
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString('zh-TW');
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            
+            // 限制日誌條目數量
+            while (logContainer.children.length > 100) {
+                logContainer.removeChild(logContainer.firstChild);
+            }
+        }
+        
+        async function checkAuthStatus() {
+            addLog('🔍 檢查認證狀態...', 'info');
+            
+            try {
+                const sessionId = localStorage.getItem('spotify_session_id');
+                if (!sessionId) {
+                    updateAuthStatus('無 Session ID', 'red');
+                    addLog('❌ 沒有找到 Session ID', 'error');
+                    return;
+                }
+                
+                const response = await fetch('/api/auth-status', {
+                    headers: { 'X-Session-Id': sessionId }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.authenticated) {
+                        updateAuthStatus('認證有效', 'green');
+                        addLog('✅ 認證狀態正常', 'success');
+                    } else {
+                        updateAuthStatus('認證無效', 'red');
+                        addLog('❌ 認證狀態無效', 'error');
+                    }
+                } else {
+                    updateAuthStatus(`HTTP ${response.status}`, 'yellow');
+                    addLog(`⚠️ 認證檢查失敗: ${response.status}`, 'warning');
+                }
+                
+            } catch (error) {
+                updateAuthStatus('檢查失敗', 'red');
+                addLog(`❌ 認證檢查錯誤: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testSmartRecovery() {
+            addLog('🔧 開始測試智能恢復...', 'info');
+            
+            if (!window.spotifyPlayer || !window.spotifyPlayer.attemptSmartRecovery) {
+                addLog('❌ 播放器未初始化或不支持智能恢復', 'error');
+                return;
+            }
+            
+            try {
+                const result = await window.spotifyPlayer.attemptSmartRecovery();
+                
+                if (result) {
+                    stats.successCount++;
+                    stats.consecutiveErrors = 0;
+                    addLog('✅ 智能恢復測試成功', 'success');
+                    updateAuthStatus('恢復成功', 'green');
+                } else {
+                    stats.failureCount++;
+                    stats.consecutiveErrors++;
+                    addLog('❌ 智能恢復測試失敗', 'error');
+                    updateAuthStatus('恢復失敗', 'red');
+                }
+                
+                updateStats();
+                
+            } catch (error) {
+                stats.failureCount++;
+                stats.consecutiveErrors++;
+                addLog(`❌ 智能恢復測試出錯: ${error.message}`, 'error');
+                updateStats();
+            }
+        }
+        
+        async function simulateAuthError() {
+            addLog('⚠️ 模擬認證錯誤...', 'warning');
+            
+            if (!window.spotifyPlayer) {
+                addLog('❌ 播放器未初始化', 'error');
+                return;
+            }
+            
+            // 模擬增加連續錯誤計數
+            if (window.spotifyPlayer.consecutiveAuthErrors !== undefined) {
+                window.spotifyPlayer.consecutiveAuthErrors++;
+                stats.consecutiveErrors = window.spotifyPlayer.consecutiveAuthErrors;
+                addLog(`⚠️ 模擬認證錯誤，當前連續錯誤: ${stats.consecutiveErrors}`, 'warning');
+                updateStats();
+            }
+            
+            // 嘗試觸發實際的認證錯誤處理
+            try {
+                const sessionId = localStorage.getItem('spotify_session_id');
+                const response = await fetch('/api/current-track', {
+                    headers: { 'X-Session-Id': sessionId + '_invalid' } // 故意使用無效的 sessionId
+                });
+                
+                if (response.status === 401) {
+                    addLog('✅ 成功模擬 401 認證錯誤', 'warning');
+                }
+                
+            } catch (error) {
+                addLog(`❌ 模擬錯誤失敗: ${error.message}`, 'error');
+            }
+        }
+        
+        async function triggerMultipleErrors() {
+            addLog('🔥 觸發多次認證錯誤...', 'warning');
+            
+            for (let i = 0; i < 3; i++) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                await simulateAuthError();
+            }
+            
+            addLog('🔥 多次錯誤觸發完成', 'warning');
+        }
+        
+        function updatePlayerStatus() {
+            const playerStatus = document.getElementById('player-status');
+            
+            if (window.spotifyPlayer) {
+                const status = {
+                    '播放器狀態': '已初始化',
+                    '當前歌曲': window.spotifyPlayer.currentTrack?.name || '無',
+                    '連續認證錯誤': window.spotifyPlayer.consecutiveAuthErrors || 0,
+                    '最大錯誤次數': window.spotifyPlayer.maxConsecutiveAuthErrors || 3,
+                    '正在處理認證錯誤': window.spotifyPlayer.isHandlingAuthError || false,
+                    'Session ID': window.spotifyPlayer.sessionId ? 
+                        window.spotifyPlayer.sessionId.substring(0, 8) + '...' : '無'
+                };
+                
+                playerStatus.textContent = Object.entries(status)
+                    .map(([key, value]) => `${key}: ${value}`)
+                    .join('\n');
+                    
+                // 更新連續錯誤統計
+                if (window.spotifyPlayer.consecutiveAuthErrors !== undefined) {
+                    stats.consecutiveErrors = window.spotifyPlayer.consecutiveAuthErrors;
+                    updateStats();
+                }
+                
+            } else {
+                playerStatus.textContent = '播放器未初始化';
+            }
+        }
+        
+        function updateAuthStatus(status, color) {
+            const authStatus = document.getElementById('auth-status');
+            const authIndicator = document.getElementById('auth-indicator');
+            
+            authStatus.textContent = `狀態: ${status}\n最後檢查: ${new Date().toLocaleTimeString('zh-TW')}`;
+            authIndicator.className = `indicator ${color}`;
+        }
+        
+        function updateStats() {
+            document.getElementById('success-count').textContent = stats.successCount;
+            document.getElementById('failure-count').textContent = stats.failureCount;
+            document.getElementById('consecutive-errors').textContent = stats.consecutiveErrors;
+            
+            const recoveryIndicator = document.getElementById('recovery-indicator');
+            if (stats.consecutiveErrors === 0) {
+                recoveryIndicator.className = 'indicator green';
+            } else if (stats.consecutiveErrors < 3) {
+                recoveryIndicator.className = 'indicator yellow';
+            } else {
+                recoveryIndicator.className = 'indicator red';
+            }
+        }
+        
+        function resetStats() {
+            stats = {
+                successCount: 0,
+                failureCount: 0,
+                consecutiveErrors: 0
+            };
+            
+            if (window.spotifyPlayer && window.spotifyPlayer.consecutiveAuthErrors !== undefined) {
+                window.spotifyPlayer.consecutiveAuthErrors = 0;
+            }
+            
+            updateStats();
+            addLog('🗑️ 統計數據已重置', 'info');
+        }
+        
+        function clearLogs() {
+            logContainer.innerHTML = '';
+            addLog('🧹 日誌已清除', 'info');
+        }
+        
+        // 監聽播放器的認證事件
+        if (window.spotifyPlayer) {
+            const originalLog = window.spotifyPlayer.log;
+            window.spotifyPlayer.log = function(message, type) {
+                originalLog.call(this, message, type);
+                
+                // 轉發到測試頁面日誌
+                if (message.includes('智能恢復') || message.includes('認證') || message.includes('401')) {
+                    addLog(`[播放器] ${message}`, type || 'info');
+                }
+            };
+        }
+    </script>
+</body>
+</html>

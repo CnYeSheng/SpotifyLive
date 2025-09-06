@@ -39,6 +39,9 @@ class SpotifyLyricsPlayer {
         this.tokenRefreshInterval = null;
         this.lastTokenRefresh = 0;
         this.isHandlingAuthError = false; // 防止重複處理認證錯誤
+        this.tokenExpiryTime = null; // Token 過期時間
+        this.consecutiveAuthErrors = 0; // 連續認證錯誤次數
+        this.maxConsecutiveAuthErrors = 3; // 最大連續認證錯誤次數
 
         // 日誌輔助函數
     this.log = (message, type = 'info') => {
@@ -413,6 +416,29 @@ class SpotifyLyricsPlayer {
             });
             
             if (!response.ok) {
+                if (response.status === 401) {
+                    this.log('🔑 認證狀態檢查返回 401，嘗試等待服務端刷新...');
+                    // 等待服務端可能的 token 刷新
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    
+                    // 再次嘗試檢查
+                    try {
+                        const retryResponse = await fetch('/api/auth-status', {
+                            headers: { 'X-Session-Id': this.sessionId }
+                        });
+                        
+                        if (retryResponse.ok) {
+                            const retryData = await retryResponse.json();
+                            if (retryData.authenticated) {
+                                this.log('✅ 服務端 token 刷新成功');
+                                return true;
+                            }
+                        }
+                    } catch (retryError) {
+                        this.log(`❌ 重試認證檢查失敗: ${retryError.message}`);
+                    }
+                }
+                
                 this.log('❌ 認證狀態檢查失敗，需要重新登入');
                 this.showAuthSection();
                 this.stopTracking();
@@ -654,30 +680,24 @@ class SpotifyLyricsPlayer {
             const response = await fetch(`${this.apiBase}/api/current-track`, { headers });
             
             if (response.status === 401) {
-                this.log('🔑 檢測到認證問題，嘗試刷新 token...');
+                this.consecutiveAuthErrors++;
+                this.log(`🔑 檢測到認證問題 (第 ${this.consecutiveAuthErrors} 次)，嘗試智能恢復...`);
                 
-                // 嘗試刷新 token 而不是直接跳轉到登入頁面
-                try {
-                    const refreshResponse = await fetch('/api/current-track', {
-                        headers: { 'X-Session-Id': this.sessionId }
-                    });
-                    
-                    if (refreshResponse.ok) {
-                        this.log('✅ Token 自動刷新成功，繼續操作');
-                        // 重新處理響應
-                        const data = await refreshResponse.json();
-                        this.processTrackData(data);
-                        return;
-                    } else if (refreshResponse.status === 401) {
-                        this.log('❌ Token 刷新失敗，需要重新登入');
-                        const authFixed = await this.handleAuthError();
-                        if (!authFixed) {
-                            this.log('❌ 認證修復失敗，停止追蹤');
-                            return;
-                        }
-                    }
-                } catch (refreshError) {
-                    this.log(`❌ Token 刷新過程出錯: ${refreshError.message}`);
+                // 如果連續錯誤次數過多，直接要求重新登入
+                if (this.consecutiveAuthErrors >= this.maxConsecutiveAuthErrors) {
+                    this.log('❌ 連續認證錯誤過多，需要重新登入');
+                    this.handleAuthError();
+                    return;
+                }
+                
+                // 嘗試智能恢復
+                const recovered = await this.attemptSmartRecovery();
+                if (recovered) {
+                    this.log('✅ 智能恢復成功，繼續正常操作');
+                    this.consecutiveAuthErrors = 0; // 重置錯誤計數
+                    return;
+                } else {
+                    this.log('❌ 智能恢復失敗');
                     const authFixed = await this.handleAuthError();
                     if (!authFixed) {
                         this.log('❌ 認證修復失敗，停止追蹤');
@@ -738,10 +758,70 @@ class SpotifyLyricsPlayer {
         }
     }
 
+    // 智能恢復方法
+    async attemptSmartRecovery() {
+        this.log('🔧 開始智能恢復流程...');
+        
+        // 步驟 1: 等待服務端可能的自動刷新
+        this.log('⏳ 等待服務端自動刷新 (3秒)...');
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        // 步驟 2: 嘗試輕量級請求檢查認證狀態
+        try {
+            const authResponse = await fetch('/api/auth-status', {
+                headers: { 'X-Session-Id': this.sessionId }
+            });
+            
+            if (authResponse.ok) {
+                const authData = await authResponse.json();
+                if (authData.authenticated) {
+                    this.log('✅ 認證狀態已恢復');
+                    
+                    // 步驟 3: 嘗試原始請求
+                    const testResponse = await fetch(`${this.apiBase}/api/current-track`, {
+                        headers: { 'X-Session-Id': this.sessionId }
+                    });
+                    
+                    if (testResponse.ok) {
+                        const data = await testResponse.json();
+                        this.processTrackData(data);
+                        return true;
+                    }
+                }
+            }
+        } catch (error) {
+            this.log(`❌ 智能恢復過程出錯: ${error.message}`);
+        }
+        
+        // 步驟 4: 嘗試觸發服務端刷新
+        this.log('🔄 嘗試觸發服務端 token 刷新...');
+        try {
+            // 連續發送幾個請求，可能觸發服務端刷新邏輯
+            for (let i = 0; i < 2; i++) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                const triggerResponse = await fetch(`${this.apiBase}/api/current-track`, {
+                    headers: { 'X-Session-Id': this.sessionId }
+                });
+                
+                if (triggerResponse.ok) {
+                    const data = await triggerResponse.json();
+                    this.processTrackData(data);
+                    this.log('✅ 觸發刷新成功');
+                    return true;
+                }
+            }
+        } catch (error) {
+            this.log(`❌ 觸發刷新失敗: ${error.message}`);
+        }
+        
+        return false;
+    }
+
     // 處理歌曲數據的統一方法
     processTrackData(data) {
-        // 重置重試計數器
+        // 重置重試計數器和認證錯誤計數
         this.retryCount = 0;
+        this.consecutiveAuthErrors = 0;
         
         if (!data.name) {
             this.showNoMusicSection();
