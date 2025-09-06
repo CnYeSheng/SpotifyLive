@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自動認證系統測試頁面</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            color: white;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .status-card {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .status-title {
+            font-size: 1.3em;
+            font-weight: bold;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .status-content {
+            font-family: 'Courier New', monospace;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 10px;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin: 20px 0;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #1db954, #1ed760);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(29, 185, 84, 0.3);
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(29, 185, 84, 0.4);
+        }
+        
+        .btn.secondary {
+            background: linear-gradient(135deg, #ff6b6b, #ee5a52);
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+        }
+        
+        .btn.secondary:hover {
+            box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
+        }
+        
+        .log-container {
+            height: 300px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 10px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            line-height: 1.4;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 0;
+        }
+        
+        .log-success { color: #4ade80; }
+        .log-error { color: #f87171; }
+        .log-warning { color: #fbbf24; }
+        .log-info { color: #60a5fa; }
+        
+        .indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .indicator.green { background: #4ade80; }
+        .indicator.red { background: #f87171; }
+        .indicator.yellow { background: #fbbf24; }
+        .indicator.gray { background: #6b7280; }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #1db954, #1ed760);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 自動認證系統測試</h1>
+        
+        <div class="status-card">
+            <div class="status-title">
+                <span class="indicator" id="system-indicator"></span>
+                系統狀態
+            </div>
+            <div class="status-content" id="system-status">正在初始化...</div>
+        </div>
+        
+        <div class="status-card">
+            <div class="status-title">
+                <span class="indicator" id="session-indicator"></span>
+                會話信息
+            </div>
+            <div class="status-content" id="session-info">載入中...</div>
+        </div>
+        
+        <div class="status-card">
+            <div class="status-title">
+                <span class="indicator" id="token-indicator"></span>
+                Token 狀態
+            </div>
+            <div class="status-content" id="token-status">檢查中...</div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="token-progress"></div>
+            </div>
+        </div>
+        
+        <div class="button-group">
+            <button class="btn" onclick="checkStatus()">🔍 檢查狀態</button>
+            <button class="btn" onclick="refreshToken()">🔄 刷新 Token</button>
+            <button class="btn" onclick="testHeartbeat()">💓 測試心跳</button>
+            <button class="btn" onclick="simulateError()">⚠️ 模擬錯誤</button>
+            <button class="btn secondary" onclick="clearSession()">🗑️ 清除會話</button>
+            <button class="btn secondary" onclick="goToAuth()">🔗 重新登入</button>
+        </div>
+        
+        <div class="status-card">
+            <div class="status-title">
+                <span class="indicator green"></span>
+                實時日誌
+                <button class="btn" onclick="clearLogs()" style="margin-left: auto; padding: 5px 15px; font-size: 0.8em;">清除</button>
+            </div>
+            <div class="log-container" id="log-container"></div>
+        </div>
+    </div>
+
+    <!-- 載入增強認證系統 -->
+    <script src="enhanced-token-management.js"></script>
+    <script src="integrate-enhanced-auth.js"></script>
+    
+    <script>
+        let tokenManager;
+        let logContainer;
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            logContainer = document.getElementById('log-container');
+            initializeTestSystem();
+        });
+        
+        function initializeTestSystem() {
+            addLog('🚀 初始化自動認證測試系統...', 'info');
+            
+            try {
+                // 創建 token 管理器實例
+                tokenManager = new EnhancedTokenManager();
+                
+                // 設置事件監聽器
+                tokenManager.onTokenRefreshed = () => {
+                    addLog('✅ Token 自動刷新成功', 'success');
+                    updateStatus();
+                };
+                
+                tokenManager.onAuthRequired = () => {
+                    addLog('🔑 需要重新認證', 'warning');
+                    updateStatus();
+                };
+                
+                tokenManager.onError = (error) => {
+                    addLog(`❌ Token 管理錯誤: ${error.message}`, 'error');
+                    updateStatus();
+                };
+                
+                addLog('✅ 自動認證系統初始化完成', 'success');
+                updateStatus();
+                
+                // 開始定期更新狀態
+                setInterval(updateStatus, 5000);
+                
+            } catch (error) {
+                addLog(`❌ 初始化失敗: ${error.message}`, 'error');
+                updateSystemIndicator('red');
+            }
+        }
+        
+        function updateStatus() {
+            updateSystemStatus();
+            updateSessionInfo();
+            updateTokenStatus();
+        }
+        
+        function updateSystemStatus() {
+            const systemStatus = document.getElementById('system-status');
+            const systemIndicator = document.getElementById('system-indicator');
+            
+            if (tokenManager) {
+                systemStatus.textContent = `✅ 系統運行正常
+載入時間: ${new Date().toLocaleString('zh-TW')}
+管理器狀態: 活躍
+心跳檢測: 啟用`;
+                systemIndicator.className = 'indicator green';
+            } else {
+                systemStatus.textContent = '❌ 系統未初始化';
+                systemIndicator.className = 'indicator red';
+            }
+        }
+        
+        function updateSessionInfo() {
+            const sessionInfo = document.getElementById('session-info');
+            const sessionIndicator = document.getElementById('session-indicator');
+            
+            if (tokenManager) {
+                const status = tokenManager.getSessionStatus();
+                sessionInfo.textContent = `會話ID: ${status.sessionId || '無'}
+狀態: ${status.hasSession ? '有效' : '無效'}
+過期時間: ${status.expiresAt ? new Date(status.expiresAt).toLocaleString('zh-TW') : '未知'}
+剩餘時間: ${status.expiresInMinutes} 分鐘
+是否過期: ${status.isExpired ? '是' : '否'}`;
+                
+                if (status.hasSession && !status.isExpired) {
+                    sessionIndicator.className = 'indicator green';
+                } else if (status.hasSession && status.isExpired) {
+                    sessionIndicator.className = 'indicator yellow';
+                } else {
+                    sessionIndicator.className = 'indicator red';
+                }
+            } else {
+                sessionInfo.textContent = '系統未初始化';
+                sessionIndicator.className = 'indicator gray';
+            }
+        }
+        
+        function updateTokenStatus() {
+            const tokenStatus = document.getElementById('token-status');
+            const tokenIndicator = document.getElementById('token-indicator');
+            const tokenProgress = document.getElementById('token-progress');
+            
+            if (tokenManager) {
+                const status = tokenManager.getSessionStatus();
+                
+                if (status.hasSession) {
+                    const totalMinutes = 60; // 假設 token 有效期為 60 分鐘
+                    const remainingMinutes = status.expiresInMinutes;
+                    const progressPercent = Math.max(0, (remainingMinutes / totalMinutes) * 100);
+                    
+                    tokenStatus.textContent = `Token 有效期: ${remainingMinutes} 分鐘
+進度: ${progressPercent.toFixed(1)}%
+自動刷新: ${remainingMinutes <= 10 ? '即將觸發' : '已排程'}
+下次檢查: ${remainingMinutes <= 5 ? '立即' : Math.max(0, remainingMinutes - 5) + ' 分鐘後'}`;
+                    
+                    tokenProgress.style.width = progressPercent + '%';
+                    
+                    if (remainingMinutes > 10) {
+                        tokenIndicator.className = 'indicator green';
+                    } else if (remainingMinutes > 5) {
+                        tokenIndicator.className = 'indicator yellow';
+                    } else {
+                        tokenIndicator.className = 'indicator red';
+                    }
+                } else {
+                    tokenStatus.textContent = '無有效 Token';
+                    tokenIndicator.className = 'indicator gray';
+                    tokenProgress.style.width = '0%';
+                }
+            } else {
+                tokenStatus.textContent = '系統未初始化';
+                tokenIndicator.className = 'indicator gray';
+                tokenProgress.style.width = '0%';
+            }
+        }
+        
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString('zh-TW');
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            
+            // 限制日誌條目數量
+            while (logContainer.children.length > 100) {
+                logContainer.removeChild(logContainer.firstChild);
+            }
+        }
+        
+        // 測試函數
+        async function checkStatus() {
+            addLog('🔍 手動檢查狀態...', 'info');
+            updateStatus();
+            
+            if (tokenManager) {
+                const status = tokenManager.getSessionStatus();
+                addLog(`📊 會話狀態: ${JSON.stringify(status, null, 2)}`, 'info');
+            }
+        }
+        
+        async function refreshToken() {
+            addLog('🔄 手動觸發 Token 刷新...', 'info');
+            
+            if (tokenManager) {
+                try {
+                    const result = await tokenManager.refreshTokenIfNeeded();
+                    if (result) {
+                        addLog('✅ Token 刷新成功', 'success');
+                    } else {
+                        addLog('❌ Token 刷新失敗', 'error');
+                    }
+                    updateStatus();
+                } catch (error) {
+                    addLog(`❌ Token 刷新錯誤: ${error.message}`, 'error');
+                }
+            } else {
+                addLog('❌ Token 管理器未初始化', 'error');
+            }
+        }
+        
+        async function testHeartbeat() {
+            addLog('💓 執行心跳測試...', 'info');
+            
+            if (tokenManager) {
+                try {
+                    await tokenManager.performHeartbeat();
+                    addLog('✅ 心跳測試完成', 'success');
+                } catch (error) {
+                    addLog(`❌ 心跳測試失敗: ${error.message}`, 'error');
+                }
+            } else {
+                addLog('❌ Token 管理器未初始化', 'error');
+            }
+        }
+        
+        function simulateError() {
+            addLog('⚠️ 模擬認證錯誤...', 'warning');
+            
+            if (tokenManager) {
+                // 模擬 token 過期
+                tokenManager.tokenExpiresAt = Date.now() - 1000;
+                addLog('⚠️ 已將 Token 設置為過期狀態', 'warning');
+                updateStatus();
+                
+                // 觸發刷新
+                setTimeout(() => {
+                    refreshToken();
+                }, 1000);
+            } else {
+                addLog('❌ Token 管理器未初始化', 'error');
+            }
+        }
+        
+        function clearSession() {
+            addLog('🗑️ 清除會話...', 'warning');
+            
+            if (tokenManager) {
+                tokenManager.clearStoredSession();
+                addLog('✅ 會話已清除', 'success');
+                updateStatus();
+            } else {
+                addLog('❌ Token 管理器未初始化', 'error');
+            }
+        }
+        
+        function goToAuth() {
+            addLog('🔗 重定向到認證頁面...', 'info');
+            window.location.href = '/api/auth';
+        }
+        
+        function clearLogs() {
+            logContainer.innerHTML = '';
+            addLog('🧹 日誌已清除', 'info');
+        }
+        
+        // 頁面可見性變化處理
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                addLog('👁️ 頁面重新可見，更新狀態', 'info');
+                updateStatus();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -302,7 +302,7 @@ class SpotifyLyricsPlayer {
         });
 
         this.addToPlaylistBtn?.addEventListener('click', () => {
-            this.addToLikedSongs();
+            this.toggleLikedSongs();
         });
 
         this.playlistBtn?.addEventListener('click', () => {
@@ -449,15 +449,21 @@ class SpotifyLyricsPlayer {
     updateLikeButtonState(isLiked) {
         if (this.addToPlaylistBtn) {
             this.addToPlaylistBtn.classList.toggle('active', isLiked);
+            this.addToPlaylistBtn.classList.toggle('liked', isLiked);
             
             if (isLiked) {
-                this.addToPlaylistBtn.title = '已在喜歡的歌曲中';
+                this.addToPlaylistBtn.title = '點擊從喜歡的歌曲中移除';
                 this.addToPlaylistBtn.innerHTML = '❤️';
-                this.addToPlaylistBtn.classList.add('liked');
+                // 添加動畫效果
+                this.addToPlaylistBtn.style.animation = 'heartbeat 0.6s ease-in-out';
+                setTimeout(() => {
+                    if (this.addToPlaylistBtn) {
+                        this.addToPlaylistBtn.style.animation = '';
+                    }
+                }, 600);
             } else {
-                this.addToPlaylistBtn.title = '加入喜歡的歌曲';
-                this.addToPlaylistBtn.innerHTML = '➕';
-                this.addToPlaylistBtn.classList.remove('liked');
+                this.addToPlaylistBtn.title = '點擊加入喜歡的歌曲';
+                this.addToPlaylistBtn.innerHTML = '🤍';
             }
         }
     }
@@ -1504,7 +1510,7 @@ class SpotifyLyricsPlayer {
         }
     }
 
-    addToLikedSongs() {
+    toggleLikedSongs() {
         if (!this.currentTrack || !this.sessionId) return;
 
         if (this.likedSongsDebounce) {
@@ -1512,14 +1518,34 @@ class SpotifyLyricsPlayer {
         }
         
         this.likedSongsDebounce = setTimeout(() => {
-            this.sendAddToLikedRequest();
+            this.sendToggleLikedRequest();
         }, 200);
     }
 
-    async sendAddToLikedRequest() {
+    async sendToggleLikedRequest() {
         try {
-            const response = await fetch(`${this.apiBase}/api/library/add`, {
-                method: 'POST',
+            // 首先檢查當前狀態
+            const checkResponse = await fetch(`${this.apiBase}/api/library/check/${this.currentTrack.id}`, {
+                headers: { 'X-Session-Id': this.sessionId }
+            });
+            
+            if (!checkResponse.ok) {
+                throw new Error('無法檢查歌曲狀態');
+            }
+            
+            const checkData = await checkResponse.json();
+            const isCurrentlyLiked = checkData.isLiked;
+            
+            // 根據當前狀態決定操作
+            const endpoint = isCurrentlyLiked ? '/api/library/remove' : '/api/library/add';
+            const method = isCurrentlyLiked ? 'DELETE' : 'POST';
+            const action = isCurrentlyLiked ? '移除' : '添加';
+            
+            // 立即更新 UI 以提供即時反饋
+            this.updateLikeButtonState(!isCurrentlyLiked);
+            
+            const response = await fetch(`${this.apiBase}${endpoint}`, {
+                method: method,
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Session-Id': this.sessionId
@@ -1529,18 +1555,35 @@ class SpotifyLyricsPlayer {
             
             const data = await response.json();
             if (data.success) {
-                console.log('已添加到喜歡的歌曲');
-                this.showSuccessMessage('❤️ 已添加到喜歡的歌曲');
-                // 更新按鈕狀態
-                this.checkIfTrackIsLiked();
+                const message = isCurrentlyLiked ? '💔 已從喜歡的歌曲移除' : '❤️ 已添加到喜歡的歌曲';
+                console.log(`${action}喜歡的歌曲成功`);
+                this.showSuccessMessage(message);
+                
+                // 確認最終狀態
+                setTimeout(() => {
+                    this.checkIfTrackIsLiked();
+                }, 500);
             } else {
-                console.error('添加到喜歡的歌曲失敗:', data.error);
-                this.showErrorMessage('添加失敗: ' + (data.error || '未知錯誤'));
+                console.error(`${action}喜歡的歌曲失敗:`, data.error);
+                this.showErrorMessage(`${action}失敗: ` + (data.error || '未知錯誤'));
+                
+                // 恢復原始狀態
+                this.updateLikeButtonState(isCurrentlyLiked);
             }
         } catch (error) {
-            console.error('添加到喜歡的歌曲請求失敗:', error);
+            console.error('切換喜歡狀態請求失敗:', error);
             this.showErrorMessage('網絡錯誤，請重試');
+            
+            // 重新檢查狀態以確保 UI 正確
+            setTimeout(() => {
+                this.checkIfTrackIsLiked();
+            }, 1000);
         }
+    }
+
+    // 保留舊方法以向後兼容
+    addToLikedSongs() {
+        this.toggleLikedSongs();
     }
 
     // 更新下一首預覽（使用已獲取的數據）
