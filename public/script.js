@@ -20,8 +20,8 @@ class SpotifyLyricsPlayer {
         // 添加 API 速率限制控制
         this.isCheckingTrack = false;
         this.lastCheckTime = 0;
-        this.baseCheckInterval = 8000; // 基礎檢查間隔8秒
-        this.currentCheckInterval = 8000; // 當前檢查間隔
+        this.baseCheckInterval = 15000; // 基礎檢查間隔15秒
+        this.currentCheckInterval = 15000; // 當前檢查間隔
         this.retryCount = 0;
         this.maxRetries = 3;
         this.backoffDelay = 2000;
@@ -411,6 +411,16 @@ class SpotifyLyricsPlayer {
             const response = await fetch('/api/auth-status', {
                 headers: { 'X-Session-Id': this.sessionId }
             });
+            
+            if (!response.ok) {
+                this.log('❌ 認證狀態檢查失敗，需要重新登入');
+                this.showAuthSection();
+                this.stopTracking();
+                localStorage.removeItem('spotify_session_id');
+                this.sessionId = null;
+                return false;
+            }
+            
             const data = await response.json();
             
             if (!data.authenticated) {
@@ -511,22 +521,22 @@ class SpotifyLyricsPlayer {
     adjustPollingInterval() {
         let newInterval = this.baseCheckInterval;
         
-        // 如果接近歌曲結尾，加速輪詢
+        // 如果接近歌曲結尾，適度加速輪詢
         if (this.isNearTrackEnd) {
-            newInterval = 2000; // 2秒
+            newInterval = 8000; // 8秒（不要太頻繁）
         }
         // 如果最近有用戶操作，短暫加速
-        else if (Date.now() - this.lastUserAction < 10000) {
-            newInterval = 3000; // 3秒
+        else if (Date.now() - this.lastUserAction < 30000) {
+            newInterval = 10000; // 10秒
         }
         // 如果被限速過，延長間隔
         else if (this.rateLimitCount > 0) {
-            newInterval = Math.min(this.baseCheckInterval * (1 + this.rateLimitCount * 0.5), 15000);
+            newInterval = Math.min(this.baseCheckInterval * (1 + this.rateLimitCount * 0.5), 30000);
         }
         
         if (newInterval !== this.currentCheckInterval) {
             this.currentCheckInterval = newInterval;
-            console.log(`🔄 調整輪詢間隔為 ${newInterval / 1000} 秒`);
+            this.log(`🔄 調整輪詢間隔為 ${newInterval / 1000} 秒`);
             this.restartTracking();
         }
     }
@@ -644,14 +654,36 @@ class SpotifyLyricsPlayer {
             const response = await fetch(`${this.apiBase}/api/current-track`, { headers });
             
             if (response.status === 401) {
-                this.log('🔑 檢測到認證問題，靜默處理...');
-                const authFixed = await this.handleAuthError();
-                if (!authFixed) {
-                    this.log('❌ 認證修復失敗，停止追蹤');
-                    return;
+                this.log('🔑 檢測到認證問題，嘗試刷新 token...');
+                
+                // 嘗試刷新 token 而不是直接跳轉到登入頁面
+                try {
+                    const refreshResponse = await fetch('/api/current-track', {
+                        headers: { 'X-Session-Id': this.sessionId }
+                    });
+                    
+                    if (refreshResponse.ok) {
+                        this.log('✅ Token 自動刷新成功，繼續操作');
+                        // 重新處理響應
+                        const data = await refreshResponse.json();
+                        this.processTrackData(data);
+                        return;
+                    } else if (refreshResponse.status === 401) {
+                        this.log('❌ Token 刷新失敗，需要重新登入');
+                        const authFixed = await this.handleAuthError();
+                        if (!authFixed) {
+                            this.log('❌ 認證修復失敗，停止追蹤');
+                            return;
+                        }
+                    }
+                } catch (refreshError) {
+                    this.log(`❌ Token 刷新過程出錯: ${refreshError.message}`);
+                    const authFixed = await this.handleAuthError();
+                    if (!authFixed) {
+                        this.log('❌ 認證修復失敗，停止追蹤');
+                        return;
+                    }
                 }
-                // 認證修復成功，但不立即重試，等待下次輪詢
-                this.log('✅ 認證已修復，等待下次輪詢');
                 return;
             }
 
@@ -691,64 +723,7 @@ class SpotifyLyricsPlayer {
             }
 
             const data = await response.json();
-            
-            // 重置重試計數器
-            this.retryCount = 0;
-            
-            if (!data.name) {
-                this.showNoMusicSection();
-                return;
-            }
-
-            const isNewTrack = !this.currentTrack || 
-                              this.currentTrack.id !== data.id ||
-                              this.currentTrack.name !== data.name;
-
-            this.currentTrack = data;
-            this.currentTrack.lastUpdated = Date.now();
-            
-            // 只在新歌曲時更新這些內容
-            if (isNewTrack) {
-                this.log('🎵 新歌曲，更新所有信息');
-                this.updateTrackInfo();
-                // 重置歌詞狀態
-                this.lyrics = [];
-                // 延遲自動獲取歌詞 (1.5秒後)
-                setTimeout(() => {
-                    this.loadLyrics();
-                }, 1500);
-                this.currentLyricsTrackId = null;
-                this.isLoadingLyrics = false;
-                
-                // 使用安全的歌詞載入方法
-                this.safeLyricsLoad();
-                console.log('🎵 新歌曲，更新所有信息');
-            }
-            
-            // 更新下一首預覽（使用一次性獲取的數據）
-            this.updateNextTrackPreview();
-            
-            // 每次都需要更新的內容
-            this.updatePlayerControls();
-            this.updateProgress();
-            this.showPlayerSection();
-            this.updateStatus('spotify', true);
-            
-            // 檢查是否接近歌曲結尾
-            const remainingTime = this.currentTrack.duration - this.currentTrack.progress;
-            const wasNearEnd = this.isNearTrackEnd;
-            this.isNearTrackEnd = remainingTime <= 10000; // 最後10秒
-            
-            // 如果狀態改變，調整輪詢間隔
-            if (wasNearEnd !== this.isNearTrackEnd) {
-                this.adjustPollingInterval();
-            }
-            
-            // 重置重試計數器（成功請求）
-            this.retryCount = 0;
-            if (this.rateLimitCount > 0) {
-                this.rateLimitCount = Math.max(0, this.rateLimitCount - 1);
-            }
+            this.processTrackData(data);
 
         } catch (error) {
             this.log(`❌ 獲取當前播放失敗: ${error.message}`);
@@ -763,10 +738,72 @@ class SpotifyLyricsPlayer {
         }
     }
 
+    // 處理歌曲數據的統一方法
+    processTrackData(data) {
+        // 重置重試計數器
+        this.retryCount = 0;
+        
+        if (!data.name) {
+            this.showNoMusicSection();
+            return;
+        }
+
+        const isNewTrack = !this.currentTrack || 
+                          this.currentTrack.id !== data.id ||
+                          this.currentTrack.name !== data.name;
+
+        this.currentTrack = data;
+        this.currentTrack.lastUpdated = Date.now();
+        
+        // 只在新歌曲時更新這些內容
+        if (isNewTrack) {
+            this.log('🎵 新歌曲，更新所有信息');
+            this.updateTrackInfo();
+            // 重置歌詞狀態
+            this.lyrics = [];
+            this.currentLyricsTrackId = null;
+            this.isLoadingLyrics = false;
+            
+            // 清除之前的歌詞載入請求
+            if (this.lyricsLoadTimeout) {
+                clearTimeout(this.lyricsLoadTimeout);
+                this.lyricsLoadTimeout = null;
+            }
+            
+            // 使用安全的歌詞載入方法（只調用一次）
+            this.safeLyricsLoad();
+        }
+        
+        // 更新下一首預覽（使用一次性獲取的數據）
+        this.updateNextTrackPreview();
+        
+        // 每次都需要更新的內容
+        this.updatePlayerControls();
+        this.updateProgress();
+        this.showPlayerSection();
+        this.updateStatus('spotify', true);
+        
+        // 檢查是否接近歌曲結尾
+        const remainingTime = this.currentTrack.duration - this.currentTrack.progress;
+        const wasNearEnd = this.isNearTrackEnd;
+        this.isNearTrackEnd = remainingTime <= 10000; // 最後10秒
+        
+        // 如果狀態改變，調整輪詢間隔
+        if (wasNearEnd !== this.isNearTrackEnd) {
+            this.adjustPollingInterval();
+        }
+        
+        // 重置重試計數器（成功請求）
+        this.retryCount = 0;
+        if (this.rateLimitCount > 0) {
+            this.rateLimitCount = Math.max(0, this.rateLimitCount - 1);
+        }
+    }
+
     // 記錄用戶操作（用於動態調整輪詢）
     recordUserAction() {
         this.lastUserAction = Date.now();
-        console.log('👆 用戶操作，短暫加速輪詢');
+        this.log('👆 用戶操作，短暫加速輪詢');
         this.adjustPollingInterval();
     }
     
@@ -1538,7 +1575,7 @@ class SpotifyLyricsPlayer {
             
             // 根據當前狀態決定操作
             const endpoint = isCurrentlyLiked ? '/api/library/remove' : '/api/library/add';
-            const method = isCurrentlyLiked ? 'DELETE' : 'POST';
+            const method = 'POST'; // 兩個 API 都使用 POST 方法
             const action = isCurrentlyLiked ? '移除' : '添加';
             
             // 立即更新 UI 以提供即時反饋
@@ -2333,35 +2370,45 @@ class SpotifyLyricsPlayer {
     }
 }
 
+// 防止重複實例化
+let playerInstance = null;
+
 // 初始化應用程式
 document.addEventListener('DOMContentLoaded', () => {
-    new SpotifyLyricsPlayer();
+    if (!playerInstance) {
+        playerInstance = new SpotifyLyricsPlayer();
+        window.spotifyPlayer = playerInstance;
+        console.log('✅ Spotify 播放器已初始化');
+    }
 });
 
 // 處理頁面可見性變化
 document.addEventListener('visibilitychange', () => {
+    if (!playerInstance) return;
+    
     if (document.hidden) {
         // 頁面隱藏時減少更新頻率
-        if (window.spotifyPlayer && window.spotifyPlayer.updateInterval) {
-            clearInterval(window.spotifyPlayer.updateInterval);
-            window.spotifyPlayer.updateInterval = setInterval(() => {
-                window.spotifyPlayer.checkCurrentTrack();
+        if (playerInstance.updateInterval) {
+            clearInterval(playerInstance.updateInterval);
+            playerInstance.updateInterval = setInterval(() => {
+                playerInstance.checkCurrentTrackWithRateLimit();
             }, 60000); // 60秒更新一次
         }
     } else {
         // 頁面顯示時恢復正常頻率
-        if (window.spotifyPlayer && window.spotifyPlayer.updateInterval) {
-            clearInterval(window.spotifyPlayer.updateInterval);
-            window.spotifyPlayer.updateInterval = setInterval(() => {
-                window.spotifyPlayer.checkCurrentTrack();
-            }, 30000); // 30秒更新一次
+        if (playerInstance.updateInterval) {
+            clearInterval(playerInstance.updateInterval);
+            playerInstance.updateInterval = setInterval(() => {
+                playerInstance.checkCurrentTrackWithRateLimit();
+            }, playerInstance.currentCheckInterval);
         }
     }
 });
 
-// 儲存實例到全域變數以便調試
-window.addEventListener('load', () => {
-    if (!window.spotifyPlayer) {
-        window.spotifyPlayer = new SpotifyLyricsPlayer();
+// 頁面卸載時清理
+window.addEventListener('beforeunload', () => {
+    if (playerInstance) {
+        playerInstance.stopTracking();
+        console.log('🧹 播放器已清理');
     }
 });
