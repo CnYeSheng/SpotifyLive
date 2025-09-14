@@ -932,8 +932,87 @@ body {
     box-shadow: 0 8px 20px rgba(29, 185, 84, 0.4);
 }
 
-/* 響應式設計 */
-@media (max-width: 768px) {
+/* 平板設備優化 (768px 到 1024px) */
+@media (min-width: 768px) and (max-width: 1024px) {
+    .container {
+        padding: 20px;
+        max-width: 100vw;
+    }
+    
+    .player-section {
+        grid-template-columns: 1fr;
+        gap: 28px;
+        max-width: 100%;
+    }
+    
+    .music-card {
+        padding: 32px;
+        max-width: 100%;
+    }
+    
+    .lyrics-container {
+        padding: 32px;
+        max-width: 100%;
+    }
+    
+    .track-info h2 {
+        font-size: 2rem;
+        line-height: 1.2;
+    }
+    
+    .album-art {
+        width: 240px;
+        height: 240px;
+    }
+    
+    .player-controls {
+        gap: 16px;
+        margin: 20px 0;
+    }
+    
+    .control-btn {
+        width: 44px;
+        height: 44px;
+    }
+    
+    .control-btn.play-pause {
+        width: 52px;
+        height: 52px;
+    }
+    
+    .extra-controls {
+        gap: 14px;
+        margin: 18px 0;
+    }
+    
+    .volume-control {
+        margin: 20px 0;
+    }
+    
+    .progress-container {
+        margin: 24px 0;
+    }
+    
+    .auth-card,
+    .no-music-card {
+        padding: 48px 32px;
+        max-width: 90%;
+    }
+    
+    .auth-card h1,
+    .no-music-card h2 {
+        font-size: 2.2rem;
+    }
+    
+    .login-btn,
+    .refresh-btn {
+        padding: 14px 32px;
+        font-size: 1.1rem;
+    }
+}
+
+/* 手機設備優化 */
+@media (max-width: 767px) {
     .container {
         padding: 16px;
         max-width: 100vw;
@@ -966,8 +1045,180 @@ body {
     }
     
     .album-art {
-        width: 200px;
-        height: 200px;
+        width: 180px;
+        height: 180px;
+    }
+    
+    .player-controls {
+        gap: 12px;
+        margin: 16px 0;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    
+    .control-btn {
+        width: 40px;
+        height: 40px;
+        font-size: 16px;
+    }
+    
+    .control-btn.play-pause {
+        width: 48px;
+        height: 48px;
+        font-size: 20px;
+    }
+    
+    .extra-controls {
+        gap: 10px;
+        margin: 14px 0;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    
+    .volume-control {
+        margin: 16px 0;
+        flex-direction: column;
+        gap: 8px;
+        align-items: center;
+    }
+    
+    .volume-slider {
+        width: 80%;
+        max-width: 200px;
+    }
+    
+    .progress-container {
+        margin: 20px 0;
+    }
+    
+    .progress-bar {
+        height: 6px;
+        margin: 12px 0;
+    }
+    
+    .time-info {
+        font-size: 0.9rem;
+    }
+    
+    .auth-card,
+    .no-music-card {
+        padding: 32px 20px;
+        max-width: 95%;
+        margin: 0 auto;
+    }
+    
+    .auth-card h1,
+    .no-music-card h2 {
+        font-size: 1.8rem;
+        line-height: 1.3;
+        margin-bottom: 16px;
+    }
+    
+    .auth-card p,
+    .no-music-card p {
+        font-size: 1rem;
+        line-height: 1.5;
+        margin-bottom: 24px;
+    }
+    
+    .login-btn,
+    .refresh-btn {
+        padding: 12px 24px;
+        font-size: 1rem;
+        min-height: 48px;
+        width: 100%;
+        max-width: 280px;
+    }
+    
+    /* 歌詞區域手機優化 */
+    .lyrics-content {
+        font-size: 22px;
+        line-height: 1.6;
+        padding: 12px 0;
+    }
+    
+    .lyrics-line {
+        font-size: 22px;
+        padding: 10px 0;
+        text-align: center;
+    }
+    
+    .lyrics-line.current {
+        font-size: 24px;
+        padding: 12px 0;
+    }
+    
+    /* 模態框手機優化 */
+    .modal-content {
+        max-width: 95%;
+        max-height: 85vh;
+        margin: 20px auto;
+        padding: 20px;
+    }
+    
+    .playlist-content,
+    .devices-content {
+        max-height: 50vh;
+    }
+    
+    .playlist-item,
+    .device-item {
+        padding: 16px 12px;
+        margin-bottom: 8px;
+    }
+    
+    .playlist-item img {
+        width: 40px;
+        height: 40px;
+    }
+    
+    .playlist-item-title,
+    .device-name {
+        font-size: 14px;
+        font-weight: 600;
+    }
+    
+    .playlist-item-artist,
+    .device-type {
+        font-size: 12px;
+    }
+    
+    /* 設備信息優化 */
+    .device-info {
+        margin-top: 8px;
+        font-size: 0.9rem;
+    }
+    
+    /* 下一首預覽優化 */
+    .next-track-preview {
+        padding: 12px;
+        margin-top: 16px;
+    }
+    
+    .next-track-info {
+        font-size: 0.9rem;
+        text-align: center;
+    }
+    
+    /* 狀態欄優化 */
+    .status-bar {
+        bottom: 12px;
+        left: 12px;
+        right: 12px;
+        padding: 8px 12px;
+        gap: 16px;
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .status-item {
+        font-size: 0.8rem;
+        gap: 6px;
+    }
+    
+    .status-dot {
+        width: 8px;
+        height: 8px;
     }
     
     .status-bar {
@@ -1222,18 +1473,107 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
-/* 響應式調整 */
-@media (max-width: 768px) {
+/* 超小屏幕設備優化 (480px 以下) */
+@media (max-width: 480px) {
+    .container {
+        padding: 12px;
+    }
+    
+    .music-card,
+    .lyrics-container {
+        padding: 16px;
+    }
+    
+    .track-info h2 {
+        font-size: 1.4rem;
+        line-height: 1.3;
+    }
+    
+    .track-info p {
+        font-size: 0.9rem;
+    }
+    
+    .album-art {
+        width: 150px;
+        height: 150px;
+    }
+    
     .control-btn {
         width: 36px;
         height: 36px;
-        font-size: 16px;
+        font-size: 14px;
     }
     
     .control-btn.play-pause {
         width: 44px;
         height: 44px;
         font-size: 18px;
+    }
+    
+    .lyrics-content {
+        font-size: 18px;
+        padding: 8px 0;
+    }
+    
+    .lyrics-line {
+        font-size: 18px;
+        padding: 8px 0;
+    }
+    
+    .lyrics-line.current {
+        font-size: 20px;
+        padding: 10px 0;
+    }
+    
+    .auth-card h1,
+    .no-music-card h2 {
+        font-size: 1.6rem;
+    }
+    
+    .auth-card p,
+    .no-music-card p {
+        font-size: 0.9rem;
+    }
+    
+    .modal-content {
+        max-width: 98%;
+        margin: 10px auto;
+        padding: 16px;
+    }
+}
+
+/* 橫屏模式優化 */
+@media (max-width: 767px) and (orientation: landscape) {
+    .player-section {
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        height: 100vh;
+        overflow-y: auto;
+    }
+    
+    .music-card {
+        padding: 20px;
+    }
+    
+    .lyrics-container {
+        padding: 20px;
+        max-height: 100vh;
+        overflow-y: auto;
+    }
+    
+    .album-art {
+        width: 120px;
+        height: 120px;
+    }
+    
+    .track-info h2 {
+        font-size: 1.3rem;
+    }
+    
+    .auth-card,
+    .no-music-card {
+        padding: 24px 20px;
+        max-width: 80%;
     }
 }
 

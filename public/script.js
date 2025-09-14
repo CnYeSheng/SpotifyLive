@@ -42,6 +42,13 @@ class SpotifyLyricsPlayer {
         this.tokenExpiryTime = null; // Token 過期時間
         this.consecutiveAuthErrors = 0; // 連續認證錯誤次數
         this.maxConsecutiveAuthErrors = 3; // 最大連續認證錯誤次數
+        
+        // 自動登入控制
+        this.autoLoginInterval = null;
+        this.autoLoginEnabled = true;
+        
+        // Podcast 檢測相關
+        this.currentContentType = 'music'; // 'music' 或 'podcast'
 
         // 日誌輔助函數
     this.log = (message, type = 'info') => {
@@ -96,6 +103,7 @@ class SpotifyLyricsPlayer {
         this.bindEvents();
         this.handleAuthCallback();
         this.checkAuthStatus();
+        this.startAutoLoginTimer();
     }
 
     handleAuthCallback() {
@@ -588,6 +596,10 @@ class SpotifyLyricsPlayer {
             clearInterval(this.tokenRefreshInterval);
             this.tokenRefreshInterval = null;
         }
+        if (this.autoLoginInterval) {
+            clearInterval(this.autoLoginInterval);
+            this.autoLoginInterval = null;
+        }
     }
 
     startTokenRefreshTimer() {
@@ -597,6 +609,48 @@ class SpotifyLyricsPlayer {
         }, 30 * 60 * 1000); // 30 分鐘
         
         this.log('🔄 Token 刷新定時器已啟動 (每 30 分鐘檢查一次)');
+    }
+
+    // 自動登入定時器 - 每 45 分鐘觸發一次登入檢查
+    startAutoLoginTimer() {
+        if (!this.autoLoginEnabled) return;
+        
+        this.autoLoginInterval = setInterval(() => {
+            this.log('⏰ 45分鐘自動登入檢查');
+            this.performAutoLogin();
+        }, 45 * 60 * 1000); // 45 分鐘
+        
+        this.log('🔄 自動登入定時器已啟動 (每 45 分鐘檢查一次)');
+    }
+
+    // 執行自動登入
+    async performAutoLogin() {
+        if (!this.autoLoginEnabled) return;
+        
+        this.log('🔐 開始自動登入流程...');
+        
+        try {
+            // 檢查當前認證狀態
+            const authResponse = await fetch('/api/auth-status', {
+                headers: this.sessionId ? { 'X-Session-Id': this.sessionId } : {}
+            });
+            
+            const authData = await authResponse.json();
+            
+            if (!authData.authenticated) {
+                this.log('🔑 認證已失效，觸發自動登入');
+                // 如果未認證，自動觸發登入流程
+                const authUrl = `${this.apiBase}/api/auth`;
+                this.log(`🔗 自動重定向到登入頁面: ${authUrl}`);
+                window.location.href = authUrl;
+            } else {
+                this.log('✅ 認證狀態正常，無需重新登入');
+                // 可選：刷新當前播放狀態
+                this.checkCurrentTrackWithRateLimit();
+            }
+        } catch (error) {
+            this.log(`❌ 自動登入檢查失敗: ${error.message}`);
+        }
     }
 
     async proactiveTokenRefresh() {
@@ -817,6 +871,46 @@ class SpotifyLyricsPlayer {
         return false;
     }
 
+    // 檢測內容類型 (音樂 vs Podcast)
+    detectContentType(track) {
+        if (!track) return 'music';
+        
+        // 檢查 track type
+        if (track.type === 'episode') {
+            return 'podcast';
+        }
+        
+        // 檢查 album type
+        if (track.album && track.album.album_type === 'podcast') {
+            return 'podcast';
+        }
+        
+        // 檢查持續時間 (Podcast 通常較長)
+        if (track.duration_ms > 10 * 60 * 1000) { // 超過10分鐘
+            // 進一步檢查其他指標
+            const artistName = track.artists?.[0]?.name?.toLowerCase() || '';
+            const albumName = track.album?.name?.toLowerCase() || '';
+            const trackName = track.name?.toLowerCase() || '';
+            
+            // 關鍵字檢測
+            const podcastKeywords = [
+                'podcast', 'episode', 'ep.', 'season', 'interview', 
+                '访谈', '节目', '播客', '對談', '專訪', 'talk', 'show'
+            ];
+            
+            const textToCheck = `${artistName} ${albumName} ${trackName}`;
+            const hasPodcastKeywords = podcastKeywords.some(keyword => 
+                textToCheck.includes(keyword)
+            );
+            
+            if (hasPodcastKeywords) {
+                return 'podcast';
+            }
+        }
+        
+        return 'music';
+    }
+
     // 處理歌曲數據的統一方法
     processTrackData(data) {
         // 重置重試計數器和認證錯誤計數
@@ -831,6 +925,12 @@ class SpotifyLyricsPlayer {
         const isNewTrack = !this.currentTrack || 
                           this.currentTrack.id !== data.id ||
                           this.currentTrack.name !== data.name;
+
+        // 檢測內容類型並添加到數據中
+        if (!data.contentType) {
+            data.contentType = this.detectContentType(data);
+        }
+        this.currentContentType = data.contentType;
 
         this.currentTrack = data;
         this.currentTrack.lastUpdated = Date.now();
@@ -906,10 +1006,19 @@ class SpotifyLyricsPlayer {
         if (!this.currentTrack) return;
 
         this.albumImage.src = this.currentTrack.image || '';
-        this.albumImage.alt = `${this.currentTrack.album} 專輯封面`;
-        this.trackName.textContent = this.currentTrack.name;
-        this.artistName.textContent = this.currentTrack.artist;
-        this.albumName.textContent = this.currentTrack.album;
+        
+        // 根據內容類型調整顯示
+        if (this.currentTrack.contentType === 'podcast') {
+            this.albumImage.alt = `${this.currentTrack.album} Podcast 封面`;
+            this.trackName.textContent = this.currentTrack.name;
+            this.artistName.textContent = `🎙️ ${this.currentTrack.artist}`;
+            this.albumName.textContent = `Podcast: ${this.currentTrack.album}`;
+        } else {
+            this.albumImage.alt = `${this.currentTrack.album} 專輯封面`;
+            this.trackName.textContent = this.currentTrack.name;
+            this.artistName.textContent = this.currentTrack.artist;
+            this.albumName.textContent = this.currentTrack.album;
+        }
         this.totalTime.textContent = this.formatTime(this.currentTrack.duration);
         
         // 提取專輯封面顏色並更新背景
@@ -1004,6 +1113,13 @@ class SpotifyLyricsPlayer {
     async loadLyrics() {
         if (!this.currentTrack) {
             console.log('❌ 沒有當前歌曲，跳過歌詞載入');
+            return;
+        }
+
+        // 如果是 Podcast，顯示特殊訊息而不載入歌詞
+        if (this.currentTrack.contentType === 'podcast') {
+            this.showLyricsPlaceholder('🎙️ 正在播放 Podcast\n\n享受精彩的音頻內容吧！');
+            this.updateStatus('lyrics', true);
             return;
         }
 
