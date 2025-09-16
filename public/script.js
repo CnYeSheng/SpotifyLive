@@ -387,6 +387,9 @@ class SpotifyLyricsPlayer {
                 this.updateMobileLayout();
             }
         });
+
+        // 歌詞控制面板自動顯示/隱藏
+        this.initLyricsControlsAutoHide();
     }
 
     async checkAuthStatus() {
@@ -1491,6 +1494,73 @@ class SpotifyLyricsPlayer {
             musicCard.style.display = 'block';
             lyricsContainer.style.display = 'block';
         }
+    }
+
+    // 初始化歌詞控制面板自動隱藏功能
+    initLyricsControlsAutoHide() {
+        const lyricsControls = document.querySelector('.lyrics-controls');
+        if (!lyricsControls) return;
+
+        let hideTimeout;
+        let isHovered = false;
+
+        // 鼠標移動到右側邊緣時顯示
+        document.addEventListener('mousemove', (e) => {
+            const rightEdgeDistance = window.innerWidth - e.clientX;
+            
+            if (rightEdgeDistance <= 50 && !this.isMobile) {
+                this.showLyricsControls();
+                this.scheduleHideLyricsControls();
+            }
+        });
+
+        // 鼠標進入控制面板時保持顯示
+        lyricsControls.addEventListener('mouseenter', () => {
+            isHovered = true;
+            this.showLyricsControls();
+            clearTimeout(hideTimeout);
+        });
+
+        // 鼠標離開控制面板時延遲隱藏
+        lyricsControls.addEventListener('mouseleave', () => {
+            isHovered = false;
+            this.scheduleHideLyricsControls();
+        });
+
+        // 點擊控制按鈕後自動隱藏
+        lyricsControls.addEventListener('click', (e) => {
+            if (e.target.classList.contains('lyrics-control-btn')) {
+                setTimeout(() => {
+                    if (!isHovered) {
+                        this.hideLyricsControls();
+                    }
+                }, 1000);
+            }
+        });
+    }
+
+    // 顯示歌詞控制面板
+    showLyricsControls() {
+        const lyricsControls = document.querySelector('.lyrics-controls');
+        if (lyricsControls) {
+            lyricsControls.classList.add('show');
+        }
+    }
+
+    // 隱藏歌詞控制面板
+    hideLyricsControls() {
+        const lyricsControls = document.querySelector('.lyrics-controls');
+        if (lyricsControls) {
+            lyricsControls.classList.remove('show');
+        }
+    }
+
+    // 延遲隱藏歌詞控制面板
+    scheduleHideLyricsControls() {
+        clearTimeout(this.lyricsControlsHideTimeout);
+        this.lyricsControlsHideTimeout = setTimeout(() => {
+            this.hideLyricsControls();
+        }, 2000); // 2秒後自動隱藏
     }
 
     updateStatus(type, status) {
