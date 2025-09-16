@@ -390,6 +390,9 @@ class SpotifyLyricsPlayer {
 
         // 歌詞控制面板自動顯示/隱藏
         this.initLyricsControlsAutoHide();
+        
+        // 初始化手機滑動手勢
+        this.initMobileSwipeGestures();
     }
 
     async checkAuthStatus() {
@@ -1467,17 +1470,36 @@ class SpotifyLyricsPlayer {
         const lyricsContainer = document.querySelector('.lyrics-container');
         const infoBtn = document.getElementById('mobile-info-btn');
         const lyricsBtn = document.getElementById('mobile-lyrics-btn');
+        const pageDots = document.querySelectorAll('.page-dot');
         
         if (page === 'info') {
             musicCard.style.display = 'block';
             lyricsContainer.style.display = 'none';
             infoBtn?.classList.add('active');
             lyricsBtn?.classList.remove('active');
+            
+            // 更新頁面指示器
+            pageDots.forEach(dot => {
+                if (dot.dataset.page === 'info') {
+                    dot.classList.add('active');
+                } else {
+                    dot.classList.remove('active');
+                }
+            });
         } else {
             musicCard.style.display = 'none';
             lyricsContainer.style.display = 'block';
             infoBtn?.classList.remove('active');
             lyricsBtn?.classList.add('active');
+            
+            // 更新頁面指示器
+            pageDots.forEach(dot => {
+                if (dot.dataset.page === 'lyrics') {
+                    dot.classList.add('active');
+                } else {
+                    dot.classList.remove('active');
+                }
+            });
         }
     }
 
@@ -1485,15 +1507,39 @@ class SpotifyLyricsPlayer {
     updateMobileLayout() {
         const musicCard = document.querySelector('.music-card');
         const lyricsContainer = document.querySelector('.lyrics-container');
+        const mobileNav = document.getElementById('mobile-nav');
+        const mobilePageIndicator = document.getElementById('mobile-page-indicator');
         
         if (this.isMobile) {
-            // 手機模式：顯示頁面切換按鈕
+            // 手機模式：顯示頁面切換按鈕和指示器
+            mobileNav.style.display = 'flex';
+            mobilePageIndicator.style.display = 'flex';
             this.switchMobilePage(this.currentMobilePage);
+            this.bindMobilePageDots();
         } else {
-            // 桌面模式：顯示所有內容
+            // 桌面模式：隱藏手機導航並顯示所有內容
+            mobileNav.style.display = 'none';
+            mobilePageIndicator.style.display = 'none';
             musicCard.style.display = 'block';
             lyricsContainer.style.display = 'block';
         }
+    }
+
+    // 綁定頁面指示器點擊事件
+    bindMobilePageDots() {
+        const pageDots = document.querySelectorAll('.page-dot');
+        
+        pageDots.forEach(dot => {
+            dot.addEventListener('click', () => {
+                if (!this.isMobile) return;
+                
+                const targetPage = dot.dataset.page;
+                if (targetPage !== this.currentMobilePage) {
+                    this.switchMobilePage(targetPage);
+                    this.showSwipeIndicator(targetPage === 'info' ? '音樂資訊' : '歌詞頁面');
+                }
+            });
+        });
     }
 
     // 初始化歌詞控制面板自動隱藏功能
@@ -1561,6 +1607,121 @@ class SpotifyLyricsPlayer {
         this.lyricsControlsHideTimeout = setTimeout(() => {
             this.hideLyricsControls();
         }, 2000); // 2秒後自動隱藏
+    }
+
+    // 初始化手機滑動手勢
+    initMobileSwipeGestures() {
+        let startX = 0;
+        let startY = 0;
+        let startTime = 0;
+        
+        const playerSection = document.querySelector('.player-section');
+        if (!playerSection) return;
+
+        // 觸摸開始
+        playerSection.addEventListener('touchstart', (e) => {
+            if (!this.isMobile) return;
+            
+            const touch = e.touches[0];
+            startX = touch.clientX;
+            startY = touch.clientY;
+            startTime = Date.now();
+        }, { passive: true });
+
+        // 觸摸結束
+        playerSection.addEventListener('touchend', (e) => {
+            if (!this.isMobile) return;
+            
+            const touch = e.changedTouches[0];
+            const endX = touch.clientX;
+            const endY = touch.clientY;
+            const endTime = Date.now();
+            
+            const deltaX = endX - startX;
+            const deltaY = endY - startY;
+            const deltaTime = endTime - startTime;
+            
+            // 檢查是否為有效的滑動手勢
+            const minSwipeDistance = 80; // 最小滑動距離
+            const maxSwipeTime = 500; // 最大滑動時間
+            const maxVerticalDistance = 100; // 最大垂直偏移
+            
+            if (Math.abs(deltaX) > minSwipeDistance && 
+                Math.abs(deltaY) < maxVerticalDistance &&
+                deltaTime < maxSwipeTime) {
+                
+                // 左滑：切換到歌詞頁面
+                if (deltaX < 0 && this.currentMobilePage === 'info') {
+                    this.switchMobilePage('lyrics');
+                    this.showSwipeIndicator('歌詞頁面');
+                }
+                // 右滑：切換到音樂資訊頁面
+                else if (deltaX > 0 && this.currentMobilePage === 'lyrics') {
+                    this.switchMobilePage('info');
+                    this.showSwipeIndicator('音樂資訊');
+                }
+            }
+        }, { passive: true });
+
+        // 添加點擊封面切換功能
+        const albumImage = document.getElementById('album-image');
+        if (albumImage) {
+            albumImage.addEventListener('click', () => {
+                if (!this.isMobile) return;
+                
+                if (this.currentMobilePage === 'info') {
+                    this.switchMobilePage('lyrics');
+                    this.showSwipeIndicator('歌詞頁面');
+                } else {
+                    this.switchMobilePage('info');
+                    this.showSwipeIndicator('音樂資訊');
+                }
+            });
+        }
+    }
+
+    // 顯示滑動指示器
+    showSwipeIndicator(message) {
+        const indicator = document.createElement('div');
+        indicator.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 2000;
+            pointer-events: none;
+            backdrop-filter: blur(10px);
+            animation: swipeIndicatorAnim 0.6s ease-out;
+        `;
+        indicator.textContent = message;
+        
+        // 添加動畫樣式
+        if (!document.getElementById('swipe-indicator-style')) {
+            const style = document.createElement('style');
+            style.id = 'swipe-indicator-style';
+            style.textContent = `
+                @keyframes swipeIndicatorAnim {
+                    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+                    50% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+                    100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        
+        document.body.appendChild(indicator);
+        
+        setTimeout(() => {
+            if (indicator.parentNode) {
+                indicator.parentNode.removeChild(indicator);
+            }
+        }, 600);
     }
 
     updateStatus(type, status) {
