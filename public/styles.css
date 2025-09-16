@@ -547,7 +547,7 @@ body {
     background: rgba(0, 122, 255, 0.15);
     border-radius: 8px;
     padding: 8px 12px;
-    margin: 4px 0;
+    /* margin: 4px 0; */
     /* border-left: 3px solid #1ed760; */
     /* 移除动画 */
     /* animation: lyricsHighlight 2s ease infinite; */
