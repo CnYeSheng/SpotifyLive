@@ -49,6 +49,13 @@ class SpotifyLyricsPlayer {
         
         // Podcast 檢測相關
         this.currentContentType = 'music'; // 'music' 或 'podcast'
+        
+        // 歌詞時間偏移控制
+        this.lyricsTimeOffset = 0; // 毫秒，正數代表歌詞提前顯示，負數代表歌詞延後顯示
+        
+        // 手機頁面切換控制
+        this.isMobile = window.innerWidth <= 767;
+        this.currentMobilePage = 'info'; // 'info' 或 'lyrics'
 
         // 日誌輔助函數
     this.log = (message, type = 'info') => {
@@ -104,6 +111,9 @@ class SpotifyLyricsPlayer {
         this.handleAuthCallback();
         this.checkAuthStatus();
         this.startAutoLoginTimer();
+        
+        // 初始化手機布局
+        this.updateMobileLayout();
     }
 
     handleAuthCallback() {
@@ -343,6 +353,38 @@ class SpotifyLyricsPlayer {
         this.devicesModal?.addEventListener('click', (e) => {
             if (e.target === this.devicesModal) {
                 this.devicesModal.style.display = 'none';
+            }
+        });
+
+        // 歌詞時間控制按鈕事件
+        document.getElementById('lyrics-fast-btn')?.addEventListener('click', () => {
+            this.adjustLyricsOffset(-500); // 快0.5秒
+        });
+
+        document.getElementById('lyrics-reset-btn')?.addEventListener('click', () => {
+            this.resetLyricsOffset(); // 重置
+        });
+
+        document.getElementById('lyrics-slow-btn')?.addEventListener('click', () => {
+            this.adjustLyricsOffset(500); // 慢0.5秒
+        });
+
+        // 手機頁面切換按鈕事件
+        document.getElementById('mobile-info-btn')?.addEventListener('click', () => {
+            this.switchMobilePage('info');
+        });
+
+        document.getElementById('mobile-lyrics-btn')?.addEventListener('click', () => {
+            this.switchMobilePage('lyrics');
+        });
+
+        // 響應式檢測
+        window.addEventListener('resize', () => {
+            const wasMobile = this.isMobile;
+            this.isMobile = window.innerWidth <= 767;
+            
+            if (wasMobile !== this.isMobile) {
+                this.updateMobileLayout();
             }
         });
     }
@@ -1093,7 +1135,7 @@ class SpotifyLyricsPlayer {
             this.progressFill.style.width = `${Math.min(100, progress)}%`;
             this.currentTime.textContent = this.formatTime(elapsedTime);
 
-            this.updateLyricsHighlight(elapsedTime);
+            this.updateLyricsHighlight(elapsedTime + this.lyricsTimeOffset);
 
             const remainingTime = this.currentTrack.duration - elapsedTime;
             if (remainingTime <= 5000 && remainingTime > 0 && this.currentTrack.isPlaying) {
@@ -1370,7 +1412,85 @@ class SpotifyLyricsPlayer {
     }
 
     updateFontSize() {
+        // 立即更新字體大小，無延遲
         this.lyricsContent.className = `lyrics-content font-${this.fontSize}`;
+        
+        // 強制重新渲染
+        this.lyricsContent.style.fontSize = '';
+        this.lyricsContent.offsetHeight; // 觸發重排
+        
+        // 根據字體大小設置對應的 CSS 類
+        const fontSizeMap = {
+            'small': '18px',
+            'medium': '24px', 
+            'large': '30px',
+            'extra-large': '36px'
+        };
+        
+        if (fontSizeMap[this.fontSize]) {
+            this.lyricsContent.style.fontSize = fontSizeMap[this.fontSize];
+        }
+    }
+
+    // 歌詞時間偏移調整
+    adjustLyricsOffset(offset) {
+        this.lyricsTimeOffset += offset;
+        this.showOffsetMessage();
+        console.log(`歌詞時間偏移: ${this.lyricsTimeOffset}ms`);
+    }
+
+    // 重置歌詞時間偏移
+    resetLyricsOffset() {
+        this.lyricsTimeOffset = 0;
+        this.showOffsetMessage();
+        console.log('歌詞時間偏移已重置');
+    }
+
+    // 顯示偏移調整訊息
+    showOffsetMessage() {
+        const message = this.lyricsTimeOffset === 0 
+            ? '歌詞時間已重置' 
+            : `歌詞${this.lyricsTimeOffset > 0 ? '延後' : '提前'} ${Math.abs(this.lyricsTimeOffset/1000)} 秒`;
+        
+        this.showSuccessMessage(message);
+    }
+
+    // 手機頁面切換
+    switchMobilePage(page) {
+        if (!this.isMobile) return;
+        
+        this.currentMobilePage = page;
+        const musicCard = document.querySelector('.music-card');
+        const lyricsContainer = document.querySelector('.lyrics-container');
+        const infoBtn = document.getElementById('mobile-info-btn');
+        const lyricsBtn = document.getElementById('mobile-lyrics-btn');
+        
+        if (page === 'info') {
+            musicCard.style.display = 'block';
+            lyricsContainer.style.display = 'none';
+            infoBtn?.classList.add('active');
+            lyricsBtn?.classList.remove('active');
+        } else {
+            musicCard.style.display = 'none';
+            lyricsContainer.style.display = 'block';
+            infoBtn?.classList.remove('active');
+            lyricsBtn?.classList.add('active');
+        }
+    }
+
+    // 更新手機布局
+    updateMobileLayout() {
+        const musicCard = document.querySelector('.music-card');
+        const lyricsContainer = document.querySelector('.lyrics-container');
+        
+        if (this.isMobile) {
+            // 手機模式：顯示頁面切換按鈕
+            this.switchMobilePage(this.currentMobilePage);
+        } else {
+            // 桌面模式：顯示所有內容
+            musicCard.style.display = 'block';
+            lyricsContainer.style.display = 'block';
+        }
     }
 
     updateStatus(type, status) {

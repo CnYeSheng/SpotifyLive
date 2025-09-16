@@ -115,17 +115,49 @@
                 </div>
             </div>
 
+            <!-- 手機頁面切換按鈕 -->
+            <div class="mobile-nav" id="mobile-nav" style="display: none;">
+                <button id="mobile-info-btn" class="mobile-nav-btn active">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                    </svg>
+                    音樂資訊
+                </button>
+                <button id="mobile-lyrics-btn" class="mobile-nav-btn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+                    </svg>
+                    歌詞
+                </button>
+            </div>
+
             <!-- 歌詞區域 -->
             <div class="lyrics-container">
-                <!--
                 <div class="lyrics-header">
                     <h3>🎤 歌詞</h3>
                     <div class="lyrics-controls">
+                        <button id="lyrics-fast-btn" class="lyrics-control-btn" title="歌詞快0.5秒">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/>
+                            </svg>
+                            快0.5s
+                        </button>
+                        <button id="lyrics-reset-btn" class="lyrics-control-btn" title="重置歌詞時間">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
+                            </svg>
+                            重置
+                        </button>
+                        <button id="lyrics-slow-btn" class="lyrics-control-btn" title="歌詞慢0.5秒">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/>
+                            </svg>
+                            慢0.5s
+                        </button>
                         <button id="auto-scroll-btn" class="control-btn active">自動滾動</button>
                         <button id="font-size-btn" class="control-btn">字體大小</button>
                     </div>
                 </div>
-                -->
                 
                 <div id="lyrics-content" class="lyrics-content">
                     <div class="lyrics-placeholder">
