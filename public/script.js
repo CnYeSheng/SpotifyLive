@@ -114,6 +114,9 @@ class SpotifyLyricsPlayer {
         
         // 初始化手機布局
         this.updateMobileLayout();
+        
+        // 設置全局播放器引用供手機控制使用
+        window.player = this;
     }
 
     handleAuthCallback() {
@@ -1114,6 +1117,11 @@ class SpotifyLyricsPlayer {
         
         // 檢查當前歌曲是否在已按讚的歌曲中
         this.checkIfTrackIsLiked();
+        
+        // 更新手機版歌詞控制區域
+        if (this.isMobile && this.currentMobilePage === 'lyrics') {
+            this.showMobileLyricsControls();
+        }
     }
 
     updateProgress() {
@@ -1492,6 +1500,9 @@ class SpotifyLyricsPlayer {
             infoBtn?.classList.remove('active');
             lyricsBtn?.classList.add('active');
             
+            // 手機版歌詞頁面顯示簡化的播放控制
+            this.showMobileLyricsControls();
+            
             // 更新頁面指示器
             pageDots.forEach(dot => {
                 if (dot.dataset.page === 'lyrics') {
@@ -1501,6 +1512,57 @@ class SpotifyLyricsPlayer {
                 }
             });
         }
+    }
+
+    // 顯示手機版歌詞頁面的播放控制
+    showMobileLyricsControls() {
+        // 檢查是否已經存在手機歌詞控制區域
+        let mobileControls = document.getElementById('mobile-lyrics-controls');
+        
+        if (!mobileControls) {
+            // 創建手機版歌詞頁面的播放控制
+            mobileControls = document.createElement('div');
+            mobileControls.id = 'mobile-lyrics-controls';
+            mobileControls.className = 'mobile-lyrics-controls';
+            mobileControls.innerHTML = `
+                <div class="mobile-track-info">
+                    <h3 id="mobile-track-name">-</h3>
+                    <p id="mobile-artist-name">-</p>
+                </div>
+                <div class="mobile-player-controls">
+                    <button class="mobile-control-btn" onclick="player.handlePrevious()">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
+                        </svg>
+                    </button>
+                    <button class="mobile-control-btn mobile-play-pause" onclick="player.handlePlayPause()">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M8 5v14l11-7z"/>
+                        </svg>
+                    </button>
+                    <button class="mobile-control-btn" onclick="player.handleNext()">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+                        </svg>
+                    </button>
+                </div>
+            `;
+            
+            // 插入到歌詞容器的頂部
+            const lyricsContainer = document.querySelector('.lyrics-container');
+            lyricsContainer.insertBefore(mobileControls, lyricsContainer.firstChild);
+        }
+        
+        // 更新歌曲信息
+        if (this.currentTrack) {
+            const mobileTrackName = document.getElementById('mobile-track-name');
+            const mobileArtistName = document.getElementById('mobile-artist-name');
+            
+            if (mobileTrackName) mobileTrackName.textContent = this.currentTrack.name || '-';
+            if (mobileArtistName) mobileArtistName.textContent = this.currentTrack.artist || '-';
+        }
+        
+        mobileControls.style.display = this.isMobile && this.currentMobilePage === 'lyrics' ? 'block' : 'none';
     }
 
     // 更新手機布局
@@ -1522,6 +1584,12 @@ class SpotifyLyricsPlayer {
             mobilePageIndicator.style.display = 'none';
             musicCard.style.display = 'block';
             lyricsContainer.style.display = 'block';
+            
+            // 隱藏手機版歌詞控制
+            const mobileControls = document.getElementById('mobile-lyrics-controls');
+            if (mobileControls) {
+                mobileControls.style.display = 'none';
+            }
         }
     }
 

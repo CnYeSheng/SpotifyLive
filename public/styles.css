@@ -548,7 +548,7 @@ body {
     border-radius: 8px;
     padding: 8px 12px;
     margin: 4px 0;
-    border-left: 3px solid #1ed760;
+    /* border-left: 3px solid #1ed760; */
     /* 移除动画 */
     /* animation: lyricsHighlight 2s ease infinite; */
 }
@@ -1053,6 +1053,74 @@ body {
     font-weight: 500;
 }
 
+/* 手機版歌詞頁面控制 */
+.mobile-lyrics-controls {
+    display: none;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 24px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.mobile-track-info {
+    text-align: center;
+    margin-bottom: 16px;
+}
+
+.mobile-track-info h3 {
+    margin: 0 0 4px 0;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.mobile-track-info p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.mobile-player-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+}
+
+.mobile-control-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 50%;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    backdrop-filter: blur(10px);
+}
+
+.mobile-control-btn.mobile-play-pause {
+    width: 56px;
+    height: 56px;
+    background: linear-gradient(135deg, #1db954, #1ed760);
+}
+
+.mobile-control-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.05);
+}
+
+.mobile-control-btn.mobile-play-pause:hover {
+    background: linear-gradient(135deg, #1ed760, #1db954);
+    transform: scale(1.1);
+    box-shadow: 0 8px 20px rgba(29, 185, 84, 0.4);
+}
+
 /* 手機導航按鈕 */
 .mobile-nav {
     display: none;
@@ -1195,6 +1263,15 @@ body {
     transition: none !important; /* 移除字體變化的過渡效果 */
 }
 
+/* 歌詞當前行即時變色 */
+.lyrics-line {
+    transition: none !important; /* 移除歌詞行的所有過渡效果 */
+}
+
+.lyrics-line.current {
+    transition: none !important; /* 移除當前歌詞行的過渡效果 */
+}
+
 .lyrics-content.font-small {
     font-size: 18px !important;
 }
@@ -1253,6 +1330,14 @@ body {
     
     .track-info p {
         text-align: center; /* 置中歌手和專輯名稱 */
+    }
+    
+    .lyrics-content {
+        text-align: center; /* 手機版歌詞置中 */
+    }
+    
+    .lyrics-line {
+        text-align: center; /* 歌詞行置中 */
     }
     
     .album-art {
@@ -1715,10 +1800,10 @@ body {
         padding: 12px;
     }
     
-    .music-card,
+    /* .music-card,
     .lyrics-container {
         padding: 16px;
-    }
+    } */
     
     .track-info h2 {
         font-size: 1.4rem;
@@ -1747,7 +1832,7 @@ body {
     }
     
     .lyrics-content {
-        font-size: 18px;
+        font-size: 16px;
         padding: 8px 0;
     }
     
