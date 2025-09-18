@@ -1929,3 +1929,247 @@ body {
 .modal-content h3 {
     color: var(--text-primary);
 }
+
+/* 歌詞搜尋模態框特定樣式 */
+.lyrics-search-modal {
+    max-width: 600px;
+    max-height: 80vh;
+    overflow-y: auto;
+    background: var(--background-secondary);
+}
+
+.search-form {
+    margin-bottom: 20px;
+}
+
+.search-input-group {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.search-input {
+    flex: 1;
+    padding: 12px 16px;
+    border: 2px solid var(--glass-border);
+    border-radius: 8px;
+    background: var(--background-primary);
+    color: var(--text-primary);
+    font-size: 16px;
+    transition: border-color 0.3s;
+}
+
+.search-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+.search-input::placeholder {
+    color: var(--text-secondary);
+}
+
+.search-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.search-btn:hover {
+    background: var(--accent-color-hover);
+    transform: translateY(-2px);
+}
+
+.current-track-info {
+    padding: 15px;
+    background: var(--background-primary);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    border: 1px solid var(--glass-border);
+}
+
+.current-label {
+    font-weight: 600;
+    color: var(--accent-color);
+}
+
+.search-current-btn {
+    padding: 6px 12px;
+    background: var(--glass-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--glass-border);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s;
+}
+
+.search-current-btn:hover {
+    background: var(--background-hover);
+    transform: translateY(-1px);
+}
+
+.search-results h4 {
+    margin-bottom: 15px;
+    color: var(--accent-color);
+    font-size: 1.1rem;
+}
+
+.results-container {
+    max-height: 400px;
+    overflow-y: auto;
+    padding-right: 8px;
+}
+
+.result-item {
+    padding: 15px;
+    background: var(--glass-bg);
+    border-radius: 8px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.3s;
+    border: 2px solid transparent;
+    backdrop-filter: blur(10px);
+}
+
+.result-item:hover {
+    background: var(--background-hover);
+    border-color: var(--accent-color);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(29, 185, 84, 0.2);
+}
+
+.result-title {
+    font-weight: 600;
+    font-size: 16px;
+    margin-bottom: 5px;
+    color: var(--text-primary);
+}
+
+.result-artist {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin-bottom: 8px;
+}
+
+.result-preview {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.4;
+    max-height: 40px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.result-source {
+    display: inline-block;
+    padding: 2px 8px;
+    background: var(--accent-color);
+    color: white;
+    border-radius: 12px;
+    font-size: 10px;
+    margin-top: 8px;
+    font-weight: 500;
+}
+
+.search-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    padding: 40px;
+    color: var(--text-secondary);
+}
+
+.loading-spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid var(--glass-border);
+    border-top: 3px solid var(--accent-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.modal-actions {
+    margin-top: 20px;
+    text-align: center;
+}
+
+.no-results {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-secondary);
+}
+
+.no-results svg {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 16px;
+    opacity: 0.5;
+}
+
+/* 搜尋結果滾動條樣式 */
+.results-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+.results-container::-webkit-scrollbar-track {
+    background: var(--background-primary);
+    border-radius: 3px;
+}
+
+.results-container::-webkit-scrollbar-thumb {
+    background: var(--glass-border);
+    border-radius: 3px;
+}
+
+.results-container::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-color);
+}
+
+/* 移動設備適應 */
+@media (max-width: 768px) {
+    .lyrics-search-modal {
+        max-width: 95%;
+        max-height: 90vh;
+        margin: 20px;
+    }
+    
+    .search-input-group {
+        flex-direction: column;
+    }
+    
+    .search-btn {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .current-track-info {
+        flex-direction: column;
+        align-items: stretch;
+        text-align: center;
+    }
+    
+    .result-item {
+        padding: 12px;
+    }
+    
+    .results-container {
+        max-height: 300px;
+    }
+}

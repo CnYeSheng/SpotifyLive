@@ -147,7 +147,7 @@
                 <div class="lyrics-header">
                     <h3>🎤 歌詞</h3>
                     <div class="lyrics-controls">
-                        <button id="lyrics-fast-btn" class="lyrics-control-btn" title="歌詞快0.5秒">
+                        <button id="lyrics-fast-btn" class="lyrics-control-btn" title="歌詞慢0.5秒">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/>
                             </svg>
@@ -158,11 +158,17 @@
                                 <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
                             </svg>
                         </button>
-                        <button id="lyrics-slow-btn" class="lyrics-control-btn" title="歌詞慢0.5秒">
+                        <button id="lyrics-slow-btn" class="lyrics-control-btn" title="歌詞快0.5秒">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/>
                             </svg>
                             -0.5s
+                        </button>
+                        <button id="search-lyrics-btn" class="lyrics-control-btn" title="搜尋歌詞">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                            </svg>
+                            搜尋
                         </button>
                         <!-- <button id="auto-scroll-btn" class="control-btn active">自動滾動</button>
                         <button id="font-size-btn" class="control-btn">字體大小</button> -->
@@ -238,8 +244,48 @@
         </div>
     </div>
 
+    <!-- 歌詞搜尋模態框 -->
+    <div id="lyrics-search-modal" class="modal" style="display: none;">
+        <div class="modal-content lyrics-search-modal">
+            <h3>搜尋歌詞</h3>
+            <div class="search-form">
+                <div class="search-input-group">
+                    <input type="text" id="lyrics-search-input" placeholder="輸入歌曲名稱或歌手..." class="search-input">
+                    <button id="do-search-btn" class="search-btn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                        </svg>
+                        搜尋
+                    </button>
+                </div>
+                <div class="current-track-info" id="current-track-info" style="display: none;">
+                    <span class="current-label">當前播放：</span>
+                    <span id="current-track-text"></span>
+                    <button id="search-current-btn" class="search-current-btn">搜尋此歌曲</button>
+                </div>
+            </div>
+            
+            <div id="search-results" class="search-results" style="display: none;">
+                <h4>搜尋結果</h4>
+                <div id="results-container" class="results-container">
+                    <!-- 搜尋結果將在這裡顯示 -->
+                </div>
+            </div>
+            
+            <div id="search-loading" class="search-loading" style="display: none;">
+                <div class="loading-spinner"></div>
+                <span>搜尋中...</span>
+            </div>
+            
+            <div class="modal-actions">
+                <button id="close-lyrics-search-modal" class="close-btn">關閉</button>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/umd/full.js"></script>
     <script src="opencc.js"></script>
     <script src="script.js"></script>
+    <script src="lyrics-search.js"></script>
 </body>
 </html>

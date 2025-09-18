@@ -780,6 +780,170 @@ app.use('/api/lyrics', (req, res, next) => {
     }
 });
 
+// Search lyrics from multiple sources
+app.get('/api/search-lyrics/:query', async (req, res) => {
+    const { query } = req.params;
+    
+    try {
+        console.log(`🔍 搜尋歌詞: ${query}`);
+        
+        // 嘗試多個搜尋源
+        const searchSources = [
+            {
+                name: 'wmcc.jp.eu.org',
+                url: `https://api.lyrics.wmcc.jp.eu.org/api/search/${encodeURIComponent(query)}`,
+                parser: (data) => {
+                    if (Array.isArray(data)) {
+                        return data.map(item => ({
+                            title: item.title || item.name || '未知標題',
+                            artist: item.artist || item.singer || '未知歌手',
+                            source: 'wmcc.jp.eu.org',
+                            id: item.id || `${item.title}-${item.artist}`,
+                            preview: item.lyrics ? item.lyrics.substring(0, 100) + '...' : '預覽不可用'
+                        }));
+                    }
+                    return [];
+                }
+            }
+        ];
+        
+        let allResults = [];
+        
+        for (const source of searchSources) {
+            try {
+                console.log(`📡 搜尋來源: ${source.name} - ${source.url}`);
+                
+                const response = await axios.get(source.url, {
+                    timeout: 15000,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'Accept': 'application/json, text/plain, */*'
+                    }
+                });
+                
+                if (response.data) {
+                    const results = source.parser(response.data);
+                    allResults = allResults.concat(results);
+                    console.log(`✅ ${source.name} 找到 ${results.length} 個結果`);
+                }
+            } catch (error) {
+                console.error(`❌ ${source.name} 搜尋失敗:`, error.message);
+            }
+        }
+        
+        // 去重並限制結果數量
+        const uniqueResults = allResults.filter((result, index, self) => 
+            index === self.findIndex(r => r.title === result.title && r.artist === result.artist)
+        ).slice(0, 20);
+        
+        res.json({
+            success: true,
+            results: uniqueResults,
+            total: uniqueResults.length
+        });
+        
+    } catch (error) {
+        console.error('❌ 搜尋歌詞失敗:', error.message);
+        res.json({
+            success: false,
+            error: '搜尋失敗: ' + error.message,
+            results: []
+        });
+    }
+});
+
+// Get specific lyrics by source and ID
+app.get('/api/get-lyrics/:source/:id', async (req, res) => {
+    const { source, id } = req.params;
+    
+    try {
+        console.log(`🎤 獲取歌詞: ${source} - ${id}`);
+        
+        let lyricsUrl;
+        if (source === 'wmcc.jp.eu.org') {
+            // 如果ID是title-artist格式，需要解析
+            const parts = decodeURIComponent(id).split('-');
+            if (parts.length >= 2) {
+                const title = parts.slice(0, -1).join('-');
+                const artist = parts[parts.length - 1];
+                lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`;
+            } else {
+                lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(id)}`;
+            }
+        } else {
+            throw new Error('不支援的歌詞來源');
+        }
+        
+        console.log(`📡 請求歌詞 URL: ${lyricsUrl}`);
+        
+        const response = await axios.get(lyricsUrl, {
+            timeout: 25000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json, text/plain, */*'
+            }
+        });
+        
+        if (response.data) {
+            let lyrics = [];
+            let lyricsType = 'plain';
+            
+            if (typeof response.data === 'string') {
+                const lrcResult = parseLrcFormat(response.data);
+                if (lrcResult.isLrc) {
+                    lyrics = lrcResult.lyrics;
+                    lyricsType = 'synced';
+                } else {
+                    lyrics = response.data.split('\n')
+                        .filter(line => line.trim() !== '')
+                        .map(line => ({ text: line.trim() }));
+                }
+            } else if (response.data.lyrics) {
+                if (Array.isArray(response.data.lyrics)) {
+                    lyrics = response.data.lyrics;
+                    lyricsType = response.data.type || 'plain';
+                } else if (typeof response.data.lyrics === 'string') {
+                    const lrcResult = parseLrcFormat(response.data.lyrics);
+                    if (lrcResult.isLrc) {
+                        lyrics = lrcResult.lyrics;
+                        lyricsType = 'synced';
+                    } else {
+                        lyrics = response.data.lyrics.split('\n')
+                            .filter(line => line.trim() !== '')
+                            .map(line => ({ text: line.trim() }));
+                    }
+                }
+            }
+            
+            if (lyrics.length > 0) {
+                res.json({
+                    success: true,
+                    lyrics: lyrics,
+                    type: lyricsType,
+                    source: source
+                });
+            } else {
+                res.json({
+                    success: false,
+                    error: '歌詞內容為空'
+                });
+            }
+        } else {
+            res.json({
+                success: false,
+                error: 'API 響應無數據'
+            });
+        }
+        
+    } catch (error) {
+        console.error('❌ 獲取歌詞失敗:', error.message);
+        res.json({
+            success: false,
+            error: '獲取歌詞失敗: ' + error.message
+        });
+    }
+});
+
 // Get lyrics from wmcc API (本地代理)
 app.get('/api/lyrics/:artist/:title', async (req, res) => {
     const { artist, title } = req.params;
