@@ -473,6 +473,118 @@ app.post('/api/library/remove', async (req, res) => {
     }
 });
 
+// Search lyrics API endpoint
+app.get('/api/search-lyrics/:query', async (req, res) => {
+    const { query } = req.params;
+    
+    try {
+        console.log(`🔍 歌詞搜尋請求: ${query}`);
+        
+        // 解析查詢字符串，嘗試提取歌手和歌曲名
+        const parts = query.split(/[-–\s]+/);
+        let artist = '', title = '';
+        
+        if (parts.length >= 2) {
+            artist = parts[0].trim();
+            title = parts.slice(1).join(' ').trim();
+        } else {
+            // 如果無法分離，就把整個查詢當作歌曲名
+            title = query.trim();
+        }
+        
+        console.log(`📝 解析結果 - 歌手: "${artist}", 歌曲: "${title}"`);
+        
+        // 構建搜尋URL
+        const lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`;
+        console.log(`📡 請求 URL: ${lyricsUrl}`);
+        
+        const response = await axios.get(lyricsUrl, {
+            timeout: 15000,
+            headers: {
+                'User-Agent': 'Spotify-Lyrics-Player/1.0'
+            }
+        });
+        
+        if (response.data) {
+            let lyrics = [];
+            let lyricsType = 'plain';
+            
+            // 解析歌詞數據
+            if (Array.isArray(response.data)) {
+                const lrcResult = parseLrcFormat(response.data.join('\n'));
+                if (lrcResult.isLrc) {
+                    lyrics = lrcResult.lyrics;
+                    lyricsType = 'synced';
+                } else {
+                    lyrics = response.data.filter(line => line && line.trim() !== '');
+                }
+            } else if (response.data.lyrics) {
+                if (Array.isArray(response.data.lyrics)) {
+                    lyrics = response.data.lyrics;
+                    lyricsType = response.data.type || 'plain';
+                } else if (typeof response.data.lyrics === 'string') {
+                    const lrcResult = parseLrcFormat(response.data.lyrics);
+                    if (lrcResult.isLrc) {
+                        lyrics = lrcResult.lyrics;
+                        lyricsType = 'synced';
+                    } else {
+                        lyrics = response.data.lyrics.split('\n').filter(line => line && line.trim() !== '');
+                    }
+                }
+            } else if (typeof response.data === 'string') {
+                const lrcResult = parseLrcFormat(response.data);
+                if (lrcResult.isLrc) {
+                    lyrics = lrcResult.lyrics;
+                    lyricsType = 'synced';
+                } else {
+                    lyrics = response.data.split('\n').filter(line => line && line.trim() !== '');
+                }
+            } else {
+                lyrics = response.data;
+            }
+            
+            if (lyrics && lyrics.length > 0) {
+                console.log(`✅ 搜尋成功: ${lyrics.length} 行歌詞`);
+                res.json({
+                    success: true,
+                    total: 1,
+                    results: [{
+                        artist: artist || '未知歌手',
+                        title: title || query,
+                        lyrics: lyrics,
+                        type: lyricsType,
+                        source: 'wmcc'
+                    }]
+                });
+            } else {
+                console.log('❌ 沒有找到歌詞內容');
+                res.json({
+                    success: false,
+                    total: 0,
+                    results: [],
+                    error: '沒有找到歌詞'
+                });
+            }
+        } else {
+            console.log('❌ API 返回空數據');
+            res.json({
+                success: false,
+                total: 0,
+                results: [],
+                error: 'API 返回空數據'
+            });
+        }
+    } catch (error) {
+        console.error(`❌ 搜尋歌詞失敗: ${error.message}`);
+        res.status(500).json({
+            success: false,
+            total: 0,
+            results: [],
+            error: error.message
+        });
+    }
+});
+
 // Get lyrics from wmcc API
 app.get('/api/lyrics/:artist/:title', async (req, res) => {
     const { artist, title } = req.params;

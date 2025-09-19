@@ -84,10 +84,21 @@ SpotifyLyricsPlayer.prototype.displaySearchResults = function(results) {
     results.forEach(result => {
         const resultElement = document.createElement('div');
         resultElement.className = 'result-item';
+        
+        // 生成歌詞預覽（前幾行歌詞）
+        let preview = '點擊查看歌詞';
+        if (result.lyrics && result.lyrics.length > 0) {
+            const firstFewLines = result.lyrics.slice(0, 3)
+                .map(line => typeof line === 'string' ? line : line.text || '')
+                .filter(line => line.trim() !== '')
+                .join(' / ');
+            preview = firstFewLines.length > 100 ? firstFewLines.substring(0, 100) + '...' : firstFewLines;
+        }
+        
         resultElement.innerHTML = `
             <div class="result-title">${this.escapeHtml(result.title)}</div>
             <div class="result-artist">${this.escapeHtml(result.artist)}</div>
-            <div class="result-preview">${this.escapeHtml(result.preview)}</div>
+            <div class="result-preview">${this.escapeHtml(preview)}</div>
             <span class="result-source">${this.escapeHtml(result.source)}</span>
         `;
         
@@ -126,16 +137,13 @@ SpotifyLyricsPlayer.prototype.selectLyricsResult = async function(result) {
     document.getElementById('search-results').style.display = 'none';
     
     try {
-        const response = await fetch(`${this.apiBase}/api/get-lyrics/${encodeURIComponent(result.source)}/${encodeURIComponent(result.id)}`);
-        const data = await response.json();
-        
-        if (data.success && data.lyrics && data.lyrics.length > 0) {
-            // 覆蓋當前歌詞
-            this.overrideLyrics(data.lyrics, data.type, result);
+        if (result.lyrics && result.lyrics.length > 0) {
+            // 直接使用搜尋結果中的歌詞數據
+            this.overrideLyrics(result.lyrics, result.type || 'plain', result);
             this.hideLyricsSearchModal();
             this.showSuccessMessage(`✅ 已載入歌詞: ${result.artist} - ${result.title}`);
         } else {
-            this.showErrorMessage('載入歌詞失敗：' + (data.error || '未知錯誤'));
+            this.showErrorMessage('歌詞數據無效');
             document.getElementById('search-results').style.display = 'block';
         }
     } catch (error) {

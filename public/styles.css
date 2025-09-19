@@ -1412,21 +1412,36 @@ body {
     
     .lyrics-controls {
         position: fixed;
-        right: -180px;
-        top: 40%;
+        right: -160px; /* 減少隱藏距離，更容易觸發 */
+        top: 35%; /* 調整位置避免與其他元素重疊 */
         padding: 12px 8px;
+        transition: right 0.3s ease;
     }
     
+    /* 手機版歌詞控制永久顯示觸發區域 */
     .lyrics-controls::before {
-        left: -25px;
-        padding: 6px 4px;
-        font-size: 12px;
+        left: -35px; /* 增加觸發區域 */
+        padding: 12px 8px; /* 增大觸發按鈕 */
+        font-size: 16px; /* 放大圖標 */
+        background: rgba(29, 185, 84, 0.9); /* 更明顯的顏色 */
+        backdrop-filter: blur(10px);
+        border-radius: 12px 0 0 12px;
+        cursor: pointer;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-right: none;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+    
+    /* 點擊顯示歌詞控制 */
+    .lyrics-controls.mobile-show {
+        right: 0;
     }
     
     .lyrics-control-btn {
-        font-size: 10px;
-        padding: 6px 8px;
-        min-width: 60px;
+        font-size: 11px;
+        padding: 8px 10px;
+        min-width: 70px;
+        touch-action: manipulation; /* 改善觸控體驗 */
     }
     
     /* 手機版歌詞特殊樣式 */
