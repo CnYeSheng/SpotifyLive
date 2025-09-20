@@ -1745,11 +1745,27 @@ class SpotifyLyricsPlayer {
                 // 添加全局觸發按鈕點擊監聽
                 document.addEventListener('click', (e) => {
                     const windowWidth = window.innerWidth;
+                    const windowHeight = window.innerHeight;
                     const clickX = e.clientX;
+                    const clickY = e.clientY;
                     
-                    // 檢查是否點擊了右側觸發區域
-                    if (clickX >= windowWidth - 35 && e.clientY >= window.innerHeight * 0.4 && e.clientY <= window.innerHeight * 0.6) {
+                    // 檢查是否點擊了圓形觸發按鈕區域 (右側8-56px, 垂直居中±30px)
+                    const buttonCenterX = windowWidth - 32; // 按鈕中心X座標
+                    const buttonCenterY = windowHeight / 2; // 按鈕中心Y座標
+                    const buttonRadius = 30; // 點擊半徑稍微放大
+                    
+                    const distance = Math.sqrt(
+                        Math.pow(clickX - buttonCenterX, 2) + 
+                        Math.pow(clickY - buttonCenterY, 2)
+                    );
+                    
+                    if (distance <= buttonRadius) {
                         e.preventDefault();
+                        e.stopPropagation();
+                        
+                        // 添加點擊動畫效果
+                        const trigger = document.querySelector('.lyrics-controls::before');
+                        
                         lyricsControls.classList.toggle('mobile-show');
                         
                         // 3秒後自動隱藏
