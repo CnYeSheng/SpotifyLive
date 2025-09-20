@@ -57,6 +57,10 @@
         this.isMobile = window.innerWidth <= 767;
         this.currentMobilePage = 'info'; // 'info' 或 'lyrics'
 
+        // 自動登入延遲控制
+        this.autoLoginDelay = 2000; // 2秒延遲後自動登入
+        this.autoLoginAttempted = false; // 防止重複自動登入
+
         // 日誌輔助函數
     this.log = (message, type = 'info') => {
         const now = new Date();
@@ -117,6 +121,9 @@
         
         // 設置全局播放器引用供手機控制使用
         window.player = this;
+        
+        // 頁面載入後自動嘗試登入（延遲2秒）
+        this.scheduleAutoLogin();
     }
 
     handleAuthCallback() {
@@ -737,6 +744,88 @@
         } catch (error) {
             this.log(`❌ 自動登入檢查失敗: ${error.message}`);
         }
+    }
+
+    // 頁面載入後自動嘗試登入
+    scheduleAutoLogin() {
+        // 防止重複自動登入
+        if (this.autoLoginAttempted) {
+            this.log('⏭️ 自動登入已嘗試過，跳過');
+            return;
+        }
+        
+        this.autoLoginAttempted = true;
+        
+        // 延遲2秒後執行自動登入，讓頁面完全載入
+        setTimeout(() => {
+            this.log('🚀 頁面載入完成，準備自動登入檢查...');
+            
+            // 首先檢查是否已經有有效的認證
+            if (this.sessionId) {
+                this.log('✅ 已有 sessionId，跳過自動登入');
+                return;
+            }
+            
+            // 檢查是否顯示登入頁面（表示未認證）
+            if (this.authSection && this.authSection.style.display !== 'none') {
+                this.log('🔍 檢測到登入頁面，執行自動登入...');
+                
+                // 顯示自動登入提示
+                this.showAutoLoginMessage();
+                
+                // 延遲1秒後執行自動登入
+                setTimeout(() => {
+                    const authUrl = `${this.apiBase}/api/auth`;
+                    this.log(`🔗 自動重定向到登入頁面: ${authUrl}`);
+                    window.location.href = authUrl;
+                }, 1000);
+            } else {
+                this.log('✅ 已認證或正在載入中，無需自動登入');
+            }
+        }, this.autoLoginDelay);
+    }
+
+    // 顯示自動登入提示
+    showAutoLoginMessage() {
+        const messageDiv = document.createElement('div');
+        messageDiv.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: linear-gradient(135deg, #1db954, #1ed760);
+            color: white;
+            padding: 20px 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(29, 185, 84, 0.4);
+            z-index: 2000;
+            font-weight: 600;
+            font-size: 16px;
+            text-align: center;
+            animation: fadeInOut 3s ease-in-out;
+        `;
+        messageDiv.innerHTML = '🎵 正在自動連接 Spotify...<br><small>即將跳轉到登入頁面</small>';
+        
+        // 添加動畫樣式
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes fadeInOut {
+                0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+                20% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+                80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+                100% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        document.body.appendChild(messageDiv);
+        
+        // 3秒後移除提示
+        setTimeout(() => {
+            if (messageDiv.parentNode) {
+                messageDiv.parentNode.removeChild(messageDiv);
+            }
+        }, 3000);
     }
 
     async proactiveTokenRefresh() {
