@@ -426,6 +426,9 @@ class SpotifyLyricsPlayer {
         // 歌詞控制面板自動顯示/隱藏
         this.initLyricsControlsAutoHide();
         
+        // 手機版歌詞控制觸發按鈕事件
+        this.initMobileLyricsControlsTrigger();
+        
         // 初始化手機滑動手勢
         this.initMobileSwipeGestures();
     }
@@ -1139,9 +1142,16 @@ class SpotifyLyricsPlayer {
             this.updatePremiumButtons();
         }
 
+        // 從API獲取智慧隨機播放狀態
         if (this.currentTrack.smart_shuffle !== undefined) {
             this.smartShuffle = this.currentTrack.smart_shuffle;
+            this.log(`🔀 智慧隨機播放狀態: ${this.smartShuffle ? '開啟' : '關閉'}`);
             this.updateShuffleButton();
+        }
+
+        // 檢查是否為單曲播放模式（repeat_state為track）
+        if (this.currentTrack.repeat_state === 'track') {
+            this.log('🔁 檢測到單曲重複播放模式');
         }
 
         // 更新播放清單按鈕狀態
@@ -1707,6 +1717,42 @@ class SpotifyLyricsPlayer {
         this.lyricsControlsHideTimeout = setTimeout(() => {
             this.hideLyricsControls();
         }, 2000); // 2秒後自動隱藏
+    }
+
+    // 手機版歌詞控制觸發方法
+    initMobileLyricsControlsTrigger() {
+        if (this.isMobile) {
+            const lyricsControls = document.querySelector('.lyrics-controls');
+            if (lyricsControls) {
+                // 點擊觸發按鈕顯示/隱藏控制面板
+                lyricsControls.addEventListener('click', (e) => {
+                    // 檢查是否點擊了觸發按鈕區域
+                    const rect = lyricsControls.getBoundingClientRect();
+                    const clickX = e.clientX;
+                    const triggerZone = rect.left - 35; // 觸發按鈕的左邊界
+                    
+                    if (clickX >= triggerZone && clickX <= rect.left) {
+                        e.preventDefault();
+                        lyricsControls.classList.toggle('mobile-show');
+                        
+                        // 3秒後自動隱藏
+                        setTimeout(() => {
+                            lyricsControls.classList.remove('mobile-show');
+                        }, 3000);
+                    }
+                });
+                
+                // 點擊控制按鈕後隱藏面板
+                const controlBtns = lyricsControls.querySelectorAll('.lyrics-control-btn');
+                controlBtns.forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        setTimeout(() => {
+                            lyricsControls.classList.remove('mobile-show');
+                        }, 500);
+                    });
+                });
+            }
+        }
     }
 
     // 初始化手機滑動手勢
@@ -2877,15 +2923,31 @@ class SpotifyLyricsPlayer {
                 this.shuffleBtn.classList.add('active');
             }
             
+            // 根據不同狀態顯示不同的SVG圖示
             if (isSmartShuffle) {
                 this.shuffleBtn.title = '智慧隨機播放';
                 this.shuffleBtn.style.setProperty('background', 'linear-gradient(135deg, #1db954, #1ed760)', 'important');
+                this.shuffleBtn.innerHTML = `
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M14.83 13.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04L14.83 13.41zM14.5 4l2.04 2.04L13.41 9.17l1.41 1.41 3.13-3.13L20 9.5V4H14.5z"/>
+                        <path d="M8.5 12.5l4.5-4.5L8.5 3.5 4 8l4.5 4.5z"/>
+                        <circle cx="19" cy="5" r="2" fill="#1db954"/>
+                        <circle cx="19" cy="19" r="2" fill="#1db954"/>
+                    </svg>`;
             } else if (isRegularShuffle) {
                 this.shuffleBtn.title = '隨機播放';
                 this.shuffleBtn.style.removeProperty('background');
+                this.shuffleBtn.innerHTML = `
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M14.83 13.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04L14.83 13.41zM14.5 4l2.04 2.04L13.41 9.17l1.41 1.41 3.13-3.13L20 9.5V4H14.5zM10.59 9.17l-2.08-2.08C7.95 6.53 7.25 6.17 6.54 6.17H4v2h2.54L10.59 9.17zM4 15.83V18h2.54c.71 0 1.41-.35 1.97-.92L10.59 14.83 9.17 13.41 4 15.83z"/>
+                    </svg>`;
             } else {
                 this.shuffleBtn.title = '開啟隨機播放';
                 this.shuffleBtn.style.removeProperty('background');
+                this.shuffleBtn.innerHTML = `
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" opacity="0.6">
+                        <path d="M14.83 13.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04L14.83 13.41zM14.5 4l2.04 2.04L13.41 9.17l1.41 1.41 3.13-3.13L20 9.5V4H14.5zM10.59 9.17l-2.08-2.08C7.95 6.53 7.25 6.17 6.54 6.17H4v2h2.54L10.59 9.17zM4 15.83V18h2.54c.71 0 1.41-.35 1.97-.92L10.59 14.83 9.17 13.41 4 15.83z"/>
+                    </svg>`;
             }
         }
     }
@@ -2896,13 +2958,36 @@ class SpotifyLyricsPlayer {
             if (this.repeatState !== 'off') {
                 this.repeatBtn.classList.add('active');
             }
-            
+
             const titles = {
                 'off': '開啟重複播放',
                 'context': '重複播放清單',
-                'track': '單首重複播放'
+                'track': '單曲重複播放'
             };
+
             this.repeatBtn.title = titles[this.repeatState] || '重複播放';
+            
+            // 根據不同狀態顯示不同的SVG圖示
+            if (this.repeatState === 'track') {
+                // 單曲重複播放圖示
+                this.repeatBtn.innerHTML = `
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zM17 17H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/>
+                        <text x="12" y="16" text-anchor="middle" font-size="8" font-weight="bold" fill="currentColor">1</text>
+                    </svg>`;
+            } else if (this.repeatState === 'context') {
+                // 重複播放清單圖示
+                this.repeatBtn.innerHTML = `
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zM17 17H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/>
+                    </svg>`;
+            } else {
+                // 關閉重複播放圖示（灰色）
+                this.repeatBtn.innerHTML = `
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" opacity="0.6">
+                        <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zM17 17H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/>
+                    </svg>`;
+            }
         }
     }
 
