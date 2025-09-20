@@ -103,7 +103,7 @@ class SpotifyLyricsPlayer {
             isLiveWmcc: this.isLiveWmcc,
             apiBase: this.apiBase,
             fullApiUrl: window.location.origin + this.apiBase,
-            playEndpoint: window.location.origin + this.apiBase + '/api/player/play'
+            playEndpoint: window.location.origin + this.apiBase + '/api/play'
         });
         
         this.initializeElements();
@@ -2806,7 +2806,7 @@ class SpotifyLyricsPlayer {
                 headers['X-Session-Id'] = this.sessionId;
             }
 
-            const playUrl = `${this.apiBase}/api/player/play`;
+            const playUrl = `${this.apiBase}/api/play`;
             this.log(`📡 播放請求 URL: ${playUrl}`);
 
             const response = await fetch(playUrl, {
