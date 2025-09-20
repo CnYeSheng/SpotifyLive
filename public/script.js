@@ -1726,12 +1726,29 @@ class SpotifyLyricsPlayer {
             if (lyricsControls) {
                 // 點擊觸發按鈕顯示/隱藏控制面板
                 lyricsControls.addEventListener('click', (e) => {
-                    // 檢查是否點擊了觸發按鈕區域
-                    const rect = lyricsControls.getBoundingClientRect();
+                    // 使用更簡單的觸發機制 - 點擊右側邊緣35px區域
+                    const windowWidth = window.innerWidth;
                     const clickX = e.clientX;
-                    const triggerZone = rect.left - 35; // 觸發按鈕的左邊界
                     
-                    if (clickX >= triggerZone && clickX <= rect.left) {
+                    // 檢查是否點擊了右側觸發區域
+                    if (clickX >= windowWidth - 35) {
+                        e.preventDefault();
+                        lyricsControls.classList.toggle('mobile-show');
+                        
+                        // 3秒後自動隱藏
+                        setTimeout(() => {
+                            lyricsControls.classList.remove('mobile-show');
+                        }, 3000);
+                    }
+                });
+                
+                // 添加全局觸發按鈕點擊監聽
+                document.addEventListener('click', (e) => {
+                    const windowWidth = window.innerWidth;
+                    const clickX = e.clientX;
+                    
+                    // 檢查是否點擊了右側觸發區域
+                    if (clickX >= windowWidth - 35 && e.clientY >= window.innerHeight * 0.4 && e.clientY <= window.innerHeight * 0.6) {
                         e.preventDefault();
                         lyricsControls.classList.toggle('mobile-show');
                         
