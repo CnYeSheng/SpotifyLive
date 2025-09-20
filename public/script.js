@@ -648,9 +648,9 @@
     adjustPollingInterval() {
         let newInterval = this.baseCheckInterval;
         
-        // 如果接近歌曲結尾，適度加速輪詢
+        // 如果接近歌曲結尾，密集更新（每5秒）
         if (this.isNearTrackEnd) {
-            newInterval = 8000; // 8秒（不要太頻繁）
+            newInterval = 5000; // 5秒密集更新
         }
         // 如果最近有用戶操作，短暫加速
         else if (Date.now() - this.lastUserAction < 30000) {
@@ -704,16 +704,16 @@
         this.log('🔄 Token 刷新定時器已啟動 (每 30 分鐘檢查一次)');
     }
 
-    // 自動登入定時器 - 每 45 分鐘觸發一次登入檢查
+    // 自動登入定時器 - 每 15 分鐘更新一次 session
     startAutoLoginTimer() {
         if (!this.autoLoginEnabled) return;
         
         this.autoLoginInterval = setInterval(() => {
-            this.log('⏰ 45分鐘自動登入檢查');
-            this.performAutoLogin();
-        }, 45 * 60 * 1000); // 45 分鐘
+            this.log('⏰ 15分鐘 Session 更新檢查');
+            this.performSessionRefresh();
+        }, 15 * 60 * 1000); // 15 分鐘
         
-        this.log('🔄 自動登入定時器已啟動 (每 45 分鐘檢查一次)');
+        this.log('🔄 Session 更新定時器已啟動 (每 15 分鐘檢查一次)');
     }
 
     // 執行自動登入
@@ -744,6 +744,253 @@
         } catch (error) {
             this.log(`❌ 自動登入檢查失敗: ${error.message}`);
         }
+    }
+
+    // 執行 Session 刷新（每15分鐘）
+    async performSessionRefresh() {
+        if (!this.sessionId) {
+            this.log('⚠️ 沒有 sessionId，跳過 Session 刷新');
+            return;
+        }
+        
+        this.log('🔄 開始 Session 刷新檢查...');
+        
+        try {
+            // 顯示動態刷新效果
+            this.showSessionRefreshAnimation();
+            
+            // 檢查當前認證狀態
+            const authResponse = await fetch('/api/auth-status', {
+                headers: { 'X-Session-Id': this.sessionId }
+            });
+            
+            const authData = await authResponse.json();
+            
+            if (authData.authenticated) {
+                this.log('✅ Session 仍然有效，刷新成功');
+                // 更新最後刷新時間
+                this.lastTokenRefresh = Date.now();
+                
+                // 如果有新的 sessionId，更新它
+                if (authData.sessionId && authData.sessionId !== this.sessionId) {
+                    this.sessionId = authData.sessionId;
+                    localStorage.setItem('spotify_session_id', this.sessionId);
+                    this.log(`🔄 Session ID 已更新: ${this.sessionId.substring(0, 8)}...`);
+                }
+                
+                // 顯示成功動畫
+                this.showSessionRefreshSuccess();
+                
+                // 主動觸發 token 刷新（類似自動登入）
+                this.log('🔄 主動觸發 Token 刷新...');
+                await this.triggerTokenRefresh();
+            } else {
+                this.log('⚠️ Session 已失效，需要重新認證');
+                // 嘗試智能恢復
+                const recovered = await this.attemptSmartRecovery();
+                if (!recovered) {
+                    this.log('❌ Session 刷新失敗，需要重新登入');
+                    this.showSessionRefreshFailed();
+                }
+            }
+        } catch (error) {
+            this.log(`❌ Session 刷新失敗: ${error.message}`);
+            this.showSessionRefreshFailed();
+        }
+    }
+
+    // 主動觸發 Token 刷新（類似自動登入）
+    async triggerTokenRefresh() {
+        this.log('🔑 開始主動 Token 刷新流程...');
+        
+        try {
+            // 嘗試一個輕量級的 API 調用來觸發服務端 token 刷新
+            const response = await fetch('/api/current-track', {
+                headers: { 'X-Session-Id': this.sessionId }
+            });
+            
+            if (response.status === 401) {
+                this.log('⚠️ Token 需要刷新，嘗試自動恢復...');
+                
+                // 等待服務端可能的自動刷新
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                // 再次嘗試
+                const retryResponse = await fetch('/api/current-track', {
+                    headers: { 'X-Session-Id': this.sessionId }
+                });
+                
+                if (retryResponse.ok) {
+                    this.log('✅ Token 自動刷新成功');
+                    this.showTokenRefreshSuccess();
+                } else {
+                    this.log('⚠️ Token 自動刷新可能需要重新登入');
+                }
+            } else if (response.ok) {
+                this.log('✅ Token 狀態良好，無需刷新');
+            }
+        } catch (error) {
+            this.log(`❌ Token 刷新觸發失敗: ${error.message}`);
+        }
+    }
+
+    // 顯示 Token 刷新成功
+    showTokenRefreshSuccess() {
+        const successDiv = document.createElement('div');
+        successDiv.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #1db954, #1ed760);
+            color: white;
+            padding: 10px 16px;
+            border-radius: 20px;
+            box-shadow: 0 4px 12px rgba(29, 185, 84, 0.3);
+            z-index: 1500;
+            font-weight: 500;
+            font-size: 12px;
+            animation: tokenRefreshSuccess 0.4s ease-out;
+        `;
+        successDiv.innerHTML = '🔑 Token 已自動刷新';
+        
+        document.body.appendChild(successDiv);
+        
+        // 2秒後自動移除
+        setTimeout(() => {
+            if (successDiv.parentNode) {
+                successDiv.style.animation = 'tokenRefreshSuccess 0.3s ease-in reverse';
+                setTimeout(() => {
+                    if (successDiv.parentNode) {
+                        successDiv.parentNode.removeChild(successDiv);
+                    }
+                }, 300);
+            }
+        }, 2000);
+    }
+
+    // 顯示 Session 刷新動畫
+    showSessionRefreshAnimation() {
+        const refreshDiv = document.createElement('div');
+        refreshDiv.id = 'session-refresh-animation';
+        refreshDiv.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #1db954, #1ed760);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 25px;
+            box-shadow: 0 4px 15px rgba(29, 185, 84, 0.3);
+            z-index: 1500;
+            font-weight: 500;
+            font-size: 14px;
+            animation: sessionRefreshPulse 2s ease-in-out infinite;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        `;
+        refreshDiv.innerHTML = `
+            <div class="refresh-spinner" style="
+                width: 16px;
+                height: 16px;
+                border: 2px solid rgba(255,255,255,0.3);
+                border-top: 2px solid white;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+            "></div>
+            正在更新 Session...
+        `;
+        
+        // 添加動畫樣式
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes sessionRefreshPulse {
+                0%, 100% { opacity: 0.8; transform: scale(1); }
+                50% { opacity: 1; transform: scale(1.05); }
+            }
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        document.body.appendChild(refreshDiv);
+        
+        // 2秒後自動移除
+        setTimeout(() => {
+            if (refreshDiv.parentNode) {
+                refreshDiv.parentNode.removeChild(refreshDiv);
+            }
+        }, 2000);
+    }
+
+    // 顯示 Session 刷新成功
+    showSessionRefreshSuccess() {
+        const successDiv = document.createElement('div');
+        successDiv.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #1db954, #1ed760);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 25px;
+            box-shadow: 0 4px 15px rgba(29, 185, 84, 0.3);
+            z-index: 1500;
+            font-weight: 500;
+            font-size: 14px;
+            animation: sessionRefreshSuccess 0.5s ease-out;
+        `;
+        successDiv.innerHTML = '✅ Session 更新成功';
+        
+        document.body.appendChild(successDiv);
+        
+        // 1.5秒後自動移除
+        setTimeout(() => {
+            if (successDiv.parentNode) {
+                successDiv.style.animation = 'sessionRefreshSuccess 0.3s ease-in reverse';
+                setTimeout(() => {
+                    if (successDiv.parentNode) {
+                        successDiv.parentNode.removeChild(successDiv);
+                    }
+                }, 300);
+            }
+        }, 1500);
+    }
+
+    // 顯示 Session 刷新失敗
+    showSessionRefreshFailed() {
+        const failedDiv = document.createElement('div');
+        failedDiv.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #ff4757, #ff3742);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 25px;
+            box-shadow: 0 4px 15px rgba(255, 71, 87, 0.3);
+            z-index: 1500;
+            font-weight: 500;
+            font-size: 14px;
+            animation: sessionRefreshFailed 0.5s ease-out;
+        `;
+        failedDiv.innerHTML = '❌ Session 更新失敗';
+        
+        document.body.appendChild(failedDiv);
+        
+        // 3秒後自動移除
+        setTimeout(() => {
+            if (failedDiv.parentNode) {
+                failedDiv.style.animation = 'sessionRefreshFailed 0.3s ease-in reverse';
+                setTimeout(() => {
+                    if (failedDiv.parentNode) {
+                        failedDiv.parentNode.removeChild(failedDiv);
+                    }
+                }, 300);
+            }
+        }, 3000);
     }
 
     // 頁面載入後自動嘗試登入
