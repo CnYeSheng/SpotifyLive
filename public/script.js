@@ -1,4 +1,4 @@
-class SpotifyLyricsPlayer {
+﻿class SpotifyLyricsPlayer {
     constructor() {
         this.currentTrack = null;
         this.lyrics = [];
@@ -3177,3 +3177,7 @@ window.addEventListener('beforeunload', () => {
         console.log('🧹 播放器已清理');
     }
 });
+
+window.onload = () => {
+    bindEvents();
+}
