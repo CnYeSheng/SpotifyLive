@@ -350,12 +350,37 @@ async function refreshAccessToken(session) {
     }
 }
 
-// Check authentication status
-app.get('/api/auth-status', (req, res) => {
+// Enhanced authentication status check with proactive token refresh
+app.get('/api/auth-status', async (req, res) => {
     const session = getUserSession(req);
+    const sessionId = req.headers['x-session-id'] || req.query.sessionId;
+    
+    if (!session) {
+        return res.json({ 
+            authenticated: false,
+            sessionId: null
+        });
+    }
+    
+    // Check if token needs refresh (proactive refresh)
+    const fiveMinutesFromNow = Date.now() + (5 * 60 * 1000);
+    if (session.expiresAt <= fiveMinutesFromNow) {
+        console.log('🔄 Proactive token refresh triggered by auth-status check');
+        const refreshed = await refreshAccessToken(session);
+        if (!refreshed) {
+            // Token refresh failed, but still return current status
+            console.log('❌ Token refresh failed in auth-status check');
+            return res.json({ 
+                authenticated: false,
+                sessionId: sessionId,
+                error: 'Token refresh failed'
+            });
+        }
+    }
+    
     res.json({ 
-        authenticated: !!session,
-        sessionId: session ? req.headers['x-session-id'] || req.query.sessionId : null
+        authenticated: true,
+        sessionId: sessionId
     });
 });
 

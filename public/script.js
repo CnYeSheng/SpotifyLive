@@ -1234,26 +1234,30 @@
         }
     }
 
-    // 智能恢復方法
+    // 增強的智能恢復方法
     async attemptSmartRecovery() {
-        this.log('🔧 開始智能恢復流程...');
+        this.log('🔧 開始增強智能恢復流程...');
         
-        // 步驟 1: 等待服務端可能的自動刷新
-        this.log('⏳ 等待服務端自動刷新 (3秒)...');
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        
-        // 步驟 2: 嘗試輕量級請求檢查認證狀態
+        // 步驟 1: 立即嘗試服務端 token 刷新（無需等待）
+        this.log('🔄 立即嘗試服務端 token 刷新...');
         try {
-            const authResponse = await fetch('/api/auth-status', {
+            const refreshResponse = await fetch('/api/auth-status', {
                 headers: { 'X-Session-Id': this.sessionId }
             });
             
-            if (authResponse.ok) {
-                const authData = await authResponse.json();
-                if (authData.authenticated) {
-                    this.log('✅ 認證狀態已恢復');
+            if (refreshResponse.ok) {
+                const refreshData = await refreshResponse.json();
+                if (refreshData.authenticated) {
+                    this.log('✅ 服務端 token 刷新成功');
                     
-                    // 步驟 3: 嘗試原始請求
+                    // 如果有新的 sessionId，更新它
+                    if (refreshData.sessionId && refreshData.sessionId !== this.sessionId) {
+                        this.sessionId = refreshData.sessionId;
+                        localStorage.setItem('spotify_session_id', this.sessionId);
+                        this.log(`🔄 Session ID 已更新: ${this.sessionId.substring(0, 8)}...`);
+                    }
+                    
+                    // 立即測試新 token
                     const testResponse = await fetch(`${this.apiBase}/api/current-track`, {
                         headers: { 'X-Session-Id': this.sessionId }
                     });
@@ -1261,35 +1265,97 @@
                     if (testResponse.ok) {
                         const data = await testResponse.json();
                         this.processTrackData(data);
+                        this.log('✅ 增強智能恢復成功');
                         return true;
                     }
                 }
             }
         } catch (error) {
-            this.log(`❌ 智能恢復過程出錯: ${error.message}`);
+            this.log(`❌ 立即刷新失敗: ${error.message}`);
         }
         
-        // 步驟 4: 嘗試觸發服務端刷新
-        this.log('🔄 嘗試觸發服務端 token 刷新...');
+        // 步驟 2: 漸進式重試策略
+        this.log('🔄 執行漸進式重試策略...');
+        const retryDelays = [1000, 2000, 3000, 5000]; // 漸進式延遲
+        
+        for (let i = 0; i < retryDelays.length; i++) {
+            const delay = retryDelays[i];
+            this.log(`⏳ 第 ${i + 1} 次重試，等待 ${delay}ms...`);
+            
+            await new Promise(resolve => setTimeout(resolve, delay));
+            
+            try {
+                // 嘗試多個端點來觸發刷新
+                const endpoints = [
+                    '/api/auth-status',
+                    '/api/current-track',
+                    '/api/health'
+                ];
+                
+                for (const endpoint of endpoints) {
+                    try {
+                        const response = await fetch(`${this.apiBase}${endpoint}`, {
+                            headers: { 'X-Session-Id': this.sessionId }
+                        });
+                        
+                        if (response.ok) {
+                            if (endpoint === '/api/current-track') {
+                                const data = await response.json();
+                                if (data.name) {
+                                    this.processTrackData(data);
+                                    this.log(`✅ 通過 ${endpoint} 恢復成功`);
+                                    return true;
+                                }
+                            } else {
+                                this.log(`✅ 通過 ${endpoint} 觸發刷新成功`);
+                                
+                                // 立即測試主要端點
+                                const testResponse = await fetch(`${this.apiBase}/api/current-track`, {
+                                    headers: { 'X-Session-Id': this.sessionId }
+                                });
+                                
+                                if (testResponse.ok) {
+                                    const data = await testResponse.json();
+                                    this.processTrackData(data);
+                                    this.log('✅ 增強智能恢復最終成功');
+                                    return true;
+                                }
+                            }
+                        }
+                    } catch (endpointError) {
+                        this.log(`⚠️ 端點 ${endpoint} 失敗: ${endpointError.message}`);
+                    }
+                }
+            } catch (retryError) {
+                this.log(`⚠️ 第 ${i + 1} 次重試失敗: ${retryError.message}`);
+            }
+        }
+        
+        // 步驟 3: 最後的恢復嘗試 - 檢查 session 有效性
+        this.log('🔍 執行最終 session 有效性檢查...');
         try {
-            // 連續發送幾個請求，可能觸發服務端刷新邏輯
-            for (let i = 0; i < 2; i++) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                const triggerResponse = await fetch(`${this.apiBase}/api/current-track`, {
+            // 嘗試從 localStorage 恢復 session
+            const storedSessionId = localStorage.getItem('spotify_session_id');
+            if (storedSessionId && storedSessionId !== this.sessionId) {
+                this.sessionId = storedSessionId;
+                this.log(`🔄 從 localStorage 恢復不同 session: ${this.sessionId.substring(0, 8)}...`);
+                
+                const finalTestResponse = await fetch(`${this.apiBase}/api/current-track`, {
                     headers: { 'X-Session-Id': this.sessionId }
                 });
                 
-                if (triggerResponse.ok) {
-                    const data = await triggerResponse.json();
+                if (finalTestResponse.ok) {
+                    const data = await finalTestResponse.json();
                     this.processTrackData(data);
-                    this.log('✅ 觸發刷新成功');
+                    this.log('✅ 通過 session 恢復成功');
                     return true;
                 }
             }
-        } catch (error) {
-            this.log(`❌ 觸發刷新失敗: ${error.message}`);
+        } catch (finalError) {
+            this.log(`❌ 最終恢復失敗: ${finalError.message}`);
         }
         
+        this.log('❌ 增強智能恢復失敗');
         return false;
     }
 
