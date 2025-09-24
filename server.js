@@ -106,6 +106,63 @@ const REDIRECT_URI = process.env.REDIRECT_URI || `http://localhost:${PORT}/callb
 // Store user sessions (in production, use a proper database)
 const userSessions = new Map();
 
+// Track song changes for token refresh
+const songChangeTracker = new Map();
+
+// Track song changes and refresh token every 2 songs
+function trackSongChange(sessionId, trackId) {
+    if (!sessionId || !trackId) return;
+    
+    const tracker = songChangeTracker.get(sessionId) || {
+        currentTrackId: null,
+        songCount: 0,
+        lastRefreshTime: Date.now()
+    };
+    
+    // Only count if it's a different song
+    if (tracker.currentTrackId !== trackId) {
+        tracker.currentTrackId = trackId;
+        tracker.songCount++;
+        
+        console.log(`🎵 Song changed for session ${sessionId.substring(0, 8)}... Count: ${tracker.songCount}`);
+        
+        // Refresh token every 2 songs
+        if (tracker.songCount >= 2) {
+            console.log(`🔄 Refreshing token after ${tracker.songCount} songs for session ${sessionId.substring(0, 8)}...`);
+            tracker.songCount = 0; // Reset counter
+            tracker.lastRefreshTime = Date.now();
+            
+            // Trigger token refresh
+            const session = userSessions.get(sessionId);
+            if (session) {
+                refreshAccessToken(session).then(refreshed => {
+                    if (refreshed) {
+                        console.log(`✅ Token refreshed successfully after song change`);
+                    } else {
+                        console.log(`❌ Token refresh failed after song change`);
+                    }
+                });
+            }
+        }
+        
+        songChangeTracker.set(sessionId, tracker);
+    }
+}
+
+// Clean up old song change trackers (older than 1 hour)
+function cleanupSongChangeTrackers() {
+    const oneHourAgo = Date.now() - (60 * 60 * 1000);
+    for (const [sessionId, tracker] of songChangeTracker.entries()) {
+        if (tracker.lastRefreshTime < oneHourAgo) {
+            songChangeTracker.delete(sessionId);
+            console.log(`🧹 Cleaned up old song change tracker for session ${sessionId.substring(0, 8)}...`);
+        }
+    }
+}
+
+// Run cleanup every 30 minutes
+setInterval(cleanupSongChangeTrackers, 30 * 60 * 1000);
+
 // Generate a simple session ID
 function generateSessionId() {
     return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
@@ -252,6 +309,9 @@ app.get('/api/current-track', async (req, res) => {
                 artist: queueResponse.data.queue[0].artists.map(a => a.name).join(', ')
             } : null
         };
+        
+        // Track song change for token refresh
+        trackSongChange(sessionId, track.id);
         
         res.json(currentTrack);
     } catch (error) {
