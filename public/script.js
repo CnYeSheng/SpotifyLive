@@ -1191,6 +1191,7 @@
                 const authFixed = await this.handleAuthError();
                 if (!authFixed) {
                     this.log('❌ 認證修復失敗，停止追蹤');
+                    this.scheduleAutoLogin();
                     return;
                 }
                 return;
@@ -3718,6 +3719,7 @@ async function spotifyRequest(url, options = {}) {
     if (response.status === 401) {
         console.warn('🔑 認證失敗，觸發自動登入...');
         player.scheduleAutoLogin();
+        this.scheduleAutoLogin();
         return Promise.reject(new Error('認證失敗，已觸發自動登入'));
     }
 
