@@ -553,6 +553,7 @@
             if (!data.authenticated) {
                 this.log('❌ Session 已失效，需要重新登入');
                 this.showAuthSection();
+                this.scheduleAutoLogin();
                 this.stopTracking();
                 localStorage.removeItem('spotify_session_id');
                 this.sessionId = null;
