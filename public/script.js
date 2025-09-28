@@ -977,6 +977,9 @@
             animation: sessionRefreshFailed 0.5s ease-out;
         `;
         failedDiv.innerHTML = '❌ Session 更新失敗';
+
+        // 顯示自動登入提示
+                this.showAutoLoginMessage();
         
         document.body.appendChild(failedDiv);
         
