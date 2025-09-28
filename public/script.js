@@ -1001,10 +1001,10 @@
     // 頁面載入後自動嘗試登入
     scheduleAutoLogin() {
         // 防止重複自動登入
-        if (this.autoLoginAttempted) {
+        /* if (this.autoLoginAttempted) {
             this.log('⏭️ 自動登入已嘗試過，跳過');
             return;
-        }
+        } */
         
         this.autoLoginAttempted = true;
         
