@@ -1162,6 +1162,7 @@
             if (response.status === 401) {
                 this.consecutiveAuthErrors++;
                 this.log(`🔑 檢測到認證問題 (第 ${this.consecutiveAuthErrors} 次)，嘗試智能恢復...`);
+                this.scheduleAutoLogin();
                 
                 // 更寬鬆的錯誤處理 - 允許更多次數的錯誤
                 if (this.consecutiveAuthErrors >= this.maxConsecutiveAuthErrors * 2) {
