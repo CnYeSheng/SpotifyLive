@@ -1168,6 +1168,7 @@
                 // 更寬鬆的錯誤處理 - 允許更多次數的錯誤
                 if (this.consecutiveAuthErrors >= this.maxConsecutiveAuthErrors * 2) {
                     this.log('❌ 連續認證錯誤過多，需要重新登入');
+                    this.scheduleAutoLogin();
                     this.handleAuthError();
                     return;
                 }
@@ -1245,6 +1246,7 @@
             if (error.message.includes('401') || error.message.includes('Unauthorized')) {
                 this.log('🔑 檢測到認證相關錯誤，嘗試修復...');
                 this.handleAuthError();
+                this.scheduleAutoLogin();
             }
         } finally {
             this.isCheckingTrack = false;
@@ -1258,6 +1260,7 @@
         // 步驟 1: 立即嘗試服務端 token 刷新（無需等待）
         this.log('🔄 立即嘗試服務端 token 刷新...');
         try {
+            this.scheduleAutoLogin();
             const refreshResponse = await fetch('/api/auth-status', {
                 headers: { 'X-Session-Id': this.sessionId }
             });
@@ -1342,16 +1345,19 @@
                         }
                     } catch (endpointError) {
                         this.log(`⚠️ 端點 ${endpoint} 失敗: ${endpointError.message}`);
+                        this.scheduleAutoLogin();
                     }
                 }
             } catch (retryError) {
                 this.log(`⚠️ 第 ${i + 1} 次重試失敗: ${retryError.message}`);
+                this.scheduleAutoLogin();
             }
         }
         
         // 步驟 3: 最後的恢復嘗試 - 檢查 session 有效性
         this.log('🔍 執行最終 session 有效性檢查...');
         try {
+            this.scheduleAutoLogin();
             // 嘗試從 localStorage 恢復 session
             const storedSessionId = localStorage.getItem('spotify_session_id');
             if (storedSessionId && storedSessionId !== this.sessionId) {
@@ -1371,6 +1377,7 @@
             }
         } catch (finalError) {
             this.log(`❌ 最終恢復失敗: ${finalError.message}`);
+            this.scheduleAutoLogin();
         }
         
         this.log('❌ 增強智能恢復失敗');
@@ -1504,6 +1511,7 @@
         setTimeout(() => {
             if (!this.isCheckingTrack) {
                 this.checkCurrentTrack();
+                this.scheduleAutoLogin();
             }
         }, delay);
     }
