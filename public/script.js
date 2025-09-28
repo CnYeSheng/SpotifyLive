@@ -1175,6 +1175,7 @@
                 // 延遲智能恢復嘗試，避免過於頻繁
                 if (this.consecutiveAuthErrors <= 2) {
                     this.log('⚠️ 認證問題，等待下次自動重試');
+                    this.scheduleAutoLogin();
                     // 讓系統自然重試，不立即觸發智能恢復
                     return;
                 }
@@ -1297,6 +1298,7 @@
         for (let i = 0; i < retryDelays.length; i++) {
             const delay = retryDelays[i];
             this.log(`⏳ 第 ${i + 1} 次重試，等待 ${delay}ms...`);
+            this.scheduleAutoLogin();
             
             await new Promise(resolve => setTimeout(resolve, delay));
             
@@ -3601,6 +3603,7 @@
             
             if (response.status === 401) {
                 this.log('🔑 Library check 認證問題，嘗試修復...');
+                this.scheduleAutoLogin();
                 const authFixed = await this.handleAuthError();
                 if (authFixed) {
                     // 重新嘗試請求
