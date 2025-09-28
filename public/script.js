@@ -805,9 +805,10 @@
         
         try {
             // 嘗試一個輕量級的 API 調用來觸發服務端 token 刷新
-            const response = await fetch('/api/current-track', {
+            /* const response = await fetch('/api/current-track', {
                 headers: { 'X-Session-Id': this.sessionId }
-            });
+            }); */
+            const response = await spotifyRequest('/api/current-track');
             
             if (response.status === 401) {
                 this.log('⚠️ Token 需要刷新，嘗試自動恢復...');
@@ -979,7 +980,7 @@
         failedDiv.innerHTML = '❌ Session 更新失敗';
 
         // 顯示自動登入提示
-                this.showAutoLoginMessage();
+                scheduleAutoLogin();
         
         document.body.appendChild(failedDiv);
         
@@ -3702,6 +3703,26 @@ document.addEventListener('visibilitychange', () => {
         }
     }
 });
+
+async function spotifyRequest(url, options = {}) {
+    const player = window.spotifyPlayer;
+    if (!player) return Promise.reject(new Error('播放器尚未初始化'));
+
+    const headers = options.headers || {};
+    if (player.sessionId) {
+        headers['X-Session-Id'] = player.sessionId;
+    }
+
+    const response = await fetch(url, { ...options, headers });
+
+    if (response.status === 401) {
+        console.warn('🔑 認證失敗，觸發自動登入...');
+        player.scheduleAutoLogin();
+        return Promise.reject(new Error('認證失敗，已觸發自動登入'));
+    }
+
+    return response;
+}
 
 // 頁面卸載時清理
 window.addEventListener('beforeunload', () => {
