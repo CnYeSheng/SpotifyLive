@@ -1631,12 +1631,34 @@ body {
     gap: 12px;
 }
 
+.next-song-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
 .next-song-label {
     font-size: 12px;
     font-weight: 600;
     color: #1db954;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+}
+
+.next-song-settings-btn {
+    background: none;
+    border: none;
+    color: #b3b3b3;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.next-song-settings-btn:hover {
+    color: white;
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .next-song-info {
@@ -1696,6 +1718,54 @@ body {
         transform: translateX(100%);
         opacity: 0;
     }
+}
+
+/* 下一首歌曲設定樣式 */
+.setting-group {
+    margin-bottom: 20px;
+}
+
+.setting-group label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 10px;
+    color: white;
+}
+
+.radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.radio-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: 8px;
+    transition: background-color 0.2s ease;
+}
+
+.radio-option:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.radio-option input[type="radio"] {
+    margin: 0;
+    cursor: pointer;
+}
+
+.radio-option span {
+    font-size: 14px;
+    color: #b3b3b3;
+    cursor: pointer;
+}
+
+.radio-option input[type="radio"]:checked + span {
+    color: #1db954;
+    font-weight: 500;
 }
 
 /* 手機版適配 */

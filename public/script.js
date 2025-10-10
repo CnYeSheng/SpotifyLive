@@ -64,6 +64,8 @@
         // 下一首歌曲預覽控制
         this.nextSongPreviewTimeout = null; // 下一首歌曲預覽定時器
         this.isNextSongPreviewShown = false; // 下一首歌曲預覽是否顯示
+        this.nextSongPreviewMode = localStorage.getItem('nextSongPreviewMode') || '10'; // '10', '20', '30', 'always', 'never'
+        this.nextSongData = null; // 下一首歌曲數據
 
         // 日誌輔助函數
     this.log = (message, type = 'info') => {
@@ -241,6 +243,9 @@
         this.nextSongCover = document.getElementById('next-song-cover');
         this.nextSongTitle = document.getElementById('next-song-title');
         this.nextSongArtist = document.getElementById('next-song-artist');
+        this.nextSongSettingsBtn = document.getElementById('next-song-settings-btn');
+        this.nextSongSettingsModal = document.getElementById('next-song-settings-modal');
+        this.closeNextSongSettings = document.getElementById('close-next-song-settings');
         
         // 模態框元素
         this.fontSizeModal = document.getElementById('font-size-modal');
@@ -448,6 +453,210 @@
         
         // 初始化手機滑動手勢
         this.initMobileSwipeGestures();
+        
+        // 初始化下一首歌曲預覽設定
+        this.initNextSongPreviewSettings();
+    }
+
+    // 初始化下一首歌曲預覽設定
+    initNextSongPreviewSettings() {
+        // 設定按鈕事件
+        this.nextSongSettingsBtn?.addEventListener('click', () => {
+            this.showNextSongSettingsModal();
+        });
+
+        // 關閉模態框事件
+        this.closeNextSongSettings?.addEventListener('click', () => {
+            this.hideNextSongSettingsModal();
+        });
+
+        // 點擊背景關閉模態框
+        this.nextSongSettingsModal?.addEventListener('click', (e) => {
+            if (e.target === this.nextSongSettingsModal) {
+                this.hideNextSongSettingsModal();
+            }
+        });
+
+        // 監聽設定變更
+        document.querySelectorAll('input[name="preview-mode"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    this.updateNextSongPreviewMode(e.target.value);
+                }
+            });
+        });
+
+        // 恢復保存的設定
+        this.restoreNextSongPreviewSettings();
+    }
+
+    // 顯示下一首歌曲設定模態框
+    showNextSongSettingsModal() {
+        this.nextSongSettingsModal.style.display = 'flex';
+    }
+
+    // 隱藏下一首歌曲設定模態框
+    hideNextSongSettingsModal() {
+        this.nextSongSettingsModal.style.display = 'none';
+    }
+
+    // 更新下一首歌曲預覽模式
+    updateNextSongPreviewMode(mode) {
+        this.nextSongPreviewMode = mode;
+        localStorage.setItem('nextSongPreviewMode', mode);
+        this.log(`🎵 下一首歌曲預覽模式已更新: ${mode}`);
+        
+        // 立即應用新設定
+        this.applyNextSongPreviewMode();
+        this.hideNextSongSettingsModal();
+    }
+
+    // 恢復下一首歌曲預覽設定
+    restoreNextSongPreviewSettings() {
+        const savedMode = this.nextSongPreviewMode;
+        const radioBtn = document.querySelector(`input[name="preview-mode"][value="${savedMode}"]`);
+        if (radioBtn) {
+            radioBtn.checked = true;
+        }
+        this.applyNextSongPreviewMode();
+    }
+
+    // 應用下一首歌曲預覽模式
+    applyNextSongPreviewMode() {
+        if (this.nextSongPreviewMode === 'never') {
+            this.hideNextSongPreview();
+        } else if (this.nextSongPreviewMode === 'always' && this.nextSongData) {
+            this.showNextSongPreview();
+        } else {
+            // 其他模式會在 processTrackData 中處理
+            this.scheduleNextSongPreview();
+        }
+    }
+
+    // 顯示下一首歌曲預覽
+    showNextSongPreview() {
+        if (this.nextSongPreviewMode === 'never' || !this.nextSongData) {
+            return;
+        }
+
+        // 更新預覽內容
+        this.updateNextSongPreviewContent();
+        
+        // 顯示預覽
+        if (this.nextSongPreview) {
+            this.nextSongPreview.style.display = 'block';
+            this.isNextSongPreviewShown = true;
+            this.log('🎵 顯示下一首歌曲預覽');
+        }
+    }
+
+    // 隱藏下一首歌曲預覽
+    hideNextSongPreview() {
+        if (this.nextSongPreview) {
+            this.nextSongPreview.style.display = 'none';
+            this.isNextSongPreviewShown = false;
+        }
+        
+        // 清除定時器
+        if (this.nextSongPreviewTimeout) {
+            clearTimeout(this.nextSongPreviewTimeout);
+            this.nextSongPreviewTimeout = null;
+        }
+    }
+
+    // 更新下一首歌曲預覽內容
+    updateNextSongPreviewContent() {
+        if (!this.nextSongData) return;
+
+        const { name, artists, album } = this.nextSongData;
+        
+        if (this.nextSongTitle) {
+            this.nextSongTitle.textContent = name || '未知歌曲';
+        }
+        
+        if (this.nextSongArtist) {
+            const artistNames = artists ? artists.map(artist => artist.name).join(', ') : '未知藝人';
+            this.nextSongArtist.textContent = artistNames;
+        }
+        
+        if (this.nextSongCover && album && album.images && album.images.length > 0) {
+            this.nextSongCover.src = album.images[0].url;
+        } else if (this.nextSongCover) {
+            this.nextSongCover.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIGZpbGw9Im5vbmUiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMjAgMGMxMSAwIDIwIDkgMjAgMjBzLTkgMjAtMjAgMjBTMCAzMSAwIDIwIDkgMCAyMCAweiIgZmlsbD0iIzMzMzMzMyIvPjx0ZXh0IHg9IjIwIiB5PSIyNSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiBmaWxsPSIjNjY2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj7wn461PC90ZXh0Pjwvc3ZnPg==';
+        }
+    }
+
+    // 安排下一首歌曲預覽
+    scheduleNextSongPreview() {
+        if (!this.currentTrack || this.nextSongPreviewMode === 'never') {
+            return;
+        }
+
+        // 清除之前的定時器
+        if (this.nextSongPreviewTimeout) {
+            clearTimeout(this.nextSongPreviewTimeout);
+            this.nextSongPreviewTimeout = null;
+        }
+
+        const currentTime = this.currentTrack.progress_ms || 0;
+        const duration = this.currentTrack.item?.duration_ms || 0;
+        
+        if (duration === 0) return;
+
+        const remainingTime = duration - currentTime;
+        
+        // 根據預覽模式決定顯示時機
+        let showAtSeconds = 10; // 預設10秒
+        if (this.nextSongPreviewMode === '20') showAtSeconds = 20;
+        else if (this.nextSongPreviewMode === '30') showAtSeconds = 30;
+        
+        const showAtMs = showAtSeconds * 1000;
+        
+        if (this.nextSongPreviewMode === 'always') {
+            // 始終顯示模式
+            if (this.nextSongData) {
+                this.showNextSongPreview();
+            }
+        } else if (remainingTime <= showAtMs && !this.isNextSongPreviewShown) {
+            // 時間到了立即顯示
+            if (this.nextSongData) {
+                this.showNextSongPreview();
+            }
+        } else if (remainingTime > showAtMs) {
+            // 設定定時器在指定時間顯示
+            const timeToShow = remainingTime - showAtMs;
+            this.nextSongPreviewTimeout = setTimeout(() => {
+                if (this.nextSongData) {
+                    this.showNextSongPreview();
+                }
+            }, timeToShow);
+        }
+    }
+
+    // 獲取下一首歌曲信息
+    async fetchNextSongData() {
+        try {
+            const headers = {};
+            if (this.sessionId) {
+                headers['X-Session-Id'] = this.sessionId;
+            }
+            
+            const response = await fetch(`${this.apiBase}/api/queue`, { headers });
+            
+            if (response.ok) {
+                const queueData = await response.json();
+                if (queueData.queue && queueData.queue.length > 0) {
+                    this.nextSongData = queueData.queue[0];
+                    this.log('🎵 獲取下一首歌曲信息成功');
+                    return true;
+                }
+            }
+        } catch (error) {
+            this.log(`❌ 獲取下一首歌曲信息失敗: ${error.message}`);
+        }
+        
+        this.nextSongData = null;
+        return false;
     }
 
     async checkAuthStatus() {
@@ -1440,6 +1649,19 @@
 
     // 處理歌曲數據的統一方法
     processTrackData(data) {
+        // 獲取下一首歌曲信息（異步操作，不阻塞主流程）
+        this.fetchNextSongData().then(() => {
+            // 安排下一首歌曲預覽
+            this.scheduleNextSongPreview();
+        });
+
+        // 如果歌曲發生變化，隱藏之前的預覽
+        if (this.currentTrack && this.currentTrack.item?.id !== data.item?.id) {
+            this.isNextSongPreviewShown = false;
+            if (this.nextSongPreviewMode !== 'always') {
+                this.hideNextSongPreview();
+            }
+        }
         // 重置重試計數器和認證錯誤計數
         this.retryCount = 0;
         this.consecutiveAuthErrors = 0;
