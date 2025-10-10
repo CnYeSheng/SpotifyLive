@@ -1611,9 +1611,11 @@
                     }
                 }
                 
-                this.log('❌ 需要重新登入');
-                this.handleAuthError();
-                return;
+                } else {
+                    this.log('❌ 需要重新登入');
+                    this.handleAuthError();
+                    return;
+                }
             }
             
             // 處理其他 HTTP 錯誤狀態
