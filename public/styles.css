@@ -420,7 +420,102 @@ body {
 
 .lyrics-controls {
     display: flex;
+    align-items: flex-start;
     gap: 8px;
+}
+
+/* 預覽設定部分 */
+.preview-settings-section {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.preview-settings-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background: rgba(20, 20, 20, 0.95);
+    border-radius: 12px;
+    padding: 12px;
+    margin-top: 8px;
+    min-width: 140px;
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    animation: fadeInScale 0.2s ease-out;
+    z-index: 1000;
+}
+
+.preview-settings-dropdown::before {
+    content: '';
+    position: absolute;
+    top: -6px;
+    right: 12px;
+    width: 12px;
+    height: 12px;
+    background: rgba(20, 20, 20, 0.95);
+    transform: rotate(45deg);
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.settings-header {
+    font-size: 11px;
+    color: #b3b3b3;
+    font-weight: 600;
+    text-align: center;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.radio-group-compact {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.radio-option-compact {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+    font-size: 12px;
+}
+
+.radio-option-compact:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.radio-option-compact input {
+    width: 14px;
+    height: 14px;
+    margin-right: 8px;
+    accent-color: #1db954;
+}
+
+.radio-option-compact span {
+    color: #ffffff;
+    flex: 1;
+    font-weight: 500;
+}
+
+.radio-option-compact input:checked + span {
+    color: #1db954;
+}
+
+@keyframes fadeInScale {
+    from {
+        opacity: 0;
+        transform: scale(0.9) translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
 }
 
 .control-btn {

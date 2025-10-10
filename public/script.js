@@ -243,9 +243,8 @@
         this.nextSongCover = document.getElementById('next-song-cover');
         this.nextSongTitle = document.getElementById('next-song-title');
         this.nextSongArtist = document.getElementById('next-song-artist');
-        this.nextSongSettingsBtn = document.getElementById('next-song-settings-btn');
-        this.nextSongSettingsModal = document.getElementById('next-song-settings-modal');
-        this.closeNextSongSettings = document.getElementById('close-next-song-settings');
+        this.togglePreviewSettings = document.getElementById('toggle-preview-settings');
+        this.previewSettingsDropdown = document.getElementById('preview-settings-dropdown');
         
         // 模態框元素
         this.fontSizeModal = document.getElementById('font-size-modal');
@@ -461,19 +460,15 @@
     // 初始化下一首歌曲預覽設定
     initNextSongPreviewSettings() {
         // 設定按鈕事件
-        this.nextSongSettingsBtn?.addEventListener('click', () => {
-            this.showNextSongSettingsModal();
+        this.togglePreviewSettings?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.togglePreviewSettingsDropdown();
         });
 
-        // 關閉模態框事件
-        this.closeNextSongSettings?.addEventListener('click', () => {
-            this.hideNextSongSettingsModal();
-        });
-
-        // 點擊背景關閉模態框
-        this.nextSongSettingsModal?.addEventListener('click', (e) => {
-            if (e.target === this.nextSongSettingsModal) {
-                this.hideNextSongSettingsModal();
+        // 點擊外部關閉下拉菜單
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.preview-settings-section')) {
+                this.hidePreviewSettingsDropdown();
             }
         });
 
@@ -497,14 +492,24 @@
         });
     }
 
-    // 顯示下一首歌曲設定模態框
-    showNextSongSettingsModal() {
-        this.nextSongSettingsModal.style.display = 'flex';
+    // 切換預覽設定下拉菜單
+    togglePreviewSettingsDropdown() {
+        const isVisible = this.previewSettingsDropdown.style.display === 'block';
+        if (isVisible) {
+            this.hidePreviewSettingsDropdown();
+        } else {
+            this.showPreviewSettingsDropdown();
+        }
     }
 
-    // 隱藏下一首歌曲設定模態框
-    hideNextSongSettingsModal() {
-        this.nextSongSettingsModal.style.display = 'none';
+    // 顯示預覽設定下拉菜單
+    showPreviewSettingsDropdown() {
+        this.previewSettingsDropdown.style.display = 'block';
+    }
+
+    // 隱藏預覽設定下拉菜單
+    hidePreviewSettingsDropdown() {
+        this.previewSettingsDropdown.style.display = 'none';
     }
 
     // 更新下一首歌曲預覽模式
@@ -515,7 +520,7 @@
         
         // 立即應用新設定
         this.applyNextSongPreviewMode();
-        this.hideNextSongSettingsModal();
+        this.hidePreviewSettingsDropdown();
     }
 
     // 恢復下一首歌曲預覽設定
