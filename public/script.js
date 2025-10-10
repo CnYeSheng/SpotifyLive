@@ -1495,6 +1495,71 @@
             }
         }, this.autoLoginDelay);
     }
+    
+    // 显示session过期提示（不强制跳转）
+    showSessionExpiredMessage() {
+        const messageDiv = document.createElement('div');
+        messageDiv.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #ff9500, #ff6b35);
+            color: white;
+            padding: 16px 24px;
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(255, 149, 0, 0.3);
+            z-index: 1000;
+            font-weight: 600;
+            max-width: 350px;
+            line-height: 1.4;
+            cursor: pointer;
+        `;
+        messageDiv.innerHTML = `
+            <div style="font-size: 14px; margin-bottom: 8px;">🔐 Session已过期</div>
+            <div style="font-size: 12px; opacity: 0.9;">点击这里重新登录 Spotify</div>
+        `;
+        
+        // 点击重新登录
+        messageDiv.onclick = () => {
+            window.location.href = '/api/auth';
+        };
+        
+        document.body.appendChild(messageDiv);
+        
+        // 10秒后自动消失
+        setTimeout(() => {
+            if (messageDiv.parentNode) {
+                messageDiv.style.animation = 'slideIn 0.3s ease reverse';
+                setTimeout(() => {
+                    if (messageDiv.parentNode) {
+                        messageDiv.parentNode.removeChild(messageDiv);
+                    }
+                }, 300);
+            }
+        }, 10000);
+    }
+    
+    // 启动定期的静默session检查
+    startPeriodicSessionCheck() {
+        // 每5分钟检查一次session状态
+        this.sessionCheckInterval = setInterval(async () => {
+            if (this.sessionId) {
+                this.log('🕐 定期检查session状态...');
+                const isValid = await this.tryBackgroundRefresh();
+                if (!isValid) {
+                    this.log('⚠️ 定期检查发现session可能过期');
+                }
+            }
+        }, 5 * 60 * 1000); // 5分钟
+    }
+    
+    // 清理定期检查
+    stopPeriodicSessionCheck() {
+        if (this.sessionCheckInterval) {
+            clearInterval(this.sessionCheckInterval);
+            this.sessionCheckInterval = null;
+        }
+    }
 
     // 后台静默刷新session
     async tryBackgroundRefresh() {
@@ -1699,10 +1764,18 @@
                 if (this.consecutiveAuthErrors <= 12) { // 增加到12次
                     this.log('🔄 认证失败但继续运行，避免频繁跳转登录...');
                     // 不立即触发重新登录，让用户继续使用
-                    // 每4次失败尝试一次智能恢复
-                    if (this.consecutiveAuthErrors % 4 === 0) {
-                        this.log('🔧 尝试后台刷新token...');
-                        this.tryBackgroundRefresh();
+                    // 每3次失败尝试一次静默恢复
+                    if (this.consecutiveAuthErrors % 3 === 0) {
+                        this.log('🔧 尝试静默session刷新...');
+                        this.tryBackgroundRefresh().then(success => {
+                            if (success) {
+                                this.log('✅ 静默刷新成功，恢复正常操作');
+                                // 重新尝试获取当前歌曲
+                                setTimeout(() => {
+                                    this.checkCurrentTrack();
+                                }, 500);
+                            }
+                        });
                     }
                 } else {
                     this.log('❌ 认证失败次数过多，需要重新登入');
