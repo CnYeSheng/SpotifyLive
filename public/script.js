@@ -1481,7 +1481,7 @@
             if (authSectionVisible || playerSectionHidden || hasLoginButton) {
                 this.log('🔍 检测到需要认证，尝试后台静默刷新session...');
                 
-                // 尝试后台刷新session，不跳转登录页面
+                // 尝试后台刷新session
                 this.tryBackgroundRefresh().then(success => {
                     if (success) {
                         this.log('✅ 后台session刷新成功，继续使用');
@@ -1490,9 +1490,16 @@
                             this.checkCurrentTrack();
                         }, 1000);
                     } else {
-                        this.log('❌ 后台session刷新失败，但不跳转登录页面');
-                        // 可以显示一个提示，但不强制跳转
-                        this.showSessionExpiredMessage();
+                        this.log('❌ 后台session刷新失败，自动触发登录');
+                        // 静默刷新失败时自动跳转登录
+                        this.showAutoLoginMessage('Session已过期，正在自动重新登录...');
+                        
+                        // 延迟2秒后执行自动登录，给用户看到提示
+                        setTimeout(() => {
+                            const authUrl = '/api/auth';
+                            this.log(`🔗 自动重定向到登录页面: ${authUrl}`);
+                            window.location.href = authUrl;
+                        }, 2000);
                     }
                 });
             } else {
@@ -1552,7 +1559,12 @@
                 this.log('🕐 定期检查session状态...');
                 const isValid = await this.tryBackgroundRefresh();
                 if (!isValid) {
-                    this.log('⚠️ 定期检查发现session可能过期');
+                    this.log('⚠️ 定期检查发现session过期，自动触发登录');
+                    this.showAutoLoginMessage('Session已过期，正在自动重新登录...');
+                    
+                    setTimeout(() => {
+                        window.location.href = '/api/auth';
+                    }, 2000);
                 }
             }
         }, 5 * 60 * 1000); // 5分钟
@@ -1588,21 +1600,27 @@
             
             // 2. 尝试静默token刷新
             this.log('🔄 尝试静默token刷新...');
-            const refreshResponse = await fetch('/api/refresh-token', {
-                method: 'POST',
-                headers: this.sessionId ? { 'X-Session-Id': this.sessionId } : {},
-                credentials: 'include' // 包含cookies
-            });
-            
-            if (refreshResponse.ok) {
-                const refreshData = await refreshResponse.json();
-                if (refreshData.success && refreshData.sessionId) {
-                    this.log('✅ 静默token刷新成功');
-                    this.sessionId = refreshData.sessionId;
-                    localStorage.setItem('spotify_session_id', this.sessionId);
-                    this.consecutiveAuthErrors = 0;
-                    return true;
+            try {
+                const refreshResponse = await fetch('/api/refresh-token', {
+                    method: 'POST',
+                    headers: this.sessionId ? { 'X-Session-Id': this.sessionId } : {},
+                    credentials: 'include' // 包含cookies
+                });
+                
+                if (refreshResponse.ok) {
+                    const refreshData = await refreshResponse.json();
+                    if (refreshData.success && refreshData.sessionId) {
+                        this.log('✅ 静默token刷新成功');
+                        this.sessionId = refreshData.sessionId;
+                        localStorage.setItem('spotify_session_id', this.sessionId);
+                        this.consecutiveAuthErrors = 0;
+                        return true;
+                    }
+                } else if (refreshResponse.status === 404) {
+                    this.log('⚠️ /api/refresh-token 端点不存在，跳过此方法');
                 }
+            } catch (error) {
+                this.log(`⚠️ token刷新请求失败: ${error.message}`);
             }
             
             // 3. 尝试使用现有cookie进行认证
@@ -1632,7 +1650,7 @@
     }
 
     // 顯示自動登入提示
-    showAutoLoginMessage() {
+    showAutoLoginMessage(customMessage = null) {
         const messageDiv = document.createElement('div');
         messageDiv.style.cssText = `
             position: fixed;
@@ -1858,11 +1876,18 @@
                 // 只有连续更多次认证错误才触发重新登录
                 if (this.consecutiveAuthErrors >= 15) { // 大幅增加到15次，给静默刷新更多机会
                     this.log('❌ 连续认证失败次数过多，尝试最终的session恢复');
-                    // 不立即跳转登录，而是最后尝试一次后台刷新
+                    // 最后尝试一次后台刷新，失败则自动登录
                     this.tryBackgroundRefresh().then(success => {
                         if (!success) {
-                            this.log('⚠️ 所有恢复方法都失败，显示session过期提示');
-                            this.showSessionExpiredMessage();
+                            this.log('⚠️ 所有恢复方法都失败，自动触发重新登录');
+                            this.showAutoLoginMessage('认证已失效，正在自动重新登录...');
+                            
+                            // 延迟2秒后自动跳转登录
+                            setTimeout(() => {
+                                const authUrl = '/api/auth';
+                                this.log(`🔗 自动重定向到登录页面: ${authUrl}`);
+                                window.location.href = authUrl;
+                            }, 2000);
                         } else {
                             this.consecutiveAuthErrors = 0;
                         }
