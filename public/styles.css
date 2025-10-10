@@ -521,15 +521,19 @@ body {
 
 /* 🎵 过渡动画系统 */
 
-/* 歌曲切换过渡动画 */
+/* 歌曲切换过渡动画 - 更柔和 */
 @keyframes songTransition {
     0% {
         opacity: 1;
         transform: translateY(0) scale(1);
     }
-    50% {
-        opacity: 0.3;
-        transform: translateY(-10px) scale(0.98);
+    30% {
+        opacity: 0.7;
+        transform: translateY(-5px) scale(0.99);
+    }
+    70% {
+        opacity: 0.8;
+        transform: translateY(-3px) scale(0.995);
     }
     100% {
         opacity: 1;
@@ -537,43 +541,58 @@ body {
     }
 }
 
-/* 专辑封面淡入淡出 */
+/* 专辑封面淡入淡出 - 更平滑 */
 @keyframes coverFadeIn {
-    from {
+    0% {
         opacity: 0;
-        transform: scale(0.9) rotateY(10deg);
-        filter: blur(4px);
+        transform: scale(0.95) rotateY(5deg);
+        filter: blur(2px) brightness(0.8);
     }
-    to {
+    50% {
+        opacity: 0.5;
+        transform: scale(0.98) rotateY(2deg);
+        filter: blur(1px) brightness(0.9);
+    }
+    100% {
         opacity: 1;
         transform: scale(1) rotateY(0deg);
-        filter: blur(0px);
+        filter: blur(0px) brightness(1);
     }
 }
 
 @keyframes coverFadeOut {
-    from {
+    0% {
         opacity: 1;
         transform: scale(1) rotateY(0deg);
-        filter: blur(0px);
+        filter: blur(0px) brightness(1);
     }
-    to {
+    50% {
+        opacity: 0.6;
+        transform: scale(0.98) rotateY(-2deg);
+        filter: blur(1px) brightness(0.9);
+    }
+    100% {
         opacity: 0;
-        transform: scale(0.9) rotateY(-10deg);
-        filter: blur(4px);
+        transform: scale(0.95) rotateY(-5deg);
+        filter: blur(2px) brightness(0.8);
     }
 }
 
-/* 文字滑入效果 */
+/* 文字滑入效果 - 更自然 */
 @keyframes textSlideIn {
-    from {
+    0% {
         opacity: 0;
-        transform: translateX(-20px);
-        filter: blur(2px);
+        transform: translateX(-15px) translateY(5px);
+        filter: blur(1px);
     }
-    to {
+    40% {
+        opacity: 0.6;
+        transform: translateX(-5px) translateY(2px);
+        filter: blur(0.5px);
+    }
+    100% {
         opacity: 1;
-        transform: translateX(0);
+        transform: translateX(0) translateY(0);
         filter: blur(0px);
     }
 }
@@ -669,32 +688,32 @@ body {
 
 /* 🎵 动画效果类 */
 
-/* 专辑封面过渡效果 */
+/* 专辑封面过渡效果 - 调整时间和缓动 */
 .album-art.transition-out {
-    animation: coverFadeOut 0.4s ease-out forwards;
+    animation: coverFadeOut 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
 .album-art.transition-in {
-    animation: coverFadeIn 0.6s ease-out forwards;
+    animation: coverFadeIn 0.8s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
 }
 
-/* 文字过渡效果 */
+/* 文字过渡效果 - 更平滑的时间安排 */
 .track-title.text-transition,
 .track-artist.text-transition {
-    animation: textSlideIn 0.6s ease-out forwards;
+    animation: textSlideIn 0.8s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
 }
 
 .track-title.text-transition {
-    animation-delay: 0.1s;
-}
-
-.track-artist.text-transition {
     animation-delay: 0.2s;
 }
 
-/* 播放器容器过渡 */
+.track-artist.text-transition {
+    animation-delay: 0.35s;
+}
+
+/* 播放器容器过渡 - 更柔和的缓动 */
 .player-section.song-changing {
-    animation: songTransition 0.8s ease-in-out forwards;
+    animation: songTransition 1.2s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
 }
 
 /* 下一首预览动画 */

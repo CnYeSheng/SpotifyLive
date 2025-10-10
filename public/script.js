@@ -609,9 +609,13 @@
 
     // 更新下一首歌曲預覽內容
     updateNextSongPreviewContent() {
-        if (!this.nextSongData) return;
+        if (!this.nextSongData) {
+            this.log('⚠️ 无下一首数据，跳过内容更新');
+            return;
+        }
 
         const { name, artists, album } = this.nextSongData;
+        this.log(`📝 更新下一首预览内容: ${name} - ${artists ? artists[0]?.name : 'Unknown'}`);
         
         if (this.nextSongTitle) {
             this.nextSongTitle.textContent = name || '未知歌曲';
@@ -625,7 +629,7 @@
         if (this.nextSongCover && album && album.images && album.images.length > 0) {
             this.nextSongCover.src = album.images[0].url;
         } else if (this.nextSongCover) {
-            this.nextSongCover.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIGZpbGw9Im5vbmUiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMjAgMGMxMSAwIDIwIDkgMjAgMjBzLTkgMjAtMjAgMjBTMCAzMSAwIDIwIDkgMCAyMCAweiIgZmlsbD0iIzMzMzMzMyIvPjx0ZXh0IHg9IjIwIiB5PSIyNSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiBmaWxsPSIjNjY2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj7wn461PC90ZXh0Pjwvc3ZnPg==';
+            this.nextSongCover.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIGZpbGw9Im5vbmUiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMjAgMGMxMSAwIDIwIDkgMjAgMjBzLTkgMjAtMjAgMjBTMCAzMSAwIDIwIDkgMCAyMCAweiIgZmlsbD0iIzMzMzMzMyIvPjx0ZXh0IHg9IjIwIiB5PSIyNSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiBmaWxsPSIjNjY2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj7wn465PC90ZXh0Pjwvc3ZnPg==';
         }
     }
 
@@ -666,14 +670,18 @@
             if (this.nextSongData && !this.isNextSongPreviewShown) {
                 this.showNextSongPreview();
             }
-        } else if (remainingTime <= showAtMs && !this.isNextSongPreviewShown) {
-            // 時間到了立即顯示
+        } else if (remainingTime <= showAtMs && remainingTime > 0 && !this.isNextSongPreviewShown) {
+            // 時間到了立即顯示 - 增加remainingTime > 0的检查
             this.log(`⏰ 時間已到，立即顯示預覽 (剩餘${Math.floor(remainingTime/1000)}s <= ${showAtSeconds}s)`);
             if (this.nextSongData) {
                 this.showNextSongPreview();
             } else {
                 this.log(`⚠️ 無下一首數據，無法顯示預覽`);
             }
+        } else if (remainingTime > showAtMs && this.isNextSongPreviewShown) {
+            // 如果剩余时间还很多但预览已显示，隐藏它
+            this.log(`⏰ 剩餘時間較多，隐藏預覽 (剩餘${Math.floor(remainingTime/1000)}s > ${showAtSeconds}s)`);
+            this.hideNextSongPreview();
         } else {
             this.log(`ℹ️ 不滿足顯示條件 - 剩餘${Math.floor(remainingTime/1000)}s, 需要${showAtSeconds}s, 已顯示: ${this.isNextSongPreviewShown}`);
         }
@@ -1428,10 +1436,10 @@
 
     // 頁面載入後自動嘗試登入
     scheduleAutoLogin() {
-        // 防止重複自動登入 - 5分钟内只允许一次
+        // 防止重複自動登入 - 改为2分钟，更快响应
         const now = Date.now();
-        if (this.lastAutoLoginAttempt && now - this.lastAutoLoginAttempt < 5 * 60 * 1000) {
-            this.log('⏭️ 5分钟内已尝试过自動登入，跳過');
+        if (this.lastAutoLoginAttempt && now - this.lastAutoLoginAttempt < 2 * 60 * 1000) {
+            this.log('⏭️ 2分钟内已尝试过自動登入，跳過');
             return;
         }
         
@@ -1952,9 +1960,19 @@
             this.isLoadingLyrics = false;
             this.lastLyricsRequest = null; // 重置请求记录
             
-            // 重置预览状态
+            // 立即隐藏预览并重置状态
+            this.log('🔄 新歌曲：立即隐藏下一首预览');
             this.isNextSongPreviewShown = false;
-            this.hideNextSongPreview();
+            if (this.nextSongPreview) {
+                this.nextSongPreview.style.display = 'none';
+                this.nextSongPreview.classList.remove('slide-in', 'slide-out');
+            }
+            
+            // 清除预览定时器
+            if (this.nextSongPreviewTimeout) {
+                clearTimeout(this.nextSongPreviewTimeout);
+                this.nextSongPreviewTimeout = null;
+            }
             
             // 清除之前的歌詞載入請求
             if (this.lyricsLoadTimeout) {
@@ -4406,8 +4424,28 @@ SpotifyLyricsPlayer.prototype.addAlbumBreathingEffect = function(enabled) {
 
 // 頁面卸載時清理
 window.addEventListener('beforeunload', () => {
-    if (playerInstance) {
-        playerInstance.stopTracking();
+    if (player) {
+        player.stopTracking();
         console.log('🧹 播放器已清理');
+    }
+});
+
+// 页面完全加载后再次检查是否需要自动登录
+window.addEventListener('load', () => {
+    setTimeout(() => {
+        if (player && !player.sessionId) {
+            console.log('🔄 页面加载完成，检查是否需要自动登录...');
+            player.scheduleAutoLogin();
+        }
+    }, 2000);
+});
+
+// 页面变为可见时检查认证状态
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && player && !player.sessionId) {
+        console.log('🔄 页面变为可见，检查认证状态...');
+        setTimeout(() => {
+            player.scheduleAutoLogin();
+        }, 1000);
     }
 });
