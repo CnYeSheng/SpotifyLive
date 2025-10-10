@@ -1474,6 +1474,32 @@
         }, this.autoLoginDelay);
     }
 
+    // 后台刷新认证token
+    async tryBackgroundRefresh() {
+        try {
+            this.log('🔄 尝试后台刷新认证token...');
+            const response = await fetch('/api/auth-status', {
+                method: 'GET',
+                headers: this.sessionId ? { 'X-Session-Id': this.sessionId } : {}
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.authenticated) {
+                    this.log('✅ 后台认证刷新成功');
+                    this.consecutiveAuthErrors = Math.max(0, this.consecutiveAuthErrors - 2);
+                    return true;
+                }
+            }
+            
+            this.log('❌ 后台认证刷新失败');
+            return false;
+        } catch (error) {
+            this.log(`❌ 后台认证刷新异常: ${error.message}`);
+            return false;
+        }
+    }
+
     // 顯示自動登入提示
     showAutoLoginMessage() {
         const messageDiv = document.createElement('div');
@@ -1615,7 +1641,7 @@
                     // 每4次失败尝试一次智能恢复
                     if (this.consecutiveAuthErrors % 4 === 0) {
                         this.log('🔧 尝试后台刷新token...');
-                        this.refreshAuthInBackground();
+                        this.tryBackgroundRefresh();
                     }
                 } else {
                     this.log('❌ 认证失败次数过多，需要重新登入');
