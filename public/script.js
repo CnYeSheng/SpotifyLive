@@ -901,9 +901,18 @@
     }
 
     showPlayerSection() {
+        this.log('🎪 顯示播放器界面');
         this.authSection.style.display = 'none';
         this.playerSection.style.display = 'grid';
         this.noMusicSection.style.display = 'none';
+        
+        // 檢查播放器界面是否正確顯示
+        const playerVisible = this.playerSection.style.display === 'grid';
+        const authHidden = this.authSection.style.display === 'none';
+        const noMusicHidden = this.noMusicSection.style.display === 'none';
+        
+        this.log(`📊 界面狀態: player=${playerVisible}, auth=${authHidden}, noMusic=${noMusicHidden}`);
+        
         this.updateStatus('spotify', true);
     }
 
@@ -1822,10 +1831,14 @@
         this.currentContentType = data.contentType;
         this.currentTrack.lastUpdated = Date.now();
         
-        // 只在新歌曲時更新這些內容
+        // 確保UI始終更新（即使是相同歌曲）
+        this.log('🎨 更新播放器UI');
+        this.updateTrackInfo();
+        this.showPlayerSection();
+        
+        // 只在新歌曲時重置歌詞和載入
         if (isNewTrack) {
-            this.log('🎵 新歌曲，更新所有信息');
-            this.updateTrackInfo();
+            this.log('🎵 新歌曲，重置歌詞狀態');
             // 重置歌詞狀態
             this.lyrics = [];
             this.currentLyricsTrackId = null;
@@ -1839,6 +1852,13 @@
             
             // 使用安全的歌詞載入方法（只調用一次）
             this.safeLyricsLoad();
+        } else {
+            this.log('🔄 相同歌曲，確保UI正確顯示');
+            // 即使是相同歌曲，也要確保歌詞正確載入
+            if (!this.lyrics || this.lyrics.length === 0) {
+                this.log('🎵 相同歌曲但缺少歌詞，重新載入');
+                this.safeLyricsLoad();
+            }
         }
         
         // 更新下一首預覽（使用一次性獲取的數據）
@@ -1847,7 +1867,6 @@
         // 每次都需要更新的內容
         this.updatePlayerControls();
         this.updateProgress();
-        this.showPlayerSection();
         this.updateStatus('spotify', true);
         
         // 檢查是否接近歌曲結尾
@@ -1898,6 +1917,22 @@
         }
     }
     
+    // 強制更新UI - 調試用
+    forceUpdateUI() {
+        this.log('🔧 強制更新UI...');
+        this.log(`📊 當前數據: ${this.currentTrack ? `${this.currentTrack.name} - ${this.currentTrack.artist}` : 'null'}`);
+        
+        if (this.currentTrack) {
+            this.showPlayerSection();
+            this.updateTrackInfo();
+            this.updatePlayerControls();
+            this.updateProgress();
+            this.log('✅ UI強制更新完成');
+        } else {
+            this.log('❌ 無當前歌曲數據，無法更新UI');
+        }
+    }
+    
     // 顯示速率限制消息
     showRateLimitMessage(delay) {
         const message = `⏳ API 請求過於頻繁，${Math.ceil(delay / 1000)} 秒後自動重試`;
@@ -1915,7 +1950,18 @@
     }
 
     updateTrackInfo() {
-        if (!this.currentTrack) return;
+        if (!this.currentTrack) {
+            this.log('⚠️ updateTrackInfo: currentTrack 為空');
+            return;
+        }
+
+        this.log(`🎨 更新歌曲UI: ${this.currentTrack.name} - ${this.currentTrack.artist}`);
+        
+        // 檢查必要的DOM元素
+        if (!this.albumImage || !this.trackName || !this.artistName || !this.albumName) {
+            this.log('❌ 關鍵UI元素缺失');
+            return;
+        }
 
         this.albumImage.src = this.currentTrack.image || '';
         
@@ -1931,6 +1977,9 @@
             this.artistName.textContent = this.currentTrack.artist;
             this.albumName.textContent = this.currentTrack.album;
         }
+        
+        this.log(`✅ UI 元素已更新 - 歌名: ${this.trackName.textContent}`);
+        this.log(`✅ UI 元素已更新 - 藝術家: ${this.artistName.textContent}`);
         this.totalTime.textContent = this.formatTime(this.currentTrack.duration);
         
         // 提取專輯封面顏色並更新背景
@@ -4093,9 +4142,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // 暴露調試方法
         window.debugCurrentTrack = () => playerInstance.debugCurrentTrack();
         window.checkPollingStatus = () => playerInstance.checkPollingStatus();
+        window.forceUpdateUI = () => playerInstance.forceUpdateUI();
         
         console.log('✅ Spotify 播放器已初始化');
-        console.log('🛠️ 調試方法已暴露: debugCurrentTrack(), checkPollingStatus()');
+        console.log('🛠️ 調試方法已暴露: debugCurrentTrack(), checkPollingStatus(), forceUpdateUI()');
     }
 });
 
