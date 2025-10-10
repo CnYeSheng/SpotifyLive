@@ -814,7 +814,7 @@ class SpotifyLyricsPlayer {
                 headers['X-Session-Id'] = this.sessionId;
             }
             
-            const response = await fetch(`${this.apiBase}/api/current-track`, { headers });
+            const response = await fetch'/api/current-track`, { headers });
             
             if (response.status === 401) {
                 this.consecutiveAuthErrors++;
@@ -915,7 +915,7 @@ class SpotifyLyricsPlayer {
                     this.log('✅ 認證狀態已恢復');
                     
                     // 步驟 3: 嘗試原始請求
-                    const testResponse = await fetch(`${this.apiBase}/api/current-track`, {
+                    const testResponse = await fetch'/api/current-track`, {
                         headers: { 'X-Session-Id': this.sessionId }
                     });
                     
@@ -936,7 +936,7 @@ class SpotifyLyricsPlayer {
             // 連續發送幾個請求，可能觸發服務端刷新邏輯
             for (let i = 0; i < 2; i++) {
                 await new Promise(resolve => setTimeout(resolve, 1000));
-                const triggerResponse = await fetch(`${this.apiBase}/api/current-track`, {
+                const triggerResponse = await fetch'/api/current-track`, {
                     headers: { 'X-Session-Id': this.sessionId }
                 });
                 
@@ -1933,7 +1933,7 @@ class SpotifyLyricsPlayer {
     async sendPlayPauseRequest() {
         this.recordUserAction();
         try {
-            const response = await fetch(`${this.apiBase}/api/playback/play-pause`, {
+            const response = await fetch'/api/playback/play-pause`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1969,7 +1969,7 @@ class SpotifyLyricsPlayer {
     async sendPreviousRequest() {
         this.recordUserAction();
         try {
-            const response = await fetch(`${this.apiBase}/api/playback/previous`, {
+            const response = await fetch'/api/playback/previous`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -2004,7 +2004,7 @@ class SpotifyLyricsPlayer {
     async sendNextRequest() {
         this.recordUserAction();
         try {
-            const response = await fetch(`${this.apiBase}/api/playback/next`, {
+            const response = await fetch'/api/playback/next`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -2039,7 +2039,7 @@ class SpotifyLyricsPlayer {
 
     async sendVolumeRequest(volume) {
         try {
-            const response = await fetch(`${this.apiBase}/api/playback/volume`, {
+            const response = await fetch'/api/playback/volume`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -2073,7 +2073,7 @@ class SpotifyLyricsPlayer {
 
     async sendSetVolumeRequest(volume) {
         try {
-            const response = await fetch(`${this.apiBase}/api/playback/volume`, {
+            const response = await fetch'/api/playback/volume`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -2113,7 +2113,7 @@ class SpotifyLyricsPlayer {
             this.shuffleState = newState;
             this.updateShuffleButton();
             
-            const response = await fetch(`${this.apiBase}/api/playback/shuffle`, {
+            const response = await fetch'/api/playback/shuffle`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -2164,7 +2164,7 @@ class SpotifyLyricsPlayer {
             this.repeatState = newState;
             this.updateRepeatButton();
             
-            const response = await fetch(`${this.apiBase}/api/playback/repeat`, {
+            const response = await fetch'/api/playback/repeat`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -2209,7 +2209,7 @@ class SpotifyLyricsPlayer {
     async sendToggleLikedRequest() {
         try {
             // 首先檢查當前狀態
-            const checkResponse = await fetch(`${this.apiBase}/api/library/check/${this.currentTrack.id}`, {
+            const checkResponse = await fetch'/api/library/check/${this.currentTrack.id}`, {
                 headers: { 'X-Session-Id': this.sessionId }
             });
             
@@ -2228,7 +2228,7 @@ class SpotifyLyricsPlayer {
             // 立即更新 UI 以提供即時反饋
             this.updateLikeButtonState(!isCurrentlyLiked);
             
-            const response = await fetch(`${this.apiBase}${endpoint}`, {
+            const response = await fetch'${endpoint}`, {
                 method: method,
                 headers: {
                     'Content-Type': 'application/json',
@@ -2295,7 +2295,7 @@ class SpotifyLyricsPlayer {
                 headers['X-Session-Id'] = this.sessionId;
             }
 
-            const response = await fetch(`${this.apiBase}/api/player/queue`, { headers });
+            const response = await fetch'/api/player/queue`, { headers });
             if (response.ok) {
                 const data = await response.json();
                 if (data.nextTrack) {
@@ -2378,7 +2378,7 @@ class SpotifyLyricsPlayer {
 
     async fetchImageThroughProxy(imageUrl) {
         try {
-            const response = await fetch(`${this.apiBase}/api/extract-colors`, {
+            const response = await fetch'/api/extract-colors`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -2594,7 +2594,7 @@ class SpotifyLyricsPlayer {
                 headers['X-Session-Id'] = this.sessionId;
             }
 
-            const response = await fetch(`${this.apiBase}/api/player/queue`, { headers });
+            const response = await fetch'/api/player/queue`, { headers });
             
             if (response.status === 401) {
                 console.log('🔑 Queue 認證問題，靜默處理...');
@@ -2665,7 +2665,7 @@ class SpotifyLyricsPlayer {
                 headers['X-Session-Id'] = this.sessionId;
             }
 
-            const response = await fetch(`${this.apiBase}/api/devices`, { headers });
+            const response = await fetch'/api/devices`, { headers });
             
             if (response.status === 401) {
                 console.log('🔑 Devices 認證問題，靜默處理...');
@@ -2745,7 +2745,7 @@ class SpotifyLyricsPlayer {
                 headers['X-Session-Id'] = this.sessionId;
             }
 
-            const response = await fetch(`${this.apiBase}/api/player/transfer`, {
+            const response = await fetch'/api/player/transfer`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -2759,7 +2759,7 @@ class SpotifyLyricsPlayer {
                 const authFixed = await this.handleAuthError();
                 if (authFixed) {
                     // 重新嘗試請求
-                    const retryResponse = await fetch(`${this.apiBase}/api/player/transfer`, {
+                    const retryResponse = await fetch'/api/player/transfer`, {
                         method: 'PUT',
                         headers: {
                             'Content-Type': 'application/json',
@@ -2938,7 +2938,7 @@ class SpotifyLyricsPlayer {
         await new Promise(resolve => setTimeout(resolve, 500));
         
         try {
-            const response = await fetch(`${this.apiBase}/api/library/check/${this.currentTrack.id}`, {
+            const response = await fetch'/api/library/check/${this.currentTrack.id}`, {
                 headers: {
                     'X-Session-Id': this.sessionId
                 }
@@ -2949,7 +2949,7 @@ class SpotifyLyricsPlayer {
                 const authFixed = await this.handleAuthError();
                 if (authFixed) {
                     // 重新嘗試請求
-                    const retryResponse = await fetch(`${this.apiBase}/api/library/check/${this.currentTrack.id}`, {
+                    const retryResponse = await fetch'/api/library/check/${this.currentTrack.id}`, {
                         headers: {
                             'X-Session-Id': this.sessionId
                         }

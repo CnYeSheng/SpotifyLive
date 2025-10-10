@@ -268,7 +268,7 @@
     bindEvents() {
         // 登入按鈕
         this.loginBtn?.addEventListener('click', () => {
-            const authUrl = `${this.apiBase}/api/auth`;
+            const authUrl = '/api/auth';
             this.log(`🔗 重定向到登入頁面: ${authUrl}`);
             window.location.href = authUrl;
         });
@@ -488,6 +488,13 @@
 
         // 恢復保存的設定
         this.restoreNextSongPreviewSettings();
+        
+        // 添加調試功能，按下 Ctrl+Shift+N 來測試下一首歌曲預覽
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.shiftKey && e.key === 'N') {
+                this.testNextSongPreview();
+            }
+        });
     }
 
     // 顯示下一首歌曲設定模態框
@@ -641,7 +648,7 @@
                 headers['X-Session-Id'] = this.sessionId;
             }
             
-            const response = await fetch(`${this.apiBase}/api/queue`, { headers });
+            const response = await fetch('/api/player/queue', { headers });
             
             if (response.ok) {
                 const queueData = await response.json();
@@ -657,6 +664,62 @@
         
         this.nextSongData = null;
         return false;
+    }
+
+    // 測試下一首歌曲預覽功能（調試用）
+    testNextSongPreview() {
+        this.log('🧪 測試下一首歌曲預覽功能');
+        
+        // 如果有當前歌曲，使用它作為測試數據
+        if (this.currentTrack && this.currentTrack.item) {
+            this.nextSongData = {
+                name: this.currentTrack.item.name + ' (下一首)',
+                artists: this.currentTrack.item.artists,
+                album: this.currentTrack.item.album
+            };
+        } else {
+            // 創建默認測試數據
+            this.nextSongData = {
+                name: '測試歌曲 - 下一首預覽',
+                artists: [{ name: '測試藝人' }],
+                album: {
+                    images: [{ url: 'https://via.placeholder.com/300x300/1db954/ffffff?text=Next+Song' }]
+                }
+            };
+        }
+        
+        // 強制顯示預覽
+        this.showNextSongPreview();
+        
+        // 顯示提示
+        const testDiv = document.createElement('div');
+        testDiv.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(29, 185, 84, 0.9);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            z-index: 2000;
+            font-size: 14px;
+            font-weight: 500;
+        `;
+        testDiv.innerHTML = '🧪 測試下一首歌曲預覽<br>按 Ctrl+Shift+N 測試 | 按 Ctrl+Shift+H 隱藏';
+        document.body.appendChild(testDiv);
+        
+        setTimeout(() => {
+            if (testDiv.parentNode) {
+                testDiv.parentNode.removeChild(testDiv);
+            }
+        }, 3000);
+    }
+
+    // 隱藏測試預覽（調試用）
+    hideTestNextSongPreview() {
+        this.hideNextSongPreview();
+        this.nextSongData = null;
+        this.log('🧪 隱藏測試預覽');
     }
 
     async checkAuthStatus() {
@@ -680,7 +743,7 @@
                 this.log(`🔍 使用 sessionId 檢查認證狀態: ${this.sessionId.substring(0, 8)}...`);
             }
             
-            const response = await fetch(`${this.apiBase}/api/auth-status`, { headers });
+            const response = await fetch('/api/auth-status', { headers });
             const data = await response.json();
             
             if (data.authenticated) {
@@ -731,7 +794,7 @@
             }
 
             // 靜默檢查認證狀態，不改變UI
-            const response = await fetch(`${this.apiBase}/api/auth-status`, {
+            const response = await fetch('/api/auth-status', {
                 headers: { 'X-Session-Id': this.sessionId }
             });
             
@@ -743,7 +806,7 @@
                     
                     // 再次嘗試檢查
                     try {
-                        const retryResponse = await fetch(`${this.apiBase}/api/auth-status`, {
+                        const retryResponse = await fetch('/api/auth-status', {
                             headers: { 'X-Session-Id': this.sessionId }
                         });
                         
@@ -948,7 +1011,7 @@
         
         try {
             // 檢查當前認證狀態
-            const authResponse = await fetch(`${this.apiBase}/api/auth-status`, {
+            const authResponse = await fetch('/api/auth-status', {
                 headers: this.sessionId ? { 'X-Session-Id': this.sessionId } : {}
             });
             
@@ -957,7 +1020,7 @@
             if (!authData.authenticated) {
                 this.log('🔑 認證已失效，觸發自動登入');
                 // 如果未認證，自動觸發登入流程
-                const authUrl = `${this.apiBase}/api/auth`;
+                const authUrl = '/api/auth';
                 this.log(`🔗 自動重定向到登入頁面: ${authUrl}`);
                 window.location.href = authUrl;
             } else {
@@ -984,7 +1047,7 @@
             this.showSessionRefreshAnimation();
             
             // 檢查當前認證狀態
-            const authResponse = await fetch(`${this.apiBase}/api/auth-status`, {
+            const authResponse = await fetch('/api/auth-status', {
                 headers: { 'X-Session-Id': this.sessionId }
             });
             
@@ -1029,7 +1092,7 @@
         
         try {
             // 嘗試一個輕量級的 API 調用來觸發服務端 token 刷新
-            const response = await fetch(`${this.apiBase}/api/current-track`, {
+            const response = await fetch('/api/current-track', {
                 headers: { 'X-Session-Id': this.sessionId }
             });
             
@@ -1040,7 +1103,7 @@
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 
                 // 再次嘗試
-                const retryResponse = await fetch(`${this.apiBase}/api/current-track`, {
+                const retryResponse = await fetch('/api/current-track', {
                     headers: { 'X-Session-Id': this.sessionId }
                 });
                 
@@ -1249,7 +1312,7 @@
                 
                 // 延遲1秒後執行自動登入
                 setTimeout(() => {
-                    const authUrl = `${this.apiBase}/api/auth`;
+                    const authUrl = '/api/auth';
                     this.log(`🔗 自動重定向到登入頁面: ${authUrl}`);
                     window.location.href = authUrl;
                 }, 1000);
@@ -1380,7 +1443,7 @@
                 headers['X-Session-Id'] = this.sessionId;
             }
             
-            const response = await fetch(`${this.apiBase}/api/current-track`, { headers });
+            const response = await fetch('/api/current-track', { headers });
             
             if (response.status === 401) {
                 this.consecutiveAuthErrors++;
@@ -1500,7 +1563,7 @@
                     }
                     
                     // 立即測試新 token
-                    const testResponse = await fetch(`${this.apiBase}/api/current-track`, {
+                    const testResponse = await fetch('/api/current-track', {
                         headers: { 'X-Session-Id': this.sessionId }
                     });
                     
@@ -1537,7 +1600,7 @@
                 
                 for (const endpoint of endpoints) {
                     try {
-                        const response = await fetch(`${this.apiBase}${endpoint}`, {
+                        const response = await fetch('${endpoint}', {
                             headers: { 'X-Session-Id': this.sessionId }
                         });
                         
@@ -1553,7 +1616,7 @@
                                 this.log(`✅ 通過 ${endpoint} 觸發刷新成功`);
                                 
                                 // 立即測試主要端點
-                                const testResponse = await fetch(`${this.apiBase}/api/current-track`, {
+                                const testResponse = await fetch('/api/current-track', {
                                     headers: { 'X-Session-Id': this.sessionId }
                                 });
                                 
@@ -1586,7 +1649,7 @@
                 this.sessionId = storedSessionId;
                 this.log(`🔄 從 localStorage 恢復不同 session: ${this.sessionId.substring(0, 8)}...`);
                 
-                const finalTestResponse = await fetch(`${this.apiBase}/api/current-track`, {
+                const finalTestResponse = await fetch('/api/current-track', {
                     headers: { 'X-Session-Id': this.sessionId }
                 });
                 
@@ -1648,18 +1711,30 @@
 
     // 處理歌曲數據的統一方法
     processTrackData(data) {
-        // 獲取下一首歌曲信息（異步操作，不阻塞主流程）
-        this.fetchNextSongData().then(() => {
-            // 安排下一首歌曲預覽
-            this.scheduleNextSongPreview();
-        });
-
-        // 如果歌曲發生變化，隱藏之前的預覽
+        // 如果歌曲發生變化，隱藏之前的預覽並重置狀態
         if (this.currentTrack && this.currentTrack.item?.id !== data.item?.id) {
             this.isNextSongPreviewShown = false;
-            if (this.nextSongPreviewMode !== 'always') {
-                this.hideNextSongPreview();
+            this.hideNextSongPreview();
+            this.log('🎵 歌曲變化，重置下一首歌曲預覽狀態');
+        }
+
+        // 更新 currentTrack
+        this.currentTrack = data;
+
+        // 獲取下一首歌曲信息（異步操作，不阻塞主流程）
+        this.fetchNextSongData().then((success) => {
+            if (success) {
+                this.log('🎵 下一首歌曲信息獲取成功，安排預覽');
+                // 安排下一首歌曲預覽
+                this.scheduleNextSongPreview();
+            } else {
+                this.log('⚠️ 下一首歌曲信息獲取失敗或隊列為空');
             }
+        });
+
+        // 如果是始終顯示模式，立即顯示（如果有數據）
+        if (this.nextSongPreviewMode === 'always' && this.nextSongData) {
+            this.showNextSongPreview();
         }
         // 重置重試計數器和認證錯誤計數
         this.retryCount = 0;
@@ -1932,7 +2007,7 @@
 
         try {
             // 由於 CORS 限制，直接使用本地代理
-            const proxyUrl = `${this.apiBase}/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}`;
+            const proxyUrl = '/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}';
             console.log(`📡 通過代理請求歌詞: ${proxyUrl}`);
             
             const response = await fetch(proxyUrl, {
@@ -2794,7 +2869,7 @@
     async sendPlayPauseRequest() {
         this.recordUserAction();
         try {
-            const response = await fetch(`${this.apiBase}/api/playback/play-pause`, {
+            const response = await fetch('/api/playback/play-pause', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -2830,7 +2905,7 @@
     async sendPreviousRequest() {
         this.recordUserAction();
         try {
-            const response = await fetch(`${this.apiBase}/api/playback/previous`, {
+            const response = await fetch('/api/playback/previous', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -2865,7 +2940,7 @@
     async sendNextRequest() {
         this.recordUserAction();
         try {
-            const response = await fetch(`${this.apiBase}/api/playback/next`, {
+            const response = await fetch('/api/playback/next', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -2900,7 +2975,7 @@
 
     async sendVolumeRequest(volume) {
         try {
-            const response = await fetch(`${this.apiBase}/api/playback/volume`, {
+            const response = await fetch('/api/playback/volume', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -2934,7 +3009,7 @@
 
     async sendSetVolumeRequest(volume) {
         try {
-            const response = await fetch(`${this.apiBase}/api/playback/volume`, {
+            const response = await fetch('/api/playback/volume', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -2974,7 +3049,7 @@
             this.shuffleState = newState;
             this.updateShuffleButton();
             
-            const response = await fetch(`${this.apiBase}/api/playback/shuffle`, {
+            const response = await fetch('/api/playback/shuffle', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -3025,7 +3100,7 @@
             this.repeatState = newState;
             this.updateRepeatButton();
             
-            const response = await fetch(`${this.apiBase}/api/playback/repeat`, {
+            const response = await fetch('/api/playback/repeat', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -3070,7 +3145,7 @@
     async sendToggleLikedRequest() {
         try {
             // 首先檢查當前狀態
-            const checkResponse = await fetch(`${this.apiBase}/api/library/check/${this.currentTrack.id}`, {
+            const checkResponse = await fetch('/api/library/check/${this.currentTrack.id}', {
                 headers: { 'X-Session-Id': this.sessionId }
             });
             
@@ -3089,7 +3164,7 @@
             // 立即更新 UI 以提供即時反饋
             this.updateLikeButtonState(!isCurrentlyLiked);
             
-            const response = await fetch(`${this.apiBase}${endpoint}`, {
+            const response = await fetch('${endpoint}', {
                 method: method,
                 headers: {
                     'Content-Type': 'application/json',
@@ -3156,7 +3231,7 @@
                 headers['X-Session-Id'] = this.sessionId;
             }
 
-            const response = await fetch(`${this.apiBase}/api/player/queue`, { headers });
+            const response = await fetch('/api/player/queue', { headers });
             if (response.ok) {
                 const data = await response.json();
                 if (data.nextTrack) {
@@ -3239,7 +3314,7 @@
 
     async fetchImageThroughProxy(imageUrl) {
         try {
-            const response = await fetch(`${this.apiBase}/api/extract-colors`, {
+            const response = await fetch('/api/extract-colors', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -3455,7 +3530,7 @@
                 headers['X-Session-Id'] = this.sessionId;
             }
 
-            const response = await fetch(`${this.apiBase}/api/player/queue`, { headers });
+            const response = await fetch('/api/player/queue', { headers });
             
             if (response.status === 401) {
                 console.log('🔑 Queue 認證問題，靜默處理...');
@@ -3526,7 +3601,7 @@
                 headers['X-Session-Id'] = this.sessionId;
             }
 
-            const response = await fetch(`${this.apiBase}/api/devices`, { headers });
+            const response = await fetch('/api/devices', { headers });
             
             if (response.status === 401) {
                 console.log('🔑 Devices 認證問題，靜默處理...');
@@ -3606,7 +3681,7 @@
                 headers['X-Session-Id'] = this.sessionId;
             }
 
-            const response = await fetch(`${this.apiBase}/api/player/transfer`, {
+            const response = await fetch('/api/player/transfer', {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -3620,7 +3695,7 @@
                 const authFixed = await this.handleAuthError();
                 if (authFixed) {
                     // 重新嘗試請求
-                    const retryResponse = await fetch(`${this.apiBase}/api/player/transfer`, {
+                    const retryResponse = await fetch('/api/player/transfer', {
                         method: 'PUT',
                         headers: {
                             'Content-Type': 'application/json',
@@ -3667,7 +3742,7 @@
                 headers['X-Session-Id'] = this.sessionId;
             }
 
-            const playUrl = `${this.apiBase}/api/play`;
+            const playUrl = '/api/play';
             this.log(`📡 播放請求 URL: ${playUrl}`);
 
             const response = await fetch(playUrl, {
@@ -3838,7 +3913,7 @@
         await new Promise(resolve => setTimeout(resolve, 500));
         
         try {
-            const response = await fetch(`${this.apiBase}/api/library/check/${this.currentTrack.id}`, {
+            const response = await fetch('/api/library/check/${this.currentTrack.id}', {
                 headers: {
                     'X-Session-Id': this.sessionId
                 }
@@ -3850,7 +3925,7 @@
                 const authFixed = await this.handleAuthError();
                 if (authFixed) {
                     // 重新嘗試請求
-                    const retryResponse = await fetch(`${this.apiBase}/api/library/check/${this.currentTrack.id}`, {
+                    const retryResponse = await fetch('/api/library/check/${this.currentTrack.id}', {
                         headers: {
                             'X-Session-Id': this.sessionId
                         }
