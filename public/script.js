@@ -2144,7 +2144,7 @@
 
         try {
             // 由於 CORS 限制，直接使用本地代理
-            const proxyUrl = '/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}';
+            const proxyUrl = `/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}`;
             console.log(`📡 通過代理請求歌詞: ${proxyUrl}`);
             
             const response = await fetch(proxyUrl, {
@@ -3282,7 +3282,7 @@
     async sendToggleLikedRequest() {
         try {
             // 首先檢查當前狀態
-            const checkResponse = await fetch('/api/library/check/${this.currentTrack.id}', {
+            const checkResponse = await fetch(`/api/library/check/${this.currentTrack.id}`, {
                 headers: { 'X-Session-Id': this.sessionId }
             });
             
@@ -4050,7 +4050,7 @@
         await new Promise(resolve => setTimeout(resolve, 500));
         
         try {
-            const response = await fetch('/api/library/check/${this.currentTrack.id}', {
+            const response = await fetch(`/api/library/check/${this.currentTrack.id}`, {
                 headers: {
                     'X-Session-Id': this.sessionId
                 }
@@ -4062,7 +4062,7 @@
                 const authFixed = await this.handleAuthError();
                 if (authFixed) {
                     // 重新嘗試請求
-                    const retryResponse = await fetch('/api/library/check/${this.currentTrack.id}', {
+                    const retryResponse = await fetch(`/api/library/check/${this.currentTrack.id}`, {
                         headers: {
                             'X-Session-Id': this.sessionId
                         }
