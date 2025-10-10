@@ -128,8 +128,13 @@
         // 設置全局播放器引用供手機控制使用
         window.player = this;
         
-        // 頁面載入後自動嘗試登入（延遲2秒）
-        this.scheduleAutoLogin();
+        // 頁面載入完成後安排自動登入 - 增加延迟确保DOM就绪
+        setTimeout(() => {
+            this.scheduleAutoLogin();
+        }, 1000);
+        
+        // 启动定期的静默session检查（每5分钟）
+        this.startPeriodicSessionCheck();
     }
 
     handleAuthCallback() {
