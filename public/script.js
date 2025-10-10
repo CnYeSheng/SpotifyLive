@@ -902,19 +902,39 @@
         this.updateStatus('spotify', true);
     }
 
-    showNoMusicSection() {
+    showNoMusicSection(message = null) {
         this.authSection.style.display = 'none';
         this.playerSection.style.display = 'none';
         this.noMusicSection.style.display = 'flex';
+        
+        // 更新無音樂區域的消息
+        const noMusicCard = this.noMusicSection.querySelector('.no-music-card');
+        if (noMusicCard && message) {
+            const messageElement = noMusicCard.querySelector('p') || document.createElement('p');
+            messageElement.textContent = message;
+            if (!noMusicCard.contains(messageElement)) {
+                const h2 = noMusicCard.querySelector('h2');
+                if (h2) {
+                    h2.insertAdjacentElement('afterend', messageElement);
+                } else {
+                    noMusicCard.appendChild(messageElement);
+                }
+            }
+        }
+        
         this.updateStatus('spotify', true);
+        this.currentTrack = null; // 清空當前歌曲數據
     }
 
     startTracking() {
+        this.log(`🔄 開始追蹤當前播放狀態，間隔: ${this.currentCheckInterval}ms`);
         this.checkCurrentTrackWithRateLimit();
         // 使用動態檢查間隔
         this.updateInterval = setInterval(() => {
+            this.log(`⏰ 定時檢查觸發 (間隔: ${this.currentCheckInterval}ms)`);
             this.checkCurrentTrackWithRateLimit();
         }, this.currentCheckInterval);
+        this.log(`✅ 追蹤定時器已設置`);
     }
     
     // 重新啟動追蹤（用於動態調整間隔）
@@ -1399,6 +1419,7 @@
     // 添加速率限制檢查
     checkCurrentTrackWithRateLimit() {
         const now = Date.now();
+        this.log(`🔍 檢查當前播放狀態 (lastCheckTime: ${this.lastCheckTime}, interval: ${this.currentCheckInterval})`);
         
         // 檢查是否在速率限制期間
         if (this.isRateLimited && now < this.retryAfterUntil) {
@@ -1420,22 +1441,27 @@
         }
         
         // 檢查最小間隔
-        if (now - this.lastCheckTime < this.currentCheckInterval) {
-            this.log('⏳ 間隔時間不足，跳過此次請求');
+        const timeSinceLastCheck = now - this.lastCheckTime;
+        if (timeSinceLastCheck < this.currentCheckInterval) {
+            this.log(`⏳ 間隔時間不足，跳過此次請求 (已過 ${timeSinceLastCheck}ms，需要 ${this.currentCheckInterval}ms)`);
             return;
         }
         
+        this.log('✅ 通過所有檢查，開始 API 調用');
         this.lastCheckTime = now;
         this.checkCurrentTrack();
     }
 
     async checkCurrentTrack() {
+        this.log('🔎 開始執行 checkCurrentTrack()');
         // 防止重複請求
         if (this.isCheckingTrack) {
+            this.log('⚠️ 重複請求，直接返回');
             return;
         }
         
         this.isCheckingTrack = true;
+        this.log('🔒 設置檢查狀態鎖定');
         
         try {
             const headers = {};
@@ -1445,44 +1471,52 @@
             
             const response = await fetch('/api/current-track', { headers });
             
+            // 處理認證錯誤
             if (response.status === 401) {
                 this.consecutiveAuthErrors++;
-                this.log(`🔑 檢測到認證問題 (第 ${this.consecutiveAuthErrors} 次)，嘗試智能恢復...`);
-                this.scheduleAutoLogin();
+                this.log(`🔑 檢測到認證問題 (第 ${this.consecutiveAuthErrors} 次)`);
                 
-                // 更寬鬆的錯誤處理 - 允許更多次數的錯誤
-                if (this.consecutiveAuthErrors >= this.maxConsecutiveAuthErrors * 2) {
-                    this.log('❌ 連續認證錯誤過多，需要重新登入');
-                    this.scheduleAutoLogin();
-                    this.handleAuthError();
-                    return;
+                try {
+                    const errorData = await response.json();
+                    if (errorData.needsAuth) {
+                        this.log('❌ 需要重新認證，觸發登入流程');
+                        this.handleAuthError();
+                        return;
+                    }
+                } catch (e) {
+                    // JSON 解析失敗，繼續處理
                 }
                 
-                // 延遲智能恢復嘗試，避免過於頻繁
-                if (this.consecutiveAuthErrors <= 2) {
-                    this.log('⚠️ 認證問題，等待下次自動重試');
+                // 嘗試智能恢復
+                if (this.consecutiveAuthErrors <= 3) {
+                    this.log('🔧 嘗試智能恢復...');
                     this.scheduleAutoLogin();
-                    // 讓系統自然重試，不立即觸發智能恢復
-                    return;
-                }
-                
-                // 嘗試智能恢復（減少頻率）
-                if (this.consecutiveAuthErrors % 3 === 0) {
                     const recovered = await this.attemptSmartRecovery();
                     if (recovered) {
-                        this.log('✅ 智能恢復成功，繼續正常操作');
-                        this.consecutiveAuthErrors = 0; // 重置錯誤計數
+                        this.log('✅ 智能恢復成功');
+                        this.consecutiveAuthErrors = 0;
                         return;
                     }
                 }
                 
-                this.log('❌ 智能恢復失敗');
-                const authFixed = await this.handleAuthError();
-                if (!authFixed) {
-                    this.log('❌ 認證修復失敗，停止追蹤');
-                    this.scheduleAutoLogin();
-                    return;
-                }
+                this.log('❌ 需要重新登入');
+                this.handleAuthError();
+                return;
+            }
+            
+            // 處理其他 HTTP 錯誤狀態
+            if (response.status === 403) {
+                const errorData = await response.json().catch(() => ({}));
+                this.log(`🚫 訪問被拒絕: ${errorData.message || '可能需要 Spotify Premium 或額外權限'}`);
+                this.updateStatus('spotify', false);
+                return;
+            }
+            
+            if (response.status === 502 || response.status >= 500) {
+                const errorData = await response.json().catch(() => ({}));
+                this.log(`🔥 服務器錯誤 (${response.status}): ${errorData.message || 'Spotify 服務暫時不可用'}`);
+                this.updateStatus('spotify', false);
+                this.scheduleRetry(10000); // 10秒後重試
                 return;
             }
 
@@ -1522,6 +1556,11 @@
             }
 
             const data = await response.json();
+            this.log(`📥 API 響應: ${JSON.stringify({
+                isPlaying: data.isPlaying,
+                hasName: !!data.name,
+                hasMessage: !!data.message
+            })}`);
             this.processTrackData(data);
 
         } catch (error) {
@@ -1535,6 +1574,7 @@
             }
         } finally {
             this.isCheckingTrack = false;
+            this.log('🔓 檢查狀態鎖定已解除');
         }
     }
 
@@ -1740,8 +1780,15 @@
         this.retryCount = 0;
         this.consecutiveAuthErrors = 0;
         
-        if (!data.name) {
-            this.showNoMusicSection();
+        // 處理無音樂播放的情況
+        if (!data.name || data.name === null || !data.isPlaying) {
+            this.log('🔍 沒有檢測到正在播放的音樂');
+            let message = '請在 Spotify 中開始播放音樂';
+            if (data.message) {
+                this.log(`📝 服務端消息: ${data.message}`);
+                message = data.message;
+            }
+            this.showNoMusicSection(message);
             return;
         }
 
@@ -1808,6 +1855,13 @@
         this.lastUserAction = Date.now();
         this.log('👆 用戶操作，短暫加速輪詢');
         this.adjustPollingInterval();
+    }
+    
+    // 手動調試方法 - 可在控制台中調用
+    debugCurrentTrack() {
+        this.log('🛠️ 手動觸發調試檢查...');
+        this.log(`📊 當前狀態: sessionId=${this.sessionId?.substring(0, 8)}, isCheckingTrack=${this.isCheckingTrack}, lastCheckTime=${this.lastCheckTime}`);
+        this.checkCurrentTrackWithRateLimit();
     }
     
     // 顯示速率限制消息

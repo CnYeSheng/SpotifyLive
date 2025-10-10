@@ -254,6 +254,8 @@ app.get('/api/current-track', async (req, res) => {
     }
     
     try {
+        console.log(`🎵 Fetching current track for session: ${sessionId?.substring(0, 8)}...`);
+        
         // 一次性獲取所有需要的數據，避免分批請求
         const [playerResponse, userResponse, queueResponse] = await Promise.all([
             makeSpotifyAPICall('https://api.spotify.com/v1/me/player', {
@@ -265,11 +267,22 @@ app.get('/api/current-track', async (req, res) => {
             // 同時獲取播放隊列信息
             makeSpotifyAPICall('https://api.spotify.com/v1/me/player/queue', {
                 headers: { 'Authorization': `Bearer ${session.accessToken}` }
-            }, sessionId).catch(() => null) // 隊列信息失敗不影響主要功能
+            }, sessionId).catch((err) => {
+                console.log('⚠️ Queue API failed (non-critical):', err.message);
+                return null;
+            }) // 隊列信息失敗不影響主要功能
         ]);
         
+        console.log(`📊 Player API response status: ${playerResponse.status}`);
+        console.log(`👤 User API response status: ${userResponse.status}`);
+        
         if (playerResponse.status === 204 || !playerResponse.data || !playerResponse.data.item) {
-            return res.json({ isPlaying: false });
+            console.log('🔍 No active playback detected');
+            return res.json({ 
+                isPlaying: false,
+                name: null,
+                message: 'No music currently playing. Please start playing music in Spotify.'
+            });
         }
         
         const data = playerResponse.data;
@@ -315,6 +328,13 @@ app.get('/api/current-track', async (req, res) => {
         
         res.json(currentTrack);
     } catch (error) {
+        console.error(`❌ Error in /api/current-track:`, {
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+            message: error.message,
+            data: error.response?.data
+        });
+        
         // Handle rate limiting
         if (error.status === 429) {
             console.log(`⚠️ Rate limited, retry after ${error.retryAfter}ms`);
@@ -326,10 +346,16 @@ app.get('/api/current-track', async (req, res) => {
         }
         
         if (error.response?.status === 401) {
+            console.log('🔑 Authentication error detected, attempting token refresh...');
             const refreshed = await refreshAccessToken(session);
             if (!refreshed) {
-                return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+                console.log('❌ Token refresh failed, returning 401');
+                return res.status(401).json({ 
+                    error: 'Token expired, please re-authenticate',
+                    needsAuth: true 
+                });
             }
+            console.log('✅ Token refreshed, retrying request...');
             // Retry the request
             return res.redirect(307, req.originalUrl);
         }
@@ -345,8 +371,28 @@ app.get('/api/current-track', async (req, res) => {
             });
         }
         
-        console.error('Error fetching current track:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Failed to fetch current track' });
+        // Handle common API errors
+        if (error.response?.status === 403) {
+            console.log('🚫 Access forbidden - check Spotify Premium status or scopes');
+            return res.status(403).json({ 
+                error: 'Access forbidden',
+                message: 'This feature may require Spotify Premium or additional permissions'
+            });
+        }
+        
+        if (error.response?.status >= 500) {
+            console.log('🔥 Spotify server error, will retry later');
+            return res.status(502).json({ 
+                error: 'Spotify service unavailable',
+                message: 'Spotify servers are experiencing issues, please try again later'
+            });
+        }
+        
+        console.error('❌ Unexpected error fetching current track:', error.response?.data || error.message);
+        res.status(500).json({ 
+            error: 'Failed to fetch current track',
+            details: error.message 
+        });
     }
 });
 
