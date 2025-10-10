@@ -606,6 +606,56 @@
         }
     }
 
+    // 安排下一首歌曲預覽（使用自定义进度）
+    scheduleNextSongPreviewWithProgress(customProgress) {
+        this.log(`🎵 安排下一首預覽 (自定義進度) - 模式: ${this.nextSongPreviewMode}`);
+        
+        if (!this.currentTrack || this.nextSongPreviewMode === 'never') {
+            this.log(`⏸️ 跳過預覽安排 - 無歌曲或模式為never`);
+            return;
+        }
+
+        const currentTime = customProgress || 0;
+        const duration = this.currentTrack.duration || 0;
+        
+        this.log(`⏰ 時間信息 (自定義) - 當前: ${Math.floor(currentTime/1000)}s, 總長: ${Math.floor(duration/1000)}s`);
+        
+        if (duration === 0) {
+            this.log(`❌ 歌曲時長為0，跳過預覽`);
+            return;
+        }
+
+        const remainingTime = duration - currentTime;
+        this.log(`⏳ 剩餘時間: ${Math.floor(remainingTime/1000)}秒`);
+        
+        // 根據預覽模式決定顯示時機
+        let showAtSeconds = 10; // 預設10秒
+        if (this.nextSongPreviewMode === '20') showAtSeconds = 20;
+        else if (this.nextSongPreviewMode === '30') showAtSeconds = 30;
+        
+        const showAtMs = showAtSeconds * 1000;
+        
+        this.log(`🎯 下一首數據狀態: ${this.nextSongData ? '有數據' : '無數據'}`);
+        
+        if (this.nextSongPreviewMode === 'always') {
+            // 始終顯示模式
+            this.log(`🔄 始終顯示模式`);
+            if (this.nextSongData && !this.isNextSongPreviewShown) {
+                this.showNextSongPreview();
+            }
+        } else if (remainingTime <= showAtMs && !this.isNextSongPreviewShown) {
+            // 時間到了立即顯示
+            this.log(`⏰ 時間已到，立即顯示預覽 (剩餘${Math.floor(remainingTime/1000)}s <= ${showAtSeconds}s)`);
+            if (this.nextSongData) {
+                this.showNextSongPreview();
+            } else {
+                this.log(`⚠️ 無下一首數據，無法顯示預覽`);
+            }
+        } else {
+            this.log(`ℹ️ 不滿足顯示條件 - 剩餘${Math.floor(remainingTime/1000)}s, 需要${showAtSeconds}s, 已顯示: ${this.isNextSongPreviewShown}`);
+        }
+    }
+
     // 安排下一首歌曲預覽
     scheduleNextSongPreview() {
         this.log(`🎵 安排下一首預覽 - 模式: ${this.nextSongPreviewMode}`);
@@ -1883,6 +1933,10 @@
             this.isLoadingLyrics = false;
             this.lastLyricsRequest = null; // 重置请求记录
             
+            // 重置预览状态
+            this.isNextSongPreviewShown = false;
+            this.hideNextSongPreview();
+            
             // 清除之前的歌詞載入請求
             if (this.lyricsLoadTimeout) {
                 clearTimeout(this.lyricsLoadTimeout);
@@ -2121,9 +2175,8 @@
             const now = Date.now();
             if (!this.lastPreviewCheck || now - this.lastPreviewCheck > 1000) {
                 this.lastPreviewCheck = now;
-                // 更新當前進度到 currentTrack 對象中
-                this.currentTrack.progress = elapsedTime;
-                this.scheduleNextSongPreview();
+                // 使用临时进度值检查预览，不修改原始 progress
+                this.scheduleNextSongPreviewWithProgress(elapsedTime);
             }
 
             if (this.currentTrack.isPlaying && elapsedTime < this.currentTrack.duration) {
