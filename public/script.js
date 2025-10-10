@@ -1472,47 +1472,91 @@
             
             this.log(`🔍 页面状态检查 - 认证区域可见: ${authSectionVisible}, 播放器隐藏: ${playerSectionHidden}, 有登录按钮: ${hasLoginButton}`);
             
-            // 如果显示登录页面、播放器被隐藏或有登录按钮，执行自动登录
+            // 如果检测到需要认证，尝试后台静默刷新
             if (authSectionVisible || playerSectionHidden || hasLoginButton) {
-                this.log('🔍 檢測到需要登入，執行自動登入...');
+                this.log('🔍 检测到需要认证，尝试后台静默刷新session...');
                 
-                // 顯示自動登入提示
-                this.showAutoLoginMessage();
-                
-                // 延遲1秒後執行自動登入
-                setTimeout(() => {
-                    const authUrl = '/api/auth';
-                    this.log(`🔗 自動重定向到登入頁面: ${authUrl}`);
-                    window.location.href = authUrl;
-                }, 1000);
+                // 尝试后台刷新session，不跳转登录页面
+                this.tryBackgroundRefresh().then(success => {
+                    if (success) {
+                        this.log('✅ 后台session刷新成功，继续使用');
+                        // 刷新成功后重新检查当前状态
+                        setTimeout(() => {
+                            this.checkCurrentTrack();
+                        }, 1000);
+                    } else {
+                        this.log('❌ 后台session刷新失败，但不跳转登录页面');
+                        // 可以显示一个提示，但不强制跳转
+                        this.showSessionExpiredMessage();
+                    }
+                });
             } else {
-                this.log('✅ 页面状态正常，无需自动登录');
+                this.log('✅ 页面状态正常，无需认证处理');
             }
         }, this.autoLoginDelay);
     }
 
-    // 后台刷新认证token
+    // 后台静默刷新session
     async tryBackgroundRefresh() {
         try {
-            this.log('🔄 尝试后台刷新认证token...');
-            const response = await fetch('/api/auth-status', {
+            this.log('🔄 尝试后台静默刷新session...');
+            
+            // 1. 首先检查认证状态
+            const authResponse = await fetch('/api/auth-status', {
                 method: 'GET',
                 headers: this.sessionId ? { 'X-Session-Id': this.sessionId } : {}
             });
 
-            if (response.ok) {
-                const data = await response.json();
-                if (data.authenticated) {
-                    this.log('✅ 后台认证刷新成功');
+            if (authResponse.ok) {
+                const authData = await authResponse.json();
+                if (authData.authenticated) {
+                    this.log('✅ session仍然有效');
                     this.consecutiveAuthErrors = Math.max(0, this.consecutiveAuthErrors - 2);
                     return true;
                 }
             }
             
-            this.log('❌ 后台认证刷新失败');
+            // 2. 尝试静默token刷新
+            this.log('🔄 尝试静默token刷新...');
+            const refreshResponse = await fetch('/api/refresh-token', {
+                method: 'POST',
+                headers: this.sessionId ? { 'X-Session-Id': this.sessionId } : {},
+                credentials: 'include' // 包含cookies
+            });
+            
+            if (refreshResponse.ok) {
+                const refreshData = await refreshResponse.json();
+                if (refreshData.success && refreshData.sessionId) {
+                    this.log('✅ 静默token刷新成功');
+                    this.sessionId = refreshData.sessionId;
+                    localStorage.setItem('spotify_session_id', this.sessionId);
+                    this.consecutiveAuthErrors = 0;
+                    return true;
+                }
+            }
+            
+            // 3. 尝试使用现有cookie进行认证
+            this.log('🔄 尝试cookie认证...');
+            const cookieAuthResponse = await fetch('/api/current-track', {
+                method: 'GET',
+                credentials: 'include'
+            });
+            
+            if (cookieAuthResponse.ok) {
+                const newSessionHeader = cookieAuthResponse.headers.get('X-New-Session-Id');
+                if (newSessionHeader) {
+                    this.log('✅ cookie认证成功，获得新session');
+                    this.sessionId = newSessionHeader;
+                    localStorage.setItem('spotify_session_id', this.sessionId);
+                    this.consecutiveAuthErrors = 0;
+                    return true;
+                }
+            }
+            
+            this.log('❌ 所有后台刷新方法都失败');
             return false;
         } catch (error) {
-            this.log(`❌ 后台认证刷新异常: ${error.message}`);
+            this.log(`❌ 后台刷新异常: ${error.message}`);
             return false;
         }
     }
@@ -1734,10 +1778,17 @@
                 this.log('🔑 檢測到認證相關錯誤，记录但继续运行...');
                 this.consecutiveAuthErrors++;
                 // 只有连续更多次认证错误才触发重新登录
-                if (this.consecutiveAuthErrors >= 8) { // 增加到8次
-                    this.log('❌ 连续认证失败次数过多，触发重新登录');
-                    this.handleAuthError();
-                    this.scheduleAutoLogin();
+                if (this.consecutiveAuthErrors >= 15) { // 大幅增加到15次，给静默刷新更多机会
+                    this.log('❌ 连续认证失败次数过多，尝试最终的session恢复');
+                    // 不立即跳转登录，而是最后尝试一次后台刷新
+                    this.tryBackgroundRefresh().then(success => {
+                        if (!success) {
+                            this.log('⚠️ 所有恢复方法都失败，显示session过期提示');
+                            this.showSessionExpiredMessage();
+                        } else {
+                            this.consecutiveAuthErrors = 0;
+                        }
+                    });
                 }
             }
         } finally {
@@ -4453,6 +4504,7 @@ SpotifyLyricsPlayer.prototype.addAlbumBreathingEffect = function(enabled) {
 window.addEventListener('beforeunload', () => {
     if (player) {
         player.stopTracking();
+        player.stopPeriodicSessionCheck();
         console.log('🧹 播放器已清理');
     }
 });
