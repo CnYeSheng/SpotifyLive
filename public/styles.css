@@ -1608,6 +1608,107 @@ body {
     }
 }
 
+/* 下一首歌曲預覽樣式 */
+.next-song-preview {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(20px);
+    border-radius: 16px;
+    padding: 16px;
+    min-width: 280px;
+    max-width: 320px;
+    z-index: 1000;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    animation: slideInFromRight 0.5s ease-out;
+}
+
+.next-song-content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.next-song-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #1db954;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.next-song-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.next-song-cover {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.next-song-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.next-song-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: white;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.next-song-artist {
+    font-size: 12px;
+    color: #b3b3b3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+@keyframes slideInFromRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOutToRight {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+}
+
+/* 手機版適配 */
+@media (max-width: 767px) {
+    .next-song-preview {
+        top: 10px;
+        right: 10px;
+        left: 10px;
+        min-width: auto;
+        max-width: none;
+    }
+}
+
 /* 改进滚动条样式 */
 .lyrics-content::-webkit-scrollbar {
     width: 6px;

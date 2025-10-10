@@ -60,6 +60,10 @@
         // 自動登入延遲控制
         this.autoLoginDelay = 2000; // 2秒延遲後自動登入
         this.autoLoginAttempted = false; // 防止重複自動登入
+        
+        // 下一首歌曲預覽控制
+        this.nextSongPreviewTimeout = null; // 下一首歌曲預覽定時器
+        this.isNextSongPreviewShown = false; // 下一首歌曲預覽是否顯示
 
         // 日誌輔助函數
     this.log = (message, type = 'info') => {
@@ -231,6 +235,12 @@
         this.deviceName = document.getElementById('device-name');
         this.nextTrackPreview = document.getElementById('next-track-preview');
         this.nextTrackName = document.getElementById('next-track-name');
+        
+        // 下一首歌曲預覽元素
+        this.nextSongPreview = document.getElementById('next-song-preview');
+        this.nextSongCover = document.getElementById('next-song-cover');
+        this.nextSongTitle = document.getElementById('next-song-title');
+        this.nextSongArtist = document.getElementById('next-song-artist');
         
         // 模態框元素
         this.fontSizeModal = document.getElementById('font-size-modal');
@@ -681,6 +691,10 @@
         if (this.nextTrackPreviewTimeout) {
             clearTimeout(this.nextTrackPreviewTimeout);
             this.nextTrackPreviewTimeout = null;
+        }
+        if (this.nextSongPreviewTimeout) {
+            clearTimeout(this.nextSongPreviewTimeout);
+            this.nextSongPreviewTimeout = null;
         }
         if (this.lyricsLoadTimeout) {
             clearTimeout(this.lyricsLoadTimeout);
