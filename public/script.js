@@ -1668,7 +1668,9 @@
             text-align: center;
             animation: fadeInOut 3s ease-in-out;
         `;
-        messageDiv.innerHTML = '🎵 正在自動連接 Spotify...<br><small>即將跳轉到登入頁面</small>';
+        // 使用自定义消息或默认消息
+        const message = customMessage || '正在自動連接 Spotify...<br><small>即將跳轉到登入頁面</small>';
+        messageDiv.innerHTML = `🎵 ${message}`;
         
         // 添加動畫樣式
         const style = document.createElement('style');
