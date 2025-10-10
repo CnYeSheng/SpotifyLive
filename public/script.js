@@ -754,6 +754,11 @@
                 }
                 this.log('✅ 認證狀態有效，啟動播放器');
                 this.showPlayerSection();
+                
+                // 立即進行一次檢查，然後啟動定時器
+                this.log('🚀 立即執行首次當前歌曲檢查');
+                this.checkCurrentTrackWithRateLimit();
+                
                 this.startTracking();
                 this.startTokenRefreshTimer();
             } else {
@@ -1861,7 +1866,24 @@
     debugCurrentTrack() {
         this.log('🛠️ 手動觸發調試檢查...');
         this.log(`📊 當前狀態: sessionId=${this.sessionId?.substring(0, 8)}, isCheckingTrack=${this.isCheckingTrack}, lastCheckTime=${this.lastCheckTime}`);
+        this.log(`⏰ 定時器狀態: updateInterval=${!!this.updateInterval}, currentCheckInterval=${this.currentCheckInterval}`);
         this.checkCurrentTrackWithRateLimit();
+    }
+    
+    // 檢查輪詢狀態
+    checkPollingStatus() {
+        this.log('🔍 輪詢狀態檢查:');
+        this.log(`- updateInterval 存在: ${!!this.updateInterval}`);
+        this.log(`- currentCheckInterval: ${this.currentCheckInterval}ms`);
+        this.log(`- lastCheckTime: ${this.lastCheckTime}`);
+        this.log(`- 距離上次檢查: ${Date.now() - this.lastCheckTime}ms`);
+        this.log(`- isCheckingTrack: ${this.isCheckingTrack}`);
+        this.log(`- sessionId: ${this.sessionId?.substring(0, 8)}...`);
+        
+        if (!this.updateInterval) {
+            this.log('❌ 輪詢定時器未啟動，嘗試重新啟動...');
+            this.startTracking();
+        }
     }
     
     // 顯示速率限制消息
@@ -4055,7 +4077,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!playerInstance) {
         playerInstance = new SpotifyLyricsPlayer();
         window.spotifyPlayer = playerInstance;
+        
+        // 暴露調試方法
+        window.debugCurrentTrack = () => playerInstance.debugCurrentTrack();
+        window.checkPollingStatus = () => playerInstance.checkPollingStatus();
+        
         console.log('✅ Spotify 播放器已初始化');
+        console.log('🛠️ 調試方法已暴露: debugCurrentTrack(), checkPollingStatus()');
     }
 });
 
@@ -4073,12 +4101,15 @@ document.addEventListener('visibilitychange', () => {
         }
     } else {
         // 頁面顯示時恢復正常頻率
+        console.log('📱 頁面可見，恢復正常輪詢');
         if (playerInstance.updateInterval) {
             clearInterval(playerInstance.updateInterval);
             playerInstance.updateInterval = setInterval(() => {
                 playerInstance.checkCurrentTrackWithRateLimit();
             }, playerInstance.currentCheckInterval);
         }
+        // 立即執行一次檢查
+        playerInstance.checkCurrentTrackWithRateLimit();
     }
 });
 
