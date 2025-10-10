@@ -648,7 +648,7 @@
                 headers['X-Session-Id'] = this.sessionId;
             }
             
-            const response = await fetch('/api/player/queue', { headers });
+            const response = await fetch(`${this.apiBase}/api/player/queue`, { headers });
             
             if (response.ok) {
                 const queueData = await response.json();
@@ -1117,7 +1117,7 @@
         
         try {
             // 嘗試一個輕量級的 API 調用來觸發服務端 token 刷新
-            const response = await fetch('/api/current-track', {
+            const response = await fetch(`${this.apiBase}/api/current-track`, {
                 headers: { 'X-Session-Id': this.sessionId }
             });
             
@@ -1128,7 +1128,7 @@
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 
                 // 再次嘗試
-                const retryResponse = await fetch('/api/current-track', {
+                const retryResponse = await fetch(`${this.apiBase}/api/current-track`, {
                     headers: { 'X-Session-Id': this.sessionId }
                 });
                 
@@ -1474,7 +1474,7 @@
                 headers['X-Session-Id'] = this.sessionId;
             }
             
-            const response = await fetch('/api/current-track', { headers });
+            const response = await fetch(`${this.apiBase}/api/current-track`, { headers });
             
             // 處理認證錯誤
             if (response.status === 401) {
@@ -1608,7 +1608,7 @@
                     }
                     
                     // 立即測試新 token
-                    const testResponse = await fetch('/api/current-track', {
+                    const testResponse = await fetch(`${this.apiBase}/api/current-track`, {
                         headers: { 'X-Session-Id': this.sessionId }
                     });
                     
@@ -1638,19 +1638,19 @@
             try {
                 // 嘗試多個端點來觸發刷新
                 const endpoints = [
-                    '/api/auth-status',
-                    '/api/current-track',
-                    '/api/health'
+                    `${this.apiBase}/api/auth-status`,
+                    `${this.apiBase}/api/current-track`,
+                    `${this.apiBase}/api/health`
                 ];
                 
                 for (const endpoint of endpoints) {
                     try {
-                        const response = await fetch('${endpoint}', {
+                        const response = await fetch(endpoint, {
                             headers: { 'X-Session-Id': this.sessionId }
                         });
                         
                         if (response.ok) {
-                            if (endpoint === '/api/current-track') {
+                            if (endpoint === `${this.apiBase}/api/current-track`) {
                                 const data = await response.json();
                                 if (data.name) {
                                     this.processTrackData(data);
@@ -1661,7 +1661,7 @@
                                 this.log(`✅ 通過 ${endpoint} 觸發刷新成功`);
                                 
                                 // 立即測試主要端點
-                                const testResponse = await fetch('/api/current-track', {
+                                const testResponse = await fetch(`${this.apiBase}/api/current-track`, {
                                     headers: { 'X-Session-Id': this.sessionId }
                                 });
                                 
@@ -1694,7 +1694,7 @@
                 this.sessionId = storedSessionId;
                 this.log(`🔄 從 localStorage 恢復不同 session: ${this.sessionId.substring(0, 8)}...`);
                 
-                const finalTestResponse = await fetch('/api/current-track', {
+                const finalTestResponse = await fetch(`${this.apiBase}/api/current-track`, {
                     headers: { 'X-Session-Id': this.sessionId }
                 });
                 
