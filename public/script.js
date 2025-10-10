@@ -680,7 +680,7 @@
                 this.log(`🔍 使用 sessionId 檢查認證狀態: ${this.sessionId.substring(0, 8)}...`);
             }
             
-            const response = await fetch('/api/auth-status', { headers });
+            const response = await fetch(`${this.apiBase}/api/auth-status`, { headers });
             const data = await response.json();
             
             if (data.authenticated) {
@@ -731,7 +731,7 @@
             }
 
             // 靜默檢查認證狀態，不改變UI
-            const response = await fetch('/api/auth-status', {
+            const response = await fetch(`${this.apiBase}/api/auth-status`, {
                 headers: { 'X-Session-Id': this.sessionId }
             });
             
@@ -743,7 +743,7 @@
                     
                     // 再次嘗試檢查
                     try {
-                        const retryResponse = await fetch('/api/auth-status', {
+                        const retryResponse = await fetch(`${this.apiBase}/api/auth-status`, {
                             headers: { 'X-Session-Id': this.sessionId }
                         });
                         
@@ -948,7 +948,7 @@
         
         try {
             // 檢查當前認證狀態
-            const authResponse = await fetch('/api/auth-status', {
+            const authResponse = await fetch(`${this.apiBase}/api/auth-status`, {
                 headers: this.sessionId ? { 'X-Session-Id': this.sessionId } : {}
             });
             
@@ -984,7 +984,7 @@
             this.showSessionRefreshAnimation();
             
             // 檢查當前認證狀態
-            const authResponse = await fetch('/api/auth-status', {
+            const authResponse = await fetch(`${this.apiBase}/api/auth-status`, {
                 headers: { 'X-Session-Id': this.sessionId }
             });
             
@@ -1029,10 +1029,9 @@
         
         try {
             // 嘗試一個輕量級的 API 調用來觸發服務端 token 刷新
-            /* const response = await fetch('/api/current-track', {
+            const response = await fetch(`${this.apiBase}/api/current-track`, {
                 headers: { 'X-Session-Id': this.sessionId }
-            }); */
-            const response = await spotifyRequest('/api/current-track');
+            });
             
             if (response.status === 401) {
                 this.log('⚠️ Token 需要刷新，嘗試自動恢復...');
@@ -1041,7 +1040,7 @@
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 
                 // 再次嘗試
-                const retryResponse = await fetch('/api/current-track', {
+                const retryResponse = await fetch(`${this.apiBase}/api/current-track`, {
                     headers: { 'X-Session-Id': this.sessionId }
                 });
                 
