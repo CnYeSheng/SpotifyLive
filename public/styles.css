@@ -48,6 +48,7 @@ body {
         radial-gradient(circle at var(--bg-x2, 80%) var(--bg-y2, 20%), var(--album-color-2, var(--dynamic-bg-2)) 0%, transparent 50%),
         radial-gradient(circle at var(--bg-x3, 40%) var(--bg-y3, 40%), var(--album-color-3, var(--dynamic-bg-3)) 0%, transparent 50%);
     background-attachment: fixed;
+    transition: background-image 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
     background-size: 120% 120%;
     min-height: 100vh;
     color: var(--text-primary);
@@ -516,6 +517,231 @@ body {
         opacity: 1;
         transform: scale(1) translateY(0);
     }
+}
+
+/* 🎵 过渡动画系统 */
+
+/* 歌曲切换过渡动画 */
+@keyframes songTransition {
+    0% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+    50% {
+        opacity: 0.3;
+        transform: translateY(-10px) scale(0.98);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* 专辑封面淡入淡出 */
+@keyframes coverFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9) rotateY(10deg);
+        filter: blur(4px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) rotateY(0deg);
+        filter: blur(0px);
+    }
+}
+
+@keyframes coverFadeOut {
+    from {
+        opacity: 1;
+        transform: scale(1) rotateY(0deg);
+        filter: blur(0px);
+    }
+    to {
+        opacity: 0;
+        transform: scale(0.9) rotateY(-10deg);
+        filter: blur(4px);
+    }
+}
+
+/* 文字滑入效果 */
+@keyframes textSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+        filter: blur(2px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+        filter: blur(0px);
+    }
+}
+
+/* 下一首预览动画 */
+@keyframes nextSongSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(100%) scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+    }
+}
+
+@keyframes nextSongSlideOut {
+    from {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(-100%) scale(0.9);
+    }
+}
+
+/* 进度条动画增强 */
+@keyframes progressPulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(29, 185, 84, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 0 8px rgba(29, 185, 84, 0.1);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(29, 185, 84, 0);
+    }
+}
+
+/* 背景渐变动画 */
+@keyframes backgroundShift {
+    0% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+    100% {
+        background-position: 0% 50%;
+    }
+}
+
+/* 歌词容器过渡 */
+@keyframes lyricsTransition {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 微妙的呼吸动画 */
+@keyframes breathe {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 0.8;
+    }
+    50% {
+        transform: scale(1.02);
+        opacity: 1;
+    }
+}
+
+/* 播放按钮脉冲 */
+@keyframes playButtonPulse {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(29, 185, 84, 0.5);
+    }
+    50% {
+        transform: scale(1.05);
+        box-shadow: 0 0 0 10px rgba(29, 185, 84, 0.1);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(29, 185, 84, 0);
+    }
+}
+
+/* 🎵 动画效果类 */
+
+/* 专辑封面过渡效果 */
+.album-art.transition-out {
+    animation: coverFadeOut 0.4s ease-out forwards;
+}
+
+.album-art.transition-in {
+    animation: coverFadeIn 0.6s ease-out forwards;
+}
+
+/* 文字过渡效果 */
+.track-title.text-transition,
+.track-artist.text-transition {
+    animation: textSlideIn 0.6s ease-out forwards;
+}
+
+.track-title.text-transition {
+    animation-delay: 0.1s;
+}
+
+.track-artist.text-transition {
+    animation-delay: 0.2s;
+}
+
+/* 播放器容器过渡 */
+.player-section.song-changing {
+    animation: songTransition 0.8s ease-in-out forwards;
+}
+
+/* 下一首预览动画 */
+#next-song-preview.slide-in {
+    animation: nextSongSlideIn 0.5s ease-out forwards;
+}
+
+#next-song-preview.slide-out {
+    animation: nextSongSlideOut 0.5s ease-out forwards;
+}
+
+/* 播放按钮动画 */
+.play-btn.playing {
+    animation: playButtonPulse 2s infinite;
+}
+
+/* 进度条脉冲效果 */
+.progress-fill.progress-pulse::after {
+    content: '';
+    position: absolute;
+    right: -2px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 6px;
+    height: 6px;
+    background: #1db954;
+    border-radius: 50%;
+    animation: progressPulse 2s infinite;
+}
+
+/* 歌词容器过渡 */
+.lyrics-content.lyrics-changing {
+    animation: lyricsTransition 0.8s ease-out forwards;
+}
+
+/* 通用过渡效果增强 */
+.album-art,
+.track-title,
+.track-artist,
+.player-section,
+.lyrics-content {
+    transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* 微妙的呼吸动画 - 用于待机状态 */
+.album-art.breathing {
+    animation: breathe 4s ease-in-out infinite;
 }
 
 .control-btn {

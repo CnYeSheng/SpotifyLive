@@ -458,6 +458,9 @@
         
         // 初始化预览检查时间戳
         this.lastPreviewCheck = 0;
+        
+        // 初始化播放器元素引用
+        this.playerSection = document.querySelector('.player-section');
     }
 
     // 初始化下一首歌曲預覽設定
@@ -560,9 +563,14 @@
         // 更新預覽內容
         this.updateNextSongPreviewContent();
         
-        // 顯示預覽
+        // 顯示預覽with動畫
         if (this.nextSongPreview) {
+            // 移除之前的动画类
+            this.nextSongPreview.classList.remove('slide-out');
+            // 显示元素
             this.nextSongPreview.style.display = 'block';
+            // 添加滑入动画
+            this.nextSongPreview.classList.add('slide-in');
             this.isNextSongPreviewShown = true;
             this.log(`✅ 下一首預覽已顯示: ${this.nextSongData.name || 'Unknown'}`);
         } else {
@@ -572,8 +580,19 @@
 
     // 隱藏下一首歌曲預覽
     hideNextSongPreview() {
-        if (this.nextSongPreview) {
-            this.nextSongPreview.style.display = 'none';
+        if (this.nextSongPreview && this.isNextSongPreviewShown) {
+            // 添加滑出动画
+            this.nextSongPreview.classList.remove('slide-in');
+            this.nextSongPreview.classList.add('slide-out');
+            
+            // 动画完成后隐藏元素
+            setTimeout(() => {
+                if (this.nextSongPreview) {
+                    this.nextSongPreview.style.display = 'none';
+                    this.nextSongPreview.classList.remove('slide-out');
+                }
+            }, 500); // 对应动画时长
+            
             this.isNextSongPreviewShown = false;
         }
         
@@ -1871,6 +1890,11 @@
         this.currentTrack = data;
         this.log(`🎵 歌曲數據已更新: ${data.name || 'Unknown'} - ${data.artist || 'Unknown Artist'}`);
 
+        // 触发歌曲切换动画
+        if (isNewTrack) {
+            this.triggerSongChangeAnimation();
+        }
+
         // 獲取下一首歌曲信息（異步操作，不阻塞主流程）
         this.fetchNextSongData().then((success) => {
             if (success) {
@@ -2132,6 +2156,11 @@
         
         // 檢查當前歌曲是否在已按讚的歌曲中
         this.checkIfTrackIsLiked();
+        
+        // 更新动画效果
+        this.updatePlayButtonAnimation(this.currentTrack.isPlaying);
+        this.updateProgressPulse(this.currentTrack.isPlaying);
+        this.addAlbumBreathingEffect(!this.currentTrack.isPlaying);
         
         // 更新手機版歌詞控制區域
         if (this.isMobile && this.currentMobilePage === 'lyrics') {
@@ -4305,6 +4334,80 @@ async function spotifyRequest(url, options = {}) {
 
     return response;
 }
+
+// 🎵 动画系统扩展
+SpotifyLyricsPlayer.prototype.triggerSongChangeAnimation = function() {
+    this.log('🎭 触发歌曲切换动画');
+    
+    // 播放器容器动画
+    if (this.playerSection) {
+        this.playerSection.classList.remove('song-changing');
+        this.playerSection.offsetHeight;
+        this.playerSection.classList.add('song-changing');
+        
+        setTimeout(() => {
+            if (this.playerSection) {
+                this.playerSection.classList.remove('song-changing');
+            }
+        }, 800);
+    }
+
+    // 专辑封面切换动画
+    this.animateAlbumArtChange();
+    this.animateTextChange();
+    this.animateLyricsChange();
+};
+
+SpotifyLyricsPlayer.prototype.animateAlbumArtChange = function() {
+    const albumArt = document.querySelector('.album-art img, .album-art');
+    if (albumArt) {
+        albumArt.classList.add('transition-out');
+        setTimeout(() => {
+            albumArt.classList.remove('transition-out');
+            albumArt.classList.add('transition-in');
+            setTimeout(() => albumArt.classList.remove('transition-in'), 600);
+        }, 400);
+    }
+};
+
+SpotifyLyricsPlayer.prototype.animateTextChange = function() {
+    const trackTitle = document.querySelector('.track-title');
+    const trackArtist = document.querySelector('.track-artist');
+    
+    [trackTitle, trackArtist].forEach((element, index) => {
+        if (element) {
+            element.classList.remove('text-transition');
+            element.offsetHeight;
+            element.classList.add('text-transition');
+            setTimeout(() => element.classList.remove('text-transition'), 800 + index * 100);
+        }
+    });
+};
+
+SpotifyLyricsPlayer.prototype.animateLyricsChange = function() {
+    const lyricsContent = document.querySelector('.lyrics-content');
+    if (lyricsContent) {
+        lyricsContent.classList.remove('lyrics-changing');
+        lyricsContent.offsetHeight;
+        lyricsContent.classList.add('lyrics-changing');
+        setTimeout(() => lyricsContent.classList.remove('lyrics-changing'), 800);
+    }
+};
+
+SpotifyLyricsPlayer.prototype.updatePlayButtonAnimation = function(isPlaying) {
+    const playBtn = document.querySelector('.play-btn');
+    if (playBtn) playBtn.classList.toggle('playing', isPlaying);
+};
+
+SpotifyLyricsPlayer.prototype.updateProgressPulse = function(isPlaying) {
+    const progressFill = document.querySelector('.progress-fill');
+    if (progressFill) progressFill.classList.toggle('progress-pulse', isPlaying);
+};
+
+SpotifyLyricsPlayer.prototype.addAlbumBreathingEffect = function(enabled) {
+    const albumArt = document.querySelector('.album-art img, .album-art');
+    if (albumArt) albumArt.classList.toggle('breathing', enabled);
+};
 
 // 頁面卸載時清理
 window.addEventListener('beforeunload', () => {
