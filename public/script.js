@@ -1609,12 +1609,16 @@
                 this.log(`🔑 檢測到認證問題 (第 ${this.consecutiveAuthErrors} 次) - 当前歌曲API`);
                 
                 // 对于当前歌曲API，允许更多次失败才触发重新登录
-                if (this.consecutiveAuthErrors <= 8) {
+                if (this.consecutiveAuthErrors <= 12) { // 增加到12次
                     this.log('🔄 认证失败但继续运行，避免频繁跳转登录...');
                     // 不立即触发重新登录，让用户继续使用
-                    // 继续执行后续逻辑，不中断
+                    // 每4次失败尝试一次智能恢复
+                    if (this.consecutiveAuthErrors % 4 === 0) {
+                        this.log('🔧 尝试后台刷新token...');
+                        this.refreshAuthInBackground();
+                    }
                 } else {
-                    this.log('❌ 需要重新登入');
+                    this.log('❌ 认证失败次数过多，需要重新登入');
                     this.handleAuthError();
                     return;
                 }
@@ -1686,8 +1690,8 @@
             if (error.message.includes('401') || error.message.includes('Unauthorized')) {
                 this.log('🔑 檢測到認證相關錯誤，记录但继续运行...');
                 this.consecutiveAuthErrors++;
-                // 只有连续多次认证错误才触发重新登录
-                if (this.consecutiveAuthErrors >= 5) {
+                // 只有连续更多次认证错误才触发重新登录
+                if (this.consecutiveAuthErrors >= 8) { // 增加到8次
                     this.log('❌ 连续认证失败次数过多，触发重新登录');
                     this.handleAuthError();
                     this.scheduleAutoLogin();
