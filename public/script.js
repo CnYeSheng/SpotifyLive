@@ -1841,13 +1841,14 @@
         this.updateTrackInfo();
         this.showPlayerSection();
         
-        // 只在新歌曲時重置歌詞和載入
+        // 歌词处理逻辑
         if (isNewTrack) {
             this.log('🎵 新歌曲，重置歌詞狀態');
             // 重置歌詞狀態
             this.lyrics = [];
             this.currentLyricsTrackId = null;
             this.isLoadingLyrics = false;
+            this.lastLyricsRequest = null; // 重置请求记录
             
             // 清除之前的歌詞載入請求
             if (this.lyricsLoadTimeout) {
@@ -1859,9 +1860,14 @@
             this.safeLyricsLoad();
         } else {
             this.log('🔄 相同歌曲，確保UI正確顯示');
-            // 即使是相同歌曲，也要確保歌詞正確載入
-            if (!this.lyrics || this.lyrics.length === 0) {
-                this.log('🎵 相同歌曲但缺少歌詞，重新載入');
+            // 检查歌词是否需要重新加载
+            const needsLyricsReload = !this.lyrics || this.lyrics.length === 0 || 
+                                    this.currentLyricsTrackId !== this.currentTrack.id;
+            
+            if (needsLyricsReload) {
+                this.log('🎵 需要重新載入歌詞');
+                this.currentLyricsTrackId = null; // 强制重置
+                this.isLoadingLyrics = false;
                 this.safeLyricsLoad();
             }
         }
@@ -2104,11 +2110,15 @@
         const trackKey = `${this.currentTrack.id}-${this.currentTrack.name}-${this.currentTrack.artist}`;
         console.log(`🎤 請求歌詞: ${this.currentTrack.artist} - ${this.currentTrack.name}`);
         
-        // 檢查是否已有該歌曲的歌詞
-        if (this.lyrics && this.lyrics.length > 0 && this.currentLyricsTrackId === this.currentTrack.id) {
+        // 檢查是否已有該歌曲的歌詞（更宽松的检查）
+        if (this.lyrics && this.lyrics.length > 0 && 
+            this.currentLyricsTrackId === this.currentTrack.id &&
+            this.currentLyricsTrackId !== null) {
             console.log('✅ 歌詞已存在，跳過載入');
             return;
         }
+        
+        this.log(`🎤 開始載入歌詞: ${this.currentTrack.name} - ${this.currentTrack.artist}`);
 
         // 防止重複請求 - 使用更嚴格的檢查
         if (this.isLoadingLyrics) {
@@ -2116,10 +2126,10 @@
             return;
         }
         
-        // 檢查是否最近剛請求過同一首歌 (延長時間到15秒避免重複請求)
+        // 檢查是否最近剛請求過同一首歌 (缩短到5秒，更快响应歌曲切换)
         if (this.lastLyricsRequest && 
             this.lastLyricsRequest.trackKey === trackKey && 
-            Date.now() - this.lastLyricsRequest.time < 15000) {
+            Date.now() - this.lastLyricsRequest.time < 5000) {
             console.log('⏳ 最近剛請求過此歌曲，跳過重複請求');
             return;
         }
@@ -3306,7 +3316,7 @@
             // 立即更新 UI 以提供即時反饋
             this.updateLikeButtonState(!isCurrentlyLiked);
             
-            const response = await fetch('${endpoint}', {
+            const response = await fetch(endpoint, {
                 method: method,
                 headers: {
                     'Content-Type': 'application/json',
@@ -3404,11 +3414,11 @@
             return;
         }
         
-        // 檢查是否最近剛請求過 (延長時間到15秒避免重複請求)
+        // 檢查是否最近剛請求過 (缩短到5秒，更快响应歌曲切换)
         const trackKey = this.currentTrack ? `${this.currentTrack.id}-${this.currentTrack.name}-${this.currentTrack.artist}` : null;
         if (this.lastLyricsRequest && 
             this.lastLyricsRequest.trackKey === trackKey && 
-            Date.now() - this.lastLyricsRequest.time < 15000) {
+            Date.now() - this.lastLyricsRequest.time < 5000) {
             console.log('⏳ 最近剛請求過此歌曲，跳過重複請求');
             return;
         }
