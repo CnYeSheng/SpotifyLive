@@ -1455,9 +1455,26 @@
                 return;
             }
             
-            // 檢查是否顯示登入頁面（表示未認證）
-            if (this.authSection && this.authSection.style.display !== 'none') {
-                this.log('🔍 檢測到登入頁面，執行自動登入...');
+            // 更全面的检查登录页面状态
+            const authSectionVisible = this.authSection && 
+                                      (this.authSection.style.display === 'block' || 
+                                       this.authSection.style.display === '' ||
+                                       !this.authSection.style.display ||
+                                       getComputedStyle(this.authSection).display !== 'none');
+                              
+            const playerSectionHidden = this.playerSection && 
+                                      (this.playerSection.style.display === 'none' ||
+                                       getComputedStyle(this.playerSection).display === 'none');
+            
+            // 检查是否有登录按钮存在
+            const loginButton = document.querySelector('#login-btn, .login-btn, [href*="auth"]');
+            const hasLoginButton = loginButton && getComputedStyle(loginButton).display !== 'none';
+            
+            this.log(`🔍 页面状态检查 - 认证区域可见: ${authSectionVisible}, 播放器隐藏: ${playerSectionHidden}, 有登录按钮: ${hasLoginButton}`);
+            
+            // 如果显示登录页面、播放器被隐藏或有登录按钮，执行自动登录
+            if (authSectionVisible || playerSectionHidden || hasLoginButton) {
+                this.log('🔍 檢測到需要登入，執行自動登入...');
                 
                 // 顯示自動登入提示
                 this.showAutoLoginMessage();
@@ -1469,7 +1486,7 @@
                     window.location.href = authUrl;
                 }, 1000);
             } else {
-                this.log('✅ 已認證或正在載入中，無需自動登入');
+                this.log('✅ 页面状态正常，无需自动登录');
             }
         }, this.autoLoginDelay);
     }
