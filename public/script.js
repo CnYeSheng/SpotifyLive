@@ -4239,28 +4239,8 @@
             });
             
             if (response.status === 401) {
-                this.log('🔑 Library check 認證問題，嘗試修復...');
-                this.scheduleAutoLogin();
-                const authFixed = await this.handleAuthError();
-                if (authFixed) {
-                    // 重新嘗試請求
-                    const retryResponse = await fetch(`/api/library/check/${this.currentTrack.id}`, {
-                        headers: {
-                            'X-Session-Id': this.sessionId
-                        }
-                    });
-                    if (retryResponse.ok) {
-                        const retryData = await retryResponse.json();
-                        // 直接更新按讚狀態
-                        this.updateLikeButtonState(retryData.isLiked);
-                    } else if (retryResponse.status === 401) {
-                        this.log('❌ Library check 重試後仍然 401，停止檢查');
-                        return;
-                    }
-                } else {
-                    this.log('❌ Library check 認證修復失敗');
-                }
-                return;
+                this.log('🔑 喜欢状态检查认证失败，跳过（不触发登录）');
+                return; // 静默失败，不影响主要功能
             }
             
             if (response.ok) {
@@ -4463,19 +4443,48 @@ window.addEventListener('beforeunload', () => {
 // 页面完全加载后再次检查是否需要自动登录
 window.addEventListener('load', () => {
     setTimeout(() => {
-        if (player && !player.sessionId) {
-            console.log('🔄 页面加载完成，检查是否需要自动登录...');
-            player.scheduleAutoLogin();
+        if (player) {
+            // 不仅检查sessionId，还要检查页面状态
+            const needsLogin = !player.sessionId || 
+                              document.querySelector('#login-btn, .login-btn, [href*="auth"]') ||
+                              (player.authSection && getComputedStyle(player.authSection).display !== 'none');
+                              
+            if (needsLogin) {
+                console.log('🔄 页面加载完成，检查是否需要自动登录...');
+                player.scheduleAutoLogin();
+            }
         }
     }, 2000);
 });
 
 // 页面变为可见时检查认证状态
 document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && player && !player.sessionId) {
-        console.log('🔄 页面变为可见，检查认证状态...');
-        setTimeout(() => {
-            player.scheduleAutoLogin();
-        }, 1000);
+    if (!document.hidden && player) {
+        // 增强的可见性检查
+        const needsLogin = !player.sessionId || 
+                          document.querySelector('#login-btn, .login-btn, [href*="auth"]') ||
+                          (player.authSection && getComputedStyle(player.authSection).display !== 'none');
+                          
+        if (needsLogin) {
+            console.log('🔄 页面变为可见，检查认证状态...');
+            setTimeout(() => {
+                player.scheduleAutoLogin();
+            }, 1000);
+        }
     }
 });
+
+// URL变化时检查是否需要登录（处理SPA路由）
+let lastUrl = location.href;
+new MutationObserver(() => {
+    const url = location.href;
+    if (url !== lastUrl) {
+        lastUrl = url;
+        setTimeout(() => {
+            if (player && (!player.sessionId || document.querySelector('#login-btn, .login-btn, [href*="auth"]'))) {
+                console.log('🔄 URL变化，检查是否需要自动登录...');
+                player.scheduleAutoLogin();
+            }
+        }, 1000);
+    }
+}).observe(document, { subtree: true, childList: true });
