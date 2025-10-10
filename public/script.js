@@ -1880,6 +1880,13 @@
             this.log('🎵 歌曲變化，重置下一首歌曲預覽狀態');
         }
 
+        // 先检查是否为新歌曲（在更新 currentTrack 之前）
+        const isNewTrack = !this.currentTrack || 
+                          this.currentTrack.id !== data.id ||
+                          this.currentTrack.name !== data.name;
+
+        this.log(`🔄 歌曲狀態: ${isNewTrack ? '新歌曲' : '相同歌曲'}`);
+
         // 更新 currentTrack
         this.currentTrack = data;
         this.log(`🎵 歌曲數據已更新: ${data.name || 'Unknown'} - ${data.artist || 'Unknown Artist'}`);
@@ -1923,12 +1930,6 @@
         }
 
         this.log('✅ 檢測到正在播放的音樂，繼續處理...');
-
-        const isNewTrack = !this.currentTrack || 
-                          this.currentTrack.id !== data.id ||
-                          this.currentTrack.name !== data.name;
-
-        this.log(`🔄 歌曲狀態: ${isNewTrack ? '新歌曲' : '相同歌曲'}`);
 
         // 檢測內容類型並添加到數據中
         if (!data.contentType) {
