@@ -1756,8 +1756,17 @@
 
     // 處理歌曲數據的統一方法
     processTrackData(data) {
+        this.log(`🎯 開始處理歌曲數據: ${JSON.stringify({ 
+            hasName: !!data.name, 
+            isPlaying: data.isPlaying,
+            hasId: !!data.id 
+        })}`);
+        
         // 如果歌曲發生變化，隱藏之前的預覽並重置狀態
-        if (this.currentTrack && this.currentTrack.item?.id !== data.item?.id) {
+        const currentId = this.currentTrack?.id || this.currentTrack?.item?.id;
+        const newId = data.id || data.item?.id;
+        
+        if (this.currentTrack && currentId !== newId) {
             this.isNextSongPreviewShown = false;
             this.hideNextSongPreview();
             this.log('🎵 歌曲變化，重置下一首歌曲預覽狀態');
@@ -1765,6 +1774,7 @@
 
         // 更新 currentTrack
         this.currentTrack = data;
+        this.log(`🎵 歌曲數據已更新: ${data.name || 'Unknown'} - ${data.artist || 'Unknown Artist'}`);
 
         // 獲取下一首歌曲信息（異步操作，不阻塞主流程）
         this.fetchNextSongData().then((success) => {
@@ -1797,17 +1807,19 @@
             return;
         }
 
+        this.log('✅ 檢測到正在播放的音樂，繼續處理...');
+
         const isNewTrack = !this.currentTrack || 
                           this.currentTrack.id !== data.id ||
                           this.currentTrack.name !== data.name;
+
+        this.log(`🔄 歌曲狀態: ${isNewTrack ? '新歌曲' : '相同歌曲'}`);
 
         // 檢測內容類型並添加到數據中
         if (!data.contentType) {
             data.contentType = this.detectContentType(data);
         }
         this.currentContentType = data.contentType;
-
-        this.currentTrack = data;
         this.currentTrack.lastUpdated = Date.now();
         
         // 只在新歌曲時更新這些內容
