@@ -1604,13 +1604,7 @@
                 if (this.consecutiveAuthErrors <= 8) {
                     this.log('🔄 认证失败但继续运行，避免频繁跳转登录...');
                     // 不立即触发重新登录，让用户继续使用
-                    // 移除自动登录和智能恢复调用
-                    // 继续执行，不中断用户体验
-                    // this.consecutiveAuthErrors = 0; // 不重置错误计数
-                        return;
-                    }
-                }
-                
+                    // 继续执行后续逻辑，不中断
                 } else {
                     this.log('❌ 需要重新登入');
                     this.handleAuthError();
