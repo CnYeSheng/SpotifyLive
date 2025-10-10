@@ -461,6 +461,10 @@
         
         // 初始化播放器元素引用
         this.playerSection = document.querySelector('.player-section');
+        
+        // 初始化自动登录防护
+        this.lastAutoLoginAttempt = 0;
+        this.consecutiveAuthErrors = 0;
     }
 
     // 初始化下一首歌曲預覽設定
@@ -1424,13 +1428,14 @@
 
     // 頁面載入後自動嘗試登入
     scheduleAutoLogin() {
-        // 防止重複自動登入
-        /* if (this.autoLoginAttempted) {
-            this.log('⏭️ 自動登入已嘗試過，跳過');
+        // 防止重複自動登入 - 5分钟内只允许一次
+        const now = Date.now();
+        if (this.lastAutoLoginAttempt && now - this.lastAutoLoginAttempt < 5 * 60 * 1000) {
+            this.log('⏭️ 5分钟内已尝试过自動登入，跳過');
             return;
-        } */
+        }
         
-        this.autoLoginAttempted = true;
+        this.lastAutoLoginAttempt = now;
         
         // 延遲2秒後執行自動登入，讓頁面完全載入
         setTimeout(() => {
@@ -1590,27 +1595,16 @@
             
             const response = await fetch(`${this.apiBase}/api/current-track`, { headers });
             
-            // 處理認證錯誤
+            // 處理認證錯誤 - 更宽松的处理
             if (response.status === 401) {
                 this.consecutiveAuthErrors++;
-                this.log(`🔑 檢測到認證問題 (第 ${this.consecutiveAuthErrors} 次)`);
+                this.log(`🔑 檢測到認證問題 (第 ${this.consecutiveAuthErrors} 次) - 当前歌曲API`);
                 
-                try {
-                    const errorData = await response.json();
-                    if (errorData.needsAuth) {
-                        this.log('❌ 需要重新認證，觸發登入流程');
-                        this.handleAuthError();
-                        return;
-                    }
-                } catch (e) {
-                    // JSON 解析失敗，繼續處理
-                }
-                
-                // 嘗試智能恢復
-                if (this.consecutiveAuthErrors <= 3) {
-                    this.log('🔧 嘗試智能恢復...');
-                    this.scheduleAutoLogin();
-                    const recovered = await this.attemptSmartRecovery();
+                // 对于当前歌曲API，允许更多次失败才触发重新登录
+                if (this.consecutiveAuthErrors <= 8) {
+                    this.log('🔄 认证失败但继续运行，避免频繁跳转登录...');
+                    // 不立即触发重新登录，让用户继续使用
+                    // 移除自动登录和智能恢复调用
                     if (recovered) {
                         this.log('✅ 智能恢復成功');
                         this.consecutiveAuthErrors = 0;
@@ -1685,11 +1679,16 @@
         } catch (error) {
             this.log(`❌ 獲取當前播放失敗: ${error.message}`);
             this.updateStatus('spotify', false);
-            // 如果是認證錯誤，嘗試修復
+            // 如果是認證錯誤，记录但不立即触发登录
             if (error.message.includes('401') || error.message.includes('Unauthorized')) {
-                this.log('🔑 檢測到認證相關錯誤，嘗試修復...');
-                this.handleAuthError();
-                this.scheduleAutoLogin();
+                this.log('🔑 檢測到認證相關錯誤，记录但继续运行...');
+                this.consecutiveAuthErrors++;
+                // 只有连续多次认证错误才触发重新登录
+                if (this.consecutiveAuthErrors >= 5) {
+                    this.log('❌ 连续认证失败次数过多，触发重新登录');
+                    this.handleAuthError();
+                    this.scheduleAutoLogin();
+                }
             }
         } finally {
             this.isCheckingTrack = false;
