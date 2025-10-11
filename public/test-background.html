@@ -58,12 +58,16 @@
     </div>
 
     <div class="test-controls">
-        <h3>测试控制</h3>
-        <button onclick="testSongChange()">模拟歌曲切换</button>
-        <button onclick="testPlayState()">切换播放状态</button>
-        <button onclick="testBeat()">触发节拍</button>
-        <button onclick="testRipple()">触发波纹</button>
-        <button onclick="testColors()">随机颜色</button>
+        <h3>🎨 动态背景测试</h3>
+        <button onclick="testSongChange()">🎵 模拟歌曲切换</button>
+        <button onclick="testPlayState()">▶️ 切换播放状态</button>
+        <button onclick="testBeat()">🥁 触发节拍</button>
+        <button onclick="testRipple()">🌊 触发波纹</button>
+        <button onclick="testColors()">🎨 随机颜色</button>
+        <button onclick="testAlbumColors()">📸 测试专辑颜色</button>
+        <div style="margin-top: 10px; font-size: 12px; color: #ccc;">
+            观察背景的颜色和动画变化
+        </div>
     </div>
 
     <script src="dynamic-background.js"></script>
@@ -115,6 +119,49 @@
                 console.log('🎨 随机颜色变化');
             }
         }
+        
+        function testAlbumColors() {
+            if (dynamicBG) {
+                // 模拟专辑颜色
+                const albumColors = [
+                    'rgb(178, 34, 34)',   // 深红色
+                    'rgb(255, 140, 0)',   // 橙色
+                    'rgb(138, 43, 226)',  // 紫色
+                    'rgb(30, 144, 255)'   // 蓝色
+                ];
+                dynamicBG.updateColors(albumColors);
+                console.log('📸 专辑风格颜色变化');
+                
+                // 触发歌曲切换特效
+                setTimeout(() => {
+                    dynamicBG.triggerRipple(50, 50);
+                }, 200);
+            }
+        }
+        
+        // 自动演示
+        let demoInterval;
+        function startDemo() {
+            if (demoInterval) return;
+            
+            console.log('🎬 开始自动演示...');
+            demoInterval = setInterval(() => {
+                const actions = [testColors, testBeat, testRipple, testAlbumColors];
+                const randomAction = actions[Math.floor(Math.random() * actions.length)];
+                randomAction();
+            }, 3000);
+        }
+        
+        function stopDemo() {
+            if (demoInterval) {
+                clearInterval(demoInterval);
+                demoInterval = null;
+                console.log('⏹️ 停止自动演示');
+            }
+        }
+        
+        // 5秒后开始自动演示
+        setTimeout(startDemo, 5000);
     </script>
 </body>
 </html>
