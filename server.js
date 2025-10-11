@@ -903,13 +903,27 @@ app.get('/api/player/queue', async (req, res) => {
             return res.json({ queue: [], nextTrack: null });
         }
         
-        const queue = response.data.queue.slice(0, 20).map(track => ({
-            id: track.id,
-            name: track.name,
-            artist: track.artists.map(a => a.name).join(', '),
-            image: track.album.images[0]?.url,
-            duration: track.duration_ms
-        }));
+        const queue = response.data.queue.slice(0, 20).map(track => {
+            const trackData = {
+                id: track.id,
+                name: track.name,
+                artist: track.artists?.map(a => a.name).join(', ') || '未知歌手',
+                image: track.album?.images?.[0]?.url || null,
+                duration: track.duration_ms
+            };
+            
+            // 调试：记录前几首歌的数据
+            if (queue.length < 3) {
+                console.log(`🎵 Queue track ${queue.length + 1}:`, {
+                    name: trackData.name,
+                    artist: trackData.artist,
+                    hasImage: !!trackData.image,
+                    imageUrl: trackData.image?.substring(0, 50) + '...'
+                });
+            }
+            
+            return trackData;
+        });
         
         const nextTrack = queue[0] || null;
         

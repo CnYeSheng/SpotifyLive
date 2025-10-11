@@ -4140,15 +4140,32 @@
             return;
         }
 
-        const playlistHTML = tracks.map((track, index) => `
+        // 调试：检查tracks数据结构
+        console.log('🎵 播放清单数据:', tracks.slice(0, 2)); // 只显示前2首歌的数据
+        
+        const playlistHTML = tracks.map((track, index) => {
+            // 调试：检查每首歌的数据
+            if (index === 0) {
+                console.log('🎯 第一首歌数据详情:', {
+                    name: track.name,
+                    artist: track.artist,
+                    image: track.image,
+                    id: track.id
+                });
+            }
+            
+            return `
             <div class="playlist-item ${track.id === this.currentTrack?.id ? 'current' : ''}" data-track-id="${track.id}">
-                <img src="${track.image || ''}" alt="${track.name}" onerror="this.style.display='none'">
+                <img src="${track.image || '/default-album.png'}" alt="${track.name}" 
+                     style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px; margin-right: 12px;"
+                     onerror="this.src='/default-album.png'; this.style.opacity='0.5';">
                 <div class="playlist-item-info">
-                    <div class="playlist-item-title">${this.escapeHtml(track.name)}</div>
-                    <div class="playlist-item-artist">${this.escapeHtml(track.artist)}</div>
+                    <div class="playlist-item-title">${this.escapeHtml(track.name || '未知歌曲')}</div>
+                    <div class="playlist-item-artist">${this.escapeHtml(track.artist || '未知歌手')}</div>
                 </div>
             </div>
-        `).join('');
+        `;
+        }).join('');
 
         this.playlistContent.innerHTML = playlistHTML;
 
