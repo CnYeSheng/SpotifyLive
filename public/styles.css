@@ -2730,7 +2730,7 @@ body {
    🎵 DYNAMIC BACKGROUND SYSTEM (Apple Music Style)
    ======================================== */
 
-/* 动态背景容器 */
+/* 动态背景容器 - 作为叠加层在专辑封面之上 */
 .dynamic-background {
     position: fixed;
     top: 0;
@@ -2739,13 +2739,11 @@ body {
     height: 100vh;
     z-index: -1;
     overflow: hidden;
-    background: linear-gradient(135deg, #000 0%, #111 100%);
-    
-    /* 调试：临时边框确认显示 */
-    /* border: 2px solid red; */
+    pointer-events: none;
+    /* 移除背景色，让专辑封面透过 */
 }
 
-/* 主要动态渐变层 */
+/* 主要动态渐变层 - 基于专辑颜色的叠加效果 */
 .bg-gradient-layer {
     position: absolute;
     width: 120%;
@@ -2753,29 +2751,30 @@ body {
     top: -10%;
     left: -10%;
     background: 
-        radial-gradient(circle at var(--pos-x1, 20%) var(--pos-y1, 80%), var(--color-1, #667eea) 0%, transparent 60%),
-        radial-gradient(circle at var(--pos-x2, 80%) var(--pos-y2, 20%), var(--color-2, #764ba2) 0%, transparent 60%),
-        radial-gradient(circle at var(--pos-x3, 40%) var(--pos-y3, 40%), var(--color-3, #f093fb) 0%, transparent 60%),
-        radial-gradient(circle at var(--pos-x4, 60%) var(--pos-y4, 60%), var(--color-4, #4facfe) 0%, transparent 60%);
-    animation: gradientFloat 20s ease-in-out infinite;
-    opacity: 0.8; /* 增加透明度让效果更明显 */
-    filter: blur(60px); /* 减少模糊让颜色更鲜明 */
+        radial-gradient(circle at var(--pos-x1, 20%) var(--pos-y1, 80%), var(--color-1, rgba(102, 126, 234, 0.3)) 0%, transparent 60%),
+        radial-gradient(circle at var(--pos-x2, 80%) var(--pos-y2, 20%), var(--color-2, rgba(118, 75, 162, 0.3)) 0%, transparent 60%),
+        radial-gradient(circle at var(--pos-x3, 40%) var(--pos-y3, 40%), var(--color-3, rgba(240, 147, 251, 0.3)) 0%, transparent 60%),
+        radial-gradient(circle at var(--pos-x4, 60%) var(--pos-y4, 60%), var(--color-4, rgba(79, 172, 254, 0.3)) 0%, transparent 60%);
+    animation: gradientFloat 25s ease-in-out infinite;
+    opacity: 0.4; /* 降低透明度让专辑封面更突出 */
+    filter: blur(40px); /* 适中的模糊创造氛围 */
     transition: all 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    mix-blend-mode: overlay; /* 与专辑封面混合 */
 }
 
-/* 粒子背景层 */
+/* 粒子背景层 - 基于专辑颜色的粒子 */
 .bg-particles {
     position: absolute;
     width: 100%;
     height: 100%;
     background-image: 
-        radial-gradient(circle at 10% 20%, rgba(255,255,255,0.12) 0%, transparent 3%),
-        radial-gradient(circle at 80% 80%, rgba(255,255,255,0.10) 0%, transparent 3%),
-        radial-gradient(circle at 40% 40%, rgba(255,255,255,0.08) 0%, transparent 2%),
-        radial-gradient(circle at 75% 15%, rgba(255,255,255,0.06) 0%, transparent 2%),
-        radial-gradient(circle at 15% 85%, rgba(255,255,255,0.05) 0%, transparent 1.5%),
-        radial-gradient(circle at 60% 70%, rgba(255,255,255,0.04) 0%, transparent 1.5%);
-    animation: particleFloat 30s linear infinite;
+        radial-gradient(circle at 10% 20%, var(--particle-color-1, rgba(255,255,255,0.1)) 0%, transparent 2%),
+        radial-gradient(circle at 80% 80%, var(--particle-color-2, rgba(255,255,255,0.08)) 0%, transparent 2%),
+        radial-gradient(circle at 40% 40%, var(--particle-color-3, rgba(255,255,255,0.06)) 0%, transparent 1.5%),
+        radial-gradient(circle at 75% 15%, var(--particle-color-4, rgba(255,255,255,0.05)) 0%, transparent 1.5%),
+        radial-gradient(circle at 15% 85%, rgba(255,255,255,0.04) 0%, transparent 1%),
+        radial-gradient(circle at 60% 70%, rgba(255,255,255,0.03) 0%, transparent 1%);
+    animation: particleFloat 35s linear infinite;
 }
 
 /* 几何图形动画 */
@@ -2942,9 +2941,9 @@ body {
 
 /* 特殊播放状态动画 */
 .bg-gradient-layer.playing {
-    animation-duration: 12s; /* 更快的动画 */
-    filter: blur(40px) brightness(1.5) saturate(1.4); /* 更亮更鲜艳 */
-    opacity: 0.9; /* 更高透明度 */
+    animation-duration: 18s; /* 适中的速度 */
+    filter: blur(30px) brightness(1.3) saturate(1.3); /* 适度增强 */
+    opacity: 0.6; /* 适中透明度保持封面可见 */
 }
 
 .bg-particles.playing {

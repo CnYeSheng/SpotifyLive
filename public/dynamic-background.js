@@ -201,26 +201,44 @@ class DynamicBackground {
     }
 
     /**
-     * 更新背景颜色
+     * 更新背景颜色 - 适配专辑封面背景
      */
     updateColors(colors) {
         this.currentColors = colors;
         
         if (this.gradientLayer) {
-            this.gradientLayer.style.setProperty('--color-1', colors[0]);
-            this.gradientLayer.style.setProperty('--color-2', colors[1]);
-            this.gradientLayer.style.setProperty('--color-3', colors[2]);
-            this.gradientLayer.style.setProperty('--color-4', colors[3]);
+            // 将颜色转换为半透明叠加效果
+            const overlayColors = colors.map(color => {
+                return color.replace('rgb', 'rgba').replace(')', ', 0.2)');
+            });
+            
+            this.gradientLayer.style.setProperty('--color-1', overlayColors[0]);
+            this.gradientLayer.style.setProperty('--color-2', overlayColors[1]);
+            this.gradientLayer.style.setProperty('--color-3', overlayColors[2]);
+            this.gradientLayer.style.setProperty('--color-4', overlayColors[3]);
+        }
+
+        // 更新粒子颜色
+        if (this.particleLayer) {
+            const particleColors = colors.map((color, index) => {
+                const opacity = [0.08, 0.06, 0.05, 0.04][index] || 0.03;
+                return color.replace('rgb', 'rgba').replace(')', `, ${opacity})`);
+            });
+            
+            this.particleLayer.style.setProperty('--particle-color-1', particleColors[0]);
+            this.particleLayer.style.setProperty('--particle-color-2', particleColors[1]);
+            this.particleLayer.style.setProperty('--particle-color-3', particleColors[2]);
+            this.particleLayer.style.setProperty('--particle-color-4', particleColors[3]);
         }
 
         // 更新光晕颜色
         this.glowElements.forEach((glow, index) => {
             if (colors[index]) {
-                glow.style.setProperty('--glow-color', colors[index].replace('rgb', 'rgba').replace(')', ', 0.3)'));
+                glow.style.setProperty('--glow-color', colors[index].replace('rgb', 'rgba').replace(')', ', 0.15)'));
             }
         });
 
-        this.log(`🎨 颜色已更新: ${colors.join(', ')}`);
+        this.log(`🎨 叠加颜色已更新: ${colors.join(', ')}`);
     }
 
     /**
