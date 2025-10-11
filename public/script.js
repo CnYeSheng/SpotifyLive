@@ -136,7 +136,7 @@
             this.scheduleAutoLogin();
         }, 1000);
         
-        // 启动定期的静默session检查（每5分钟）
+        // 启动定期的静默session检查（每3分钟，更频繁）
         this.startPeriodicSessionCheck();
     }
 
@@ -1444,24 +1444,20 @@
 
     // 頁面載入後自動嘗試登入
     scheduleAutoLogin() {
-        // 防止重複自動登入 - 改为2分钟，更快响应
+        // 防止重複自動登入 - 改为1分钟，更快响应
         const now = Date.now();
-        if (this.lastAutoLoginAttempt && now - this.lastAutoLoginAttempt < 2 * 60 * 1000) {
-            this.log('⏭️ 2分钟内已尝试过自動登入，跳過');
+        if (this.lastAutoLoginAttempt && now - this.lastAutoLoginAttempt < 1 * 60 * 1000) {
+            this.log('⏭️ 1分钟内已尝试过自動登入，跳過');
             return;
         }
         
         this.lastAutoLoginAttempt = now;
         
-        // 延遲2秒後執行自動登入，讓頁面完全載入
-        setTimeout(() => {
-            this.log('🚀 頁面載入完成，準備自動登入檢查...');
-            
-            // 首先檢查是否已經有有效的認證
-            if (this.sessionId) {
-                this.log('✅ 已有 sessionId，跳過自動登入');
-                return;
-            }
+        // 立即执行自动登入检查，不延迟
+        this.log('🚀 页面载入，立即检查自動登入状态...');
+        
+        // 立即检查认证状态，不等待
+        this.checkAuthStatusAndAutoLogin();
             
             // 更全面的检查登录页面状态
             const authSectionVisible = this.authSection && 
@@ -1555,15 +1551,12 @@
                 this.log('🕐 定期检查session状态...');
                 const isValid = await this.tryBackgroundRefresh();
                 if (!isValid) {
-                    this.log('⚠️ 定期检查发现session过期，自动触发登录');
-                    this.showAutoLoginMessage('Session已过期，正在自动重新登录...');
-                    
-                    setTimeout(() => {
-                        window.location.href = '/api/auth';
-                    }, 2000);
+                    this.log('⚠️ 定期检查发现session过期，但继续静默运行');
+                    // 静默处理，不跳转
+                    this.consecutiveAuthErrors = 0; // 重置错误计数
                 }
             }
-        }, 5 * 60 * 1000); // 5分钟
+        }, 3 * 60 * 1000); // 3分钟，更频繁检查
     }
     
     // 清理定期检查
@@ -2132,6 +2125,8 @@
         }
 
         // 獲取下一首歌曲信息（異步操作，不阻塞主流程）
+        // 每次歌曲变化都重新获取下一首数据，确保实时更新
+        this.nextSongData = null; // 先清空旧数据
         this.fetchNextSongData().then((success) => {
             if (success) {
                 this.log('🎵 下一首歌曲信息獲取成功，安排預覽');
@@ -2407,6 +2402,11 @@
         if (this.isMobile && this.currentMobilePage === 'lyrics') {
             this.showMobileLyricsControls();
         }
+        
+        // 立即检查喜欢状态，确保按钮状态同步
+        setTimeout(() => {
+            this.checkIfTrackIsLiked();
+        }, 200);
     }
 
     updateProgress() {
@@ -4431,7 +4431,7 @@
         if (!this.addToPlaylistBtn || !this.currentTrack || !this.sessionId) return;
         
         // 添加延遲，避免與其他 API 調用衝突
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 200)); // 减少延迟
         
         try {
             const response = await fetch(`/api/library/check/${this.currentTrack.id}`, {
@@ -4441,13 +4441,20 @@
             });
             
             if (response.status === 401) {
-                this.log('🔑 喜欢状态检查认证失败，跳过（不触发登录）');
-                return; // 静默失败，不影响主要功能
+                this.log('🔑 喜欢状态检查认证失败，尝试静默刷新');
+                // 尝试静默刷新后重试
+                const refreshSuccess = await this.tryBackgroundRefresh();
+                if (refreshSuccess) {
+                    // 刷新成功，重试检查
+                    setTimeout(() => this.checkIfTrackIsLiked(), 500);
+                }
+                return;
             }
             
             if (response.ok) {
                 const data = await response.json();
                 this.updateLikeButtonState(data.isLiked);
+                this.log(`🎵 歌曲喜欢状态: ${data.isLiked ? '已喜欢' : '未喜欢'}`);
             }
         } catch (error) {
             this.log(`❌ 檢查歌曲是否已按讚失敗: ${error.message}`);
