@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>动态背景测试</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .test-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+            z-index: 1;
+        }
+        .test-controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10;
+            background: rgba(0,0,0,0.5);
+            padding: 20px;
+            border-radius: 10px;
+        }
+        .test-controls button {
+            margin: 5px;
+            padding: 10px;
+            background: #1db954;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <!-- 🎵 Dynamic Background System -->
+    <div class="dynamic-background">
+        <div class="bg-gradient-layer"></div>
+        <div class="bg-particles"></div>
+        <div class="bg-shapes"></div>
+        <div class="bg-ripple"></div>
+        <div class="bg-glow"></div>
+        <div class="bg-glow"></div>
+        <div class="bg-glow"></div>
+        <div class="bg-grid"></div>
+    </div>
+
+    <div class="test-container">
+        <div>
+            <h1>🎵 动态背景测试</h1>
+            <p>观察背景的动态变化效果</p>
+        </div>
+    </div>
+
+    <div class="test-controls">
+        <h3>测试控制</h3>
+        <button onclick="testSongChange()">模拟歌曲切换</button>
+        <button onclick="testPlayState()">切换播放状态</button>
+        <button onclick="testBeat()">触发节拍</button>
+        <button onclick="testRipple()">触发波纹</button>
+        <button onclick="testColors()">随机颜色</button>
+    </div>
+
+    <script src="dynamic-background.js"></script>
+    <script>
+        let dynamicBG;
+        let isPlaying = false;
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            dynamicBG = new DynamicBackground();
+            console.log('🎨 动态背景测试页面已加载');
+        });
+        
+        function testSongChange() {
+            if (dynamicBG) {
+                // 使用一个测试图片URL
+                dynamicBG.onSongChange('https://i.scdn.co/image/ab67616d0000b273example');
+                console.log('🎵 模拟歌曲切换');
+            }
+        }
+        
+        function testPlayState() {
+            isPlaying = !isPlaying;
+            if (dynamicBG) {
+                dynamicBG.onPlayStateChange(isPlaying);
+                console.log(`🎵 播放状态: ${isPlaying ? '播放' : '暂停'}`);
+            }
+        }
+        
+        function testBeat() {
+            if (dynamicBG) {
+                dynamicBG.triggerBeat();
+                console.log('🥁 触发节拍效果');
+            }
+        }
+        
+        function testRipple() {
+            if (dynamicBG) {
+                const x = 20 + Math.random() * 60;
+                const y = 20 + Math.random() * 60;
+                dynamicBG.triggerRipple(x, y);
+                console.log('🌊 触发波纹效果');
+            }
+        }
+        
+        function testColors() {
+            if (dynamicBG) {
+                const colors = dynamicBG.getRandomColors();
+                dynamicBG.updateColors(colors);
+                console.log('🎨 随机颜色变化');
+            }
+        }
+    </script>
+</body>
+</html>

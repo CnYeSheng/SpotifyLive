@@ -303,7 +303,7 @@ class DynamicBackground {
     startBeatSync() {
         this.stopBeatSync();
         
-        // 模拟音乐节拍 (约120 BPM)
+        // 模拟音乐节拍 (约120 BPM) - 更频繁更明显
         this.beatTimer = setInterval(() => {
             if (this.isPlaying) {
                 this.gradientLayer?.classList.add('bg-beat-sync');
@@ -311,12 +311,20 @@ class DynamicBackground {
                     this.gradientLayer?.classList.remove('bg-beat-sync');
                 }, 800);
                 
-                // 随机位置触发波纹
-                const x = 20 + Math.random() * 60;
-                const y = 20 + Math.random() * 60;
+                // 随机位置触发波纹 - 更大范围
+                const x = 10 + Math.random() * 80;
+                const y = 10 + Math.random() * 80;
                 this.triggerRipple(x, y);
+                
+                // 额外的颜色脉冲效果
+                if (this.gradientLayer) {
+                    this.gradientLayer.style.transform = 'scale(1.02)';
+                    setTimeout(() => {
+                        this.gradientLayer.style.transform = 'scale(1)';
+                    }, 300);
+                }
             }
-        }, 2000); // 每2秒一次节拍效果
+        }, 1500); // 每1.5秒一次节拍效果 - 更频繁
     }
 
     /**
@@ -333,14 +341,28 @@ class DynamicBackground {
      * 开始空闲动画
      */
     startIdleAnimations() {
-        // 定期随机触发波纹（空闲时）
+        // 定期随机触发波纹（空闲时） - 更频繁更明显
         setInterval(() => {
-            if (!this.isPlaying && Math.random() < 0.3) {
-                const x = 20 + Math.random() * 60;
-                const y = 20 + Math.random() * 60;
+            if (!this.isPlaying && Math.random() < 0.6) {
+                const x = 15 + Math.random() * 70;
+                const y = 15 + Math.random() * 70;
                 this.triggerRipple(x, y);
             }
-        }, 10000);
+            
+            // 空闲时也要有轻微的颜色变化
+            if (!this.isPlaying && this.gradientLayer) {
+                const colors = this.getRandomColors();
+                this.updateColors(colors);
+            }
+        }, 8000); // 每8秒 - 更频繁
+        
+        // 每30秒强制颜色变化以展示效果
+        setInterval(() => {
+            this.log('🎨 强制颜色变化展示动态效果');
+            const colors = this.getRandomColors();
+            this.updateColors(colors);
+            this.triggerRipple(50, 50); // 中心波纹
+        }, 30000);
     }
 
     /**

@@ -2740,6 +2740,9 @@ body {
     z-index: -1;
     overflow: hidden;
     background: linear-gradient(135deg, #000 0%, #111 100%);
+    
+    /* 调试：临时边框确认显示 */
+    /* border: 2px solid red; */
 }
 
 /* 主要动态渐变层 */
@@ -2794,8 +2797,8 @@ body {
     height: 100%;
     background: 
         radial-gradient(circle at var(--ripple-x, 50%) var(--ripple-y, 50%), 
-            rgba(255,255,255,0.04) 0%, 
-            rgba(255,255,255,0.02) 30%, 
+            rgba(255,255,255,0.08) 0%, 
+            rgba(255,255,255,0.04) 30%, 
             transparent 70%);
     animation: rippleExpand 3s ease-out infinite;
     opacity: 0;
@@ -2960,15 +2963,15 @@ body {
 
 @keyframes beatPulse {
     0% {
-        filter: blur(80px) brightness(1) saturate(1);
+        filter: blur(60px) brightness(1) saturate(1);
         transform: scale(1);
     }
     50% {
-        filter: blur(60px) brightness(1.4) saturate(1.5);
-        transform: scale(1.05);
+        filter: blur(30px) brightness(1.8) saturate(2.0); /* 更亮更鲜艳 */
+        transform: scale(1.08); /* 更大的缩放 */
     }
     100% {
-        filter: blur(80px) brightness(1) saturate(1);
+        filter: blur(60px) brightness(1.2) saturate(1.2);
         transform: scale(1);
     }
 }
