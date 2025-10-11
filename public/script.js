@@ -1621,6 +1621,8 @@
                     }
                 } else if (refreshResponse.status === 404) {
                     this.log('⚠️ /api/refresh-token 端点不存在，跳过此方法');
+                } else if (refreshResponse.status === 401) {
+                    this.log('⚠️ Refresh token也已失效，需要重新授权');
                 }
             } catch (error) {
                 this.log(`⚠️ token刷新请求失败: ${error.message}`);
@@ -1646,14 +1648,30 @@
             
             this.log('❌ 所有后台刷新方法都失败');
             
-            // 所有方法失败，触发自动登录
-            this.log('🚨 触发自动登录作为最后手段...');
-            setTimeout(() => {
-                this.showAutoLoginMessage('Session已过期，正在自动重新登录...');
-                setTimeout(() => {
-                    window.location.href = '/';
-                }, 2000);
-            }, 1000);
+            // 最后尝试：直接使用现有session强制刷新
+            this.log('🔄 最后尝试：强制session刷新...');
+            try {
+                const forceRefreshResponse = await fetch('/api/current-track', {
+                    method: 'GET',
+                    headers: this.sessionId ? { 'X-Session-Id': this.sessionId } : {},
+                    credentials: 'include',
+                    cache: 'no-cache' // 强制不使用缓存
+                });
+                
+                if (forceRefreshResponse.ok) {
+                    this.log('✅ 强制刷新成功，session已恢复');
+                    this.consecutiveAuthErrors = 0;
+                    return true;
+                }
+            } catch (error) {
+                this.log(`❌ 强制刷新也失败: ${error.message}`);
+            }
+            
+            // 真正失败时，静默重置而不是跳转
+            this.log('🔄 静默重置认证状态...');
+            this.consecutiveAuthErrors = 0; // 重置错误计数
+            this.sessionId = null;
+            localStorage.removeItem('spotify_session_id');
             
             return false;
         } catch (error) {

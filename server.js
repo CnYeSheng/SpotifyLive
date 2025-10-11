@@ -493,6 +493,46 @@ app.get('/api/auth-status', async (req, res) => {
     });
 });
 
+// 静默刷新token端点
+app.post('/api/refresh-token', async (req, res) => {
+    const sessionId = req.headers['x-session-id'] || req.body.sessionId;
+    
+    if (!sessionId) {
+        return res.status(400).json({ success: false, message: 'No session ID provided' });
+    }
+    
+    const session = userSessions.get(sessionId);
+    if (!session || !session.refreshToken) {
+        return res.status(401).json({ success: false, message: 'Session not found or no refresh token' });
+    }
+    
+    try {
+        console.log(`🔄 Attempting silent token refresh for session ${sessionId.substring(0, 8)}...`);
+        const refreshed = await refreshAccessToken(session);
+        
+        if (refreshed) {
+            console.log(`✅ Silent token refresh successful`);
+            return res.json({ 
+                success: true, 
+                sessionId: sessionId,
+                message: 'Token refreshed successfully' 
+            });
+        } else {
+            console.log(`❌ Silent token refresh failed`);
+            return res.status(401).json({ 
+                success: false, 
+                message: 'Token refresh failed' 
+            });
+        }
+    } catch (error) {
+        console.error('❌ Silent refresh error:', error.message);
+        return res.status(500).json({ 
+            success: false, 
+            message: 'Internal server error during refresh' 
+        });
+    }
+});
+
 // Get available devices
 app.get('/api/devices', async (req, res) => {
     const session = getUserSession(req);
