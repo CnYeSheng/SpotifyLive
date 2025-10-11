@@ -1588,6 +1588,18 @@
             this.sessionCheckInterval = null;
         }
     }
+    
+    // 401错误处理：直接触发自动登录
+    handle401Error() {
+        this.log('🔑 檢測到401認證過期，立即觸發自動登入');
+        
+        // 清理无效session
+        this.sessionId = null;
+        localStorage.removeItem('spotify_session_id');
+        
+        // 立即跳转到认证页面
+        window.location.href = '/api/auth';
+    }
 
     // 后台静默刷新session
     async tryBackgroundRefresh() {
@@ -1819,33 +1831,11 @@
             
             const response = await fetch(`${this.apiBase}/api/current-track`, { headers });
             
-            // 處理認證錯誤 - 更宽松的处理
+            // 處理認證錯誤 - 直接触发登录
             if (response.status === 401) {
-                this.consecutiveAuthErrors++;
-                this.log(`🔑 檢測到認證問題 (第 ${this.consecutiveAuthErrors} 次) - 当前歌曲API`);
-                
-                // 对于当前歌曲API，允许更多次失败才触发重新登录
-                if (this.consecutiveAuthErrors <= 12) { // 增加到12次
-                    this.log('🔄 认证失败但继续运行，避免频繁跳转登录...');
-                    // 不立即触发重新登录，让用户继续使用
-                    // 每5次失败尝试一次静默恢复，减少频率
-                    if (this.consecutiveAuthErrors % 5 === 0) {
-                        this.log('🔧 尝试静默session刷新...');
-                        this.tryBackgroundRefresh().then(success => {
-                            if (success) {
-                                this.log('✅ 静默刷新成功，恢复正常操作');
-                                // 重新尝试获取当前歌曲
-                                setTimeout(() => {
-                                    this.checkCurrentTrack();
-                                }, 500);
-                            }
-                        });
-                    }
-                } else {
-                    this.log('❌ 认证失败次数过多，需要重新登入');
-                    this.handleAuthError();
-                    return;
-                }
+                this.log('🔑 當前歌曲API遇到401，直接觸發自動登入');
+                this.handle401Error();
+                return;
             }
             
             // 處理其他 HTTP 錯誤狀態
@@ -4075,44 +4065,8 @@
             const response = await fetch('/api/player/queue', { headers });
             
             if (response.status === 401) {
-                this.log('🔑 Queue API遇到401，立即刷新Session');
-                const refreshSuccess = await this.tryBackgroundRefresh();
-                if (refreshSuccess) {
-                    this.log('✅ Session刷新成功，重新获取播放清单数据');
-                    // 刷新成功后直接重新请求，避免无限递归
-                    const retryResponse = await fetch('/api/player/queue', {
-                        headers: { 'X-Session-Id': this.sessionId }
-                    });
-                    
-                    if (retryResponse.ok) {
-                        const retryData = await retryResponse.json();
-                        if (retryData.queue && retryData.queue.length > 0) {
-                            this.displayPlaylist(retryData.queue);
-                        } else {
-                            this.playlistContent.innerHTML = '<div class="loading">播放清單為空</div>';
-                        }
-                        return;
-                    }
-                } else {
-                    this.log('❌ Session刷新失败，尝试重新认证');
-                    // 清理无效session并显示登录选项
-                    this.sessionId = null;
-                    localStorage.removeItem('spotify_session_id');
-                    this.playlistContent.innerHTML = `
-                        <div class="loading">
-                            <p>認證已過期</p>
-                            <button onclick="window.location.href='/api/auth'" style="
-                                background: #1db954;
-                                color: white;
-                                border: none;
-                                padding: 8px 16px;
-                                border-radius: 20px;
-                                cursor: pointer;
-                                margin-top: 10px;
-                            ">重新登入</button>
-                        </div>
-                    `;
-                }
+                this.log('🔑 Queue API遇到401，直接觸發自動登入');
+                this.handle401Error();
                 return;
             }
             
@@ -4216,16 +4170,8 @@
             const response = await fetch('/api/devices', { headers });
             
             if (response.status === 401) {
-                this.log('🔑 Devices API遇到401，立即刷新Session');
-                const refreshSuccess = await this.tryBackgroundRefresh();
-                if (refreshSuccess) {
-                    this.log('✅ Session刷新成功，重新加载设备列表');
-                    // 刷新成功，重新加载设备列表
-                    this.showDevicesModal();
-                } else {
-                    this.log('❌ Session刷新失败');
-                    this.devicesContent.innerHTML = '<div class="loading">認證失敗，請重新登入</div>';
-                }
+                this.log('🔑 Devices API遇到401，直接觸發自動登入');
+                this.handle401Error();
                 return;
             }
             
@@ -4306,26 +4252,8 @@
             });
             
             if (response.status === 401) {
-                console.log('🔑 Transfer 認證問題，嘗試修復...');
-                const authFixed = await this.handleAuthError();
-                if (authFixed) {
-                    // 重新嘗試請求
-                    const retryResponse = await fetch('/api/player/transfer', {
-                        method: 'PUT',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Session-Id': this.sessionId
-                        },
-                        body: JSON.stringify({ device_ids: [deviceId], play: true })
-                    });
-                    if (retryResponse.ok) {
-                        this.devicesModal.style.display = 'none';
-                        this.showSuccessMessage('✅ 已切換播放設備');
-                        setTimeout(() => this.checkCurrentTrackWithRateLimit(), 2000);
-                        return;
-                    }
-                }
-                this.showErrorMessage('設備切換認證失敗');
+                this.log('🔑 Transfer API遇到401，直接觸發自動登入');
+                this.handle401Error();
                 return;
             }
 
@@ -4375,30 +4303,8 @@
             }
 
             if (response.status === 401) {
-                this.log('🔑 播放認證問題，嘗試修復...');
-                const authFixed = await this.handleAuthError();
-                if (authFixed) {
-                    // 重新嘗試播放
-                    const retryResponse = await fetch(playUrl, {
-                        method: 'PUT',
-                        headers: { 
-                            'Content-Type': 'application/json',
-                            'X-Session-Id': this.sessionId 
-                        },
-                        body: JSON.stringify({ uris: [`spotify:track:${trackId}`] })
-                    });
-                    
-                    if (retryResponse.ok) {
-                        this.log('✅ 重試播放成功');
-                        this.playlistModal.style.display = 'none';
-                        this.showSuccessMessage('🎵 開始播放歌曲');
-                        setTimeout(() => this.checkCurrentTrackWithRateLimit(), 1000);
-                        return;
-                    } else {
-                        this.log(`❌ 重試播放失敗: ${retryResponse.status}`);
-                    }
-                }
-                this.showErrorMessage('播放認證失敗，請重新登入');
+                this.log('🔑 播放API遇到401，直接觸發自動登入');
+                this.handle401Error();
                 return;
             }
 
@@ -4535,16 +4441,8 @@
             });
             
             if (response.status === 401) {
-                this.log('🔑 喜欢状态检查遇到401，立即刷新Session');
-                // 立即尝试静默刷新后重试
-                const refreshSuccess = await this.tryBackgroundRefresh();
-                if (refreshSuccess) {
-                    this.log('✅ Session刷新成功，重新检查喜欢状态');
-                    // 刷新成功，立即重试检查
-                    setTimeout(() => this.checkIfTrackIsLiked(), 200);
-                } else {
-                    this.log('❌ Session刷新失败，跳过喜欢状态检查');
-                }
+                this.log('🔑 喜欢状态检查遇到401，直接觸發自動登入');
+                this.handle401Error();
                 return;
             }
             
