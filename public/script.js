@@ -4127,11 +4127,14 @@
             const response = await fetch('/api/devices', { headers });
             
             if (response.status === 401) {
-                console.log('🔑 Devices 認證問題，靜默處理...');
-                const authFixed = await this.handleAuthError();
-                if (authFixed) {
-                    this.devicesContent.innerHTML = '<div class="loading">認證已修復，請重新打開設備清單</div>';
+                this.log('🔑 Devices API遇到401，立即刷新Session');
+                const refreshSuccess = await this.tryBackgroundRefresh();
+                if (refreshSuccess) {
+                    this.log('✅ Session刷新成功，重新加载设备列表');
+                    // 刷新成功，重新加载设备列表
+                    this.showDevicesModal();
                 } else {
+                    this.log('❌ Session刷新失败');
                     this.devicesContent.innerHTML = '<div class="loading">認證失敗，請重新登入</div>';
                 }
                 return;
