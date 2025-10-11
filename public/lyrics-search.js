@@ -1,8 +1,24 @@
 // 歌詞搜尋功能擴展
 // 為 SpotifyLyricsPlayer 類添加歌詞搜尋和覆蓋功能
 
-// 擴展 SpotifyLyricsPlayer 類的原型，添加歌詞搜尋方法
-SpotifyLyricsPlayer.prototype.showLyricsSearchModal = function() {
+// 等待 SpotifyLyricsPlayer 類加载完成
+document.addEventListener('DOMContentLoaded', function() {
+    // 確保 SpotifyLyricsPlayer 已定義後再擴展
+    if (typeof SpotifyLyricsPlayer !== 'undefined') {
+        initLyricsSearchFeature();
+    } else {
+        // 如果還沒有定義，等待一下再試
+        setTimeout(() => {
+            if (typeof SpotifyLyricsPlayer !== 'undefined') {
+                initLyricsSearchFeature();
+            }
+        }, 1000);
+    }
+});
+
+function initLyricsSearchFeature() {
+    // 擴展 SpotifyLyricsPlayer 類的原型，添加歌詞搜尋方法
+    SpotifyLyricsPlayer.prototype.showLyricsSearchModal = function() {
     const modal = document.getElementById('lyrics-search-modal');
     const currentTrackInfo = document.getElementById('current-track-info');
     const currentTrackText = document.getElementById('current-track-text');

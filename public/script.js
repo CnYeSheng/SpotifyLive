@@ -1458,7 +1458,7 @@
         
         // 立即检查认证状态，不等待
         this.checkAuthStatusAndAutoLogin();
-            
+    }
             // 更全面的检查登录页面状态
             const authSectionVisible = this.authSection && 
                                       (this.authSection.style.display === 'block' || 
