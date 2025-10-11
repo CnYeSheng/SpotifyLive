@@ -207,15 +207,18 @@ class DynamicBackground {
         this.currentColors = colors;
         
         if (this.gradientLayer) {
-            // 将颜色转换为半透明叠加效果
+            // 将颜色转换为更明显的叠加效果
             const overlayColors = colors.map(color => {
-                return color.replace('rgb', 'rgba').replace(')', ', 0.2)');
+                return color.replace('rgb', 'rgba').replace(')', ', 0.5)');
             });
             
             this.gradientLayer.style.setProperty('--color-1', overlayColors[0]);
             this.gradientLayer.style.setProperty('--color-2', overlayColors[1]);
             this.gradientLayer.style.setProperty('--color-3', overlayColors[2]);
             this.gradientLayer.style.setProperty('--color-4', overlayColors[3]);
+            
+            // 添加调试日志
+            console.log('🎨 动态背景颜色已更新:', overlayColors);
         }
 
         // 更新粒子颜色
@@ -374,13 +377,22 @@ class DynamicBackground {
             }
         }, 8000); // 每8秒 - 更频繁
         
-        // 每30秒强制颜色变化以展示效果
+        // 每10秒强制颜色变化以展示效果 - 更频繁测试
         setInterval(() => {
             this.log('🎨 强制颜色变化展示动态效果');
             const colors = this.getRandomColors();
             this.updateColors(colors);
             this.triggerRipple(50, 50); // 中心波纹
-        }, 30000);
+            
+            // 临时调试：强制高对比度颜色
+            if (this.gradientLayer) {
+                this.gradientLayer.style.setProperty('--color-1', 'rgba(255, 0, 0, 0.6)');
+                this.gradientLayer.style.setProperty('--color-2', 'rgba(0, 255, 0, 0.6)');
+                this.gradientLayer.style.setProperty('--color-3', 'rgba(0, 0, 255, 0.6)');
+                this.gradientLayer.style.setProperty('--color-4', 'rgba(255, 255, 0, 0.6)');
+                console.log('🔴 临时调试：使用高对比度颜色');
+            }
+        }, 10000);
     }
 
     /**
