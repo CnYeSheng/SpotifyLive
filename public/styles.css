@@ -66,7 +66,8 @@ body {
     overflow-x: hidden;
 }
 
-/* 動態背景層 */
+/* 旧的动态背景已被新系统替换 - 注释掉避免冲突 */
+/*
 .dynamic-background {
     position: fixed;
     top: 0;
@@ -78,6 +79,7 @@ body {
     transition: all 1.2s cubic-bezier(0.4, 0, 0.2, 1);
     background: radial-gradient(circle at var(--bg-x, 50%) var(--bg-y, 50%), var(--album-color-1, #667eea) 0%, var(--album-color-2, #764ba2) 50%, transparent 100%);
 }
+*/
 
 /* Apple Music 風格認證區域 */
 .auth-section {
@@ -2753,8 +2755,8 @@ body {
         radial-gradient(circle at var(--pos-x3, 40%) var(--pos-y3, 40%), var(--color-3, #f093fb) 0%, transparent 60%),
         radial-gradient(circle at var(--pos-x4, 60%) var(--pos-y4, 60%), var(--color-4, #4facfe) 0%, transparent 60%);
     animation: gradientFloat 20s ease-in-out infinite;
-    opacity: 0.6;
-    filter: blur(80px);
+    opacity: 0.8; /* 增加透明度让效果更明显 */
+    filter: blur(60px); /* 减少模糊让颜色更鲜明 */
     transition: all 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
@@ -2764,12 +2766,12 @@ body {
     width: 100%;
     height: 100%;
     background-image: 
-        radial-gradient(circle at 10% 20%, rgba(255,255,255,0.08) 0%, transparent 2%),
-        radial-gradient(circle at 80% 80%, rgba(255,255,255,0.06) 0%, transparent 2%),
-        radial-gradient(circle at 40% 40%, rgba(255,255,255,0.05) 0%, transparent 1.5%),
-        radial-gradient(circle at 75% 15%, rgba(255,255,255,0.04) 0%, transparent 1.5%),
-        radial-gradient(circle at 15% 85%, rgba(255,255,255,0.03) 0%, transparent 1%),
-        radial-gradient(circle at 60% 70%, rgba(255,255,255,0.025) 0%, transparent 1%);
+        radial-gradient(circle at 10% 20%, rgba(255,255,255,0.12) 0%, transparent 3%),
+        radial-gradient(circle at 80% 80%, rgba(255,255,255,0.10) 0%, transparent 3%),
+        radial-gradient(circle at 40% 40%, rgba(255,255,255,0.08) 0%, transparent 2%),
+        radial-gradient(circle at 75% 15%, rgba(255,255,255,0.06) 0%, transparent 2%),
+        radial-gradient(circle at 15% 85%, rgba(255,255,255,0.05) 0%, transparent 1.5%),
+        radial-gradient(circle at 60% 70%, rgba(255,255,255,0.04) 0%, transparent 1.5%);
     animation: particleFloat 30s linear infinite;
 }
 
@@ -2807,12 +2809,12 @@ body {
 /* 高级光晕效果 */
 .bg-glow {
     position: absolute;
-    width: 400px;
-    height: 400px;
-    background: radial-gradient(circle, var(--glow-color, rgba(102, 126, 234, 0.3)) 0%, transparent 70%);
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, var(--glow-color, rgba(102, 126, 234, 0.4)) 0%, transparent 70%);
     border-radius: 50%;
-    filter: blur(60px);
-    animation: glowPulse 8s ease-in-out infinite alternate;
+    filter: blur(40px); /* 减少模糊增加可见性 */
+    animation: glowPulse 6s ease-in-out infinite alternate;
 }
 
 .bg-glow:nth-child(1) {
@@ -2937,9 +2939,9 @@ body {
 
 /* 特殊播放状态动画 */
 .bg-gradient-layer.playing {
-    animation-duration: 15s;
-    filter: blur(60px) brightness(1.3) saturate(1.2);
-    opacity: 0.8;
+    animation-duration: 12s; /* 更快的动画 */
+    filter: blur(40px) brightness(1.5) saturate(1.4); /* 更亮更鲜艳 */
+    opacity: 0.9; /* 更高透明度 */
 }
 
 .bg-particles.playing {
