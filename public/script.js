@@ -1459,8 +1459,6 @@
         // 立即检查认证状态，不等待
         this.checkAuthStatusAndAutoLogin();
     }
-
-    }
     
     // 显示session过期提示（不强制跳转）
     showSessionExpiredMessage() {
