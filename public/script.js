@@ -1906,8 +1906,8 @@
             if (error.message.includes('401') || error.message.includes('Unauthorized')) {
                 this.log('🔑 檢測到認證相關錯誤，记录但继续运行...');
                 this.consecutiveAuthErrors++;
-                // 只有连续更多次认证错误才触发重新登录
-                if (this.consecutiveAuthErrors >= 15) { // 大幅增加到15次，给静默刷新更多机会
+                // 静默处理更多次认证错误，给更多恢复机会  
+                if (this.consecutiveAuthErrors >= 20) { // 增加到20次，最大程度避免打断
                     this.log('❌ 连续认证失败次数过多，尝试最终的session恢复');
                     // 最后尝试一次后台刷新，失败则自动登录
                     this.tryBackgroundRefresh().then(success => {
