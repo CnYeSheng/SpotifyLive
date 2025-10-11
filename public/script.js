@@ -1493,16 +1493,9 @@
                             this.checkCurrentTrack();
                         }, 1000);
                     } else {
-                        this.log('❌ 后台session刷新失败，自动触发登录');
-                        // 静默刷新失败时自动跳转登录
-                        this.showAutoLoginMessage('Session已过期，正在自动重新登录...');
-                        
-                        // 延迟2秒后执行自动登录，给用户看到提示
-                        setTimeout(() => {
-                            const authUrl = '/api/auth';
-                            this.log(`🔗 自动重定向到登录页面: ${authUrl}`);
-                            window.location.href = authUrl;
-                        }, 2000);
+                        this.log('❌ 后台session刷新失败，但继续运行');
+                        // 静默失败，不打断用户体验
+                        this.consecutiveAuthErrors = 0; // 重置错误计数
                     }
                 });
             } else {
