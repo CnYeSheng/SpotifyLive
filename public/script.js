@@ -2406,6 +2406,11 @@
                 return;
             }
 
+            // 定期触发节拍效果（模拟音频分析）
+            if (this.currentTrack?.isPlaying && window.dynamicBG && Math.random() < 0.08) {
+                window.dynamicBG.triggerBeat();
+            }
+
             let elapsedTime;
             if (this.currentTrack.isPlaying) {
                 elapsedTime = (Date.now() - this.currentTrack.lastUpdated) + this.currentTrack.progress;
