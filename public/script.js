@@ -3814,6 +3814,16 @@
                 if (colors && colors.length > 0) {
                     this.updateDynamicBackground(colors);
                     console.log('✅ 成功提取專輯封面顏色:', colors);
+                    
+                    // 通知动态背景系统使用提取的颜色
+                    if (window.dynamicBG) {
+                        const colorStrings = colors.map(c => `rgb(${c.r}, ${c.g}, ${c.b})`);
+                        window.dynamicBG.updateColors(colorStrings);
+                        // 触发歌曲切换特效
+                        setTimeout(() => {
+                            window.dynamicBG.triggerRipple(50, 50);
+                        }, 200);
+                    }
                 } else {
                     this.useDefaultBackground();
                 }
