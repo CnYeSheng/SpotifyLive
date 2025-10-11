@@ -4094,16 +4094,29 @@
             return;
         }
 
-        // 调试：检查前端接收到的数据
-        console.log('🎵 前端收到的播放清单数据:', {
-            totalTracks: tracks.length,
-            firstTrack: tracks[0],
-            sampleData: tracks.slice(0, 2).map(track => ({
-                name: track.name,
-                artist: track.artist,
-                image: track.image,
-                hasImage: !!track.image,
-                imageLength: track.image?.length
+        // 🔍 详细调试：检查前端接收到的数据
+        console.log('🎵 前端收到的播放清单数据详细分析:', {
+            数据总数: tracks.length,
+            数据类型: typeof tracks,
+            是否为数组: Array.isArray(tracks),
+            第一首歌完整数据: tracks[0],
+            前3首歌数据验证: tracks.slice(0, 3).map((track, i) => ({
+                序号: i + 1,
+                歌曲名: track.name,
+                歌手信息: {
+                    原始值: track.artist,
+                    类型: typeof track.artist,
+                    不为空: !!track.artist,
+                    不是未知: track.artist !== '未知歌手'
+                },
+                图片信息: {
+                    原始值: track.image,
+                    类型: typeof track.image,
+                    不为空: !!track.image,
+                    长度: track.image?.length,
+                    预览: track.image ? track.image.substring(0, 50) + '...' : 'NO_IMAGE'
+                },
+                完整track对象: track
             }))
         });
         

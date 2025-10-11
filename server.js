@@ -936,6 +936,18 @@ app.get('/api/player/queue', async (req, res) => {
             return trackData;
         });
         
+        // 🚨 最终数据验证：确保发送给前端的数据完整
+        console.log('🎯 即将发送到前端的Queue数据验证:', {
+            队列长度: queue.length,
+            前3首详情: queue.slice(0, 3).map((track, i) => ({
+                序号: i + 1,
+                歌曲名: track.name,
+                歌手: track.artist,
+                有图片: !!track.image,
+                图片预览: track.image ? track.image.substring(0, 50) + '...' : 'NO_IMAGE'
+            }))
+        });
+        
         const nextTrack = queue[0] || null;
         
         res.json({ queue, nextTrack });
