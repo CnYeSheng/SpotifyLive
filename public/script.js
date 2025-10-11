@@ -4140,17 +4140,33 @@
             return;
         }
 
-        // 调试：检查tracks数据结构
-        console.log('🎵 播放清单数据:', tracks.slice(0, 2)); // 只显示前2首歌的数据
+        // 调试：检查前端接收到的数据
+        console.log('🎵 前端收到的播放清单数据:', {
+            totalTracks: tracks.length,
+            firstTrack: tracks[0],
+            sampleData: tracks.slice(0, 2).map(track => ({
+                name: track.name,
+                artist: track.artist,
+                image: track.image,
+                hasImage: !!track.image,
+                imageLength: track.image?.length
+            }))
+        });
         
         const playlistHTML = tracks.map((track, index) => {
-            // 调试：检查每首歌的数据
+            // 更详细的数据检查
             if (index === 0) {
-                console.log('🎯 第一首歌数据详情:', {
-                    name: track.name,
-                    artist: track.artist,
-                    image: track.image,
-                    id: track.id
+                console.log('🔍 详细检查第一首歌:', {
+                    完整数据: track,
+                    歌曲名: track.name,
+                    歌手: track.artist, 
+                    封面链接: track.image,
+                    封面是否存在: !!track.image,
+                    数据类型检查: {
+                        name: typeof track.name,
+                        artist: typeof track.artist,
+                        image: typeof track.image
+                    }
                 });
             }
             

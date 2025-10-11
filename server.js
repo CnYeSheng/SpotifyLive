@@ -903,7 +903,18 @@ app.get('/api/player/queue', async (req, res) => {
             return res.json({ queue: [], nextTrack: null });
         }
         
-        const queue = response.data.queue.slice(0, 20).map(track => {
+        const rawQueue = response.data.queue.slice(0, 20);
+        console.log(`🎵 原始Queue数据 (${rawQueue.length}首):`, rawQueue.slice(0, 2).map(track => ({
+            id: track.id,
+            name: track.name, 
+            hasArtists: !!track.artists,
+            artistsLength: track.artists?.length,
+            hasAlbum: !!track.album,
+            hasImages: !!track.album?.images?.length,
+            firstImage: track.album?.images?.[0]?.url
+        })));
+        
+        const queue = rawQueue.map((track, index) => {
             const trackData = {
                 id: track.id,
                 name: track.name,
@@ -912,13 +923,13 @@ app.get('/api/player/queue', async (req, res) => {
                 duration: track.duration_ms
             };
             
-            // 调试：记录前几首歌的数据
-            if (queue.length < 3) {
-                console.log(`🎵 Queue track ${queue.length + 1}:`, {
+            // 调试：记录前几首歌的处理结果
+            if (index < 3) {
+                console.log(`🎯 处理后的Track ${index + 1}:`, {
                     name: trackData.name,
                     artist: trackData.artist,
                     hasImage: !!trackData.image,
-                    imageUrl: trackData.image?.substring(0, 50) + '...'
+                    imageUrl: trackData.image?.substring(0, 60) || 'NO_IMAGE'
                 });
             }
             
