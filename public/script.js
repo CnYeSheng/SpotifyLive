@@ -2332,6 +2332,13 @@
         if (this.currentTrack.image && this.currentTrack.image !== this.lastExtractedImageUrl) {
             this.lastExtractedImageUrl = this.currentTrack.image;
             this.extractColorsAndUpdateBackground(this.currentTrack.image);
+            
+            // 同时通知动态背景系统使用相同的颜色
+            if (window.dynamicBG) {
+                setTimeout(() => {
+                    window.dynamicBG.onSongChange(this.currentTrack.image);
+                }, 800);
+            }
         }
         
         // 更新設備信息
