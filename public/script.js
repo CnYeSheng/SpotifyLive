@@ -1888,10 +1888,9 @@
         } catch (error) {
             this.log(`❌ 獲取當前播放失敗: ${error.message}`);
             this.updateStatus('spotify', false);
-            // 如果是認證錯誤，记录但不立即触发登录
+            // 如果是認證錯誤，立即尝试刷新Session
             if (error.message.includes('401') || error.message.includes('Unauthorized')) {
-                this.log('🔑 檢測到認證相關錯誤，记录但继续运行...');
-                this.consecutiveAuthErrors++;
+                this.log('🔑 檢測到401錯誤，立即嘗試刷新Session...');
                 // 静默处理更多次认证错误，给更多恢复机会  
                 if (this.consecutiveAuthErrors >= 20) { // 增加到20次，最大程度避免打断
                     this.log('❌ 连续认证失败次数过多，尝试最终的session恢复');
@@ -4054,11 +4053,14 @@
             const response = await fetch('/api/player/queue', { headers });
             
             if (response.status === 401) {
-                console.log('🔑 Queue 認證問題，靜默處理...');
-                const authFixed = await this.handleAuthError();
-                if (authFixed) {
-                    this.playlistContent.innerHTML = '<div class="loading">認證已修復，請重新打開播放清單</div>';
+                this.log('🔑 Queue API遇到401，立即刷新Session');
+                const refreshSuccess = await this.tryBackgroundRefresh();
+                if (refreshSuccess) {
+                    this.log('✅ Session刷新成功，重新加载播放清单');
+                    // 刷新成功，重新加载播放清单
+                    this.showPlaylistModal();
                 } else {
+                    this.log('❌ Session刷新失败');
                     this.playlistContent.innerHTML = '<div class="loading">認證失敗，請重新登入</div>';
                 }
                 return;
@@ -4441,12 +4443,15 @@
             });
             
             if (response.status === 401) {
-                this.log('🔑 喜欢状态检查认证失败，尝试静默刷新');
-                // 尝试静默刷新后重试
+                this.log('🔑 喜欢状态检查遇到401，立即刷新Session');
+                // 立即尝试静默刷新后重试
                 const refreshSuccess = await this.tryBackgroundRefresh();
                 if (refreshSuccess) {
-                    // 刷新成功，重试检查
-                    setTimeout(() => this.checkIfTrackIsLiked(), 500);
+                    this.log('✅ Session刷新成功，重新检查喜欢状态');
+                    // 刷新成功，立即重试检查
+                    setTimeout(() => this.checkIfTrackIsLiked(), 200);
+                } else {
+                    this.log('❌ Session刷新失败，跳过喜欢状态检查');
                 }
                 return;
             }
