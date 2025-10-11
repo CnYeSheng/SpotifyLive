@@ -4072,6 +4072,17 @@
             
             if (response.ok) {
                 const data = await response.json();
+                
+                // 🚨 立即調試：檢查API回應數據
+                console.log('🔥 API回應原始數據:', data);
+                console.log('🔥 Queue數據檢查:', {
+                    hasQueue: !!data.queue,
+                    queueLength: data.queue?.length,
+                    queueType: typeof data.queue,
+                    isArray: Array.isArray(data.queue),
+                    firstTrack: data.queue?.[0]
+                });
+                
                 if (data.queue && data.queue.length > 0) {
                     this.displayPlaylist(data.queue);
                 } else {
