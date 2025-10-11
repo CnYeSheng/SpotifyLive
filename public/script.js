@@ -1460,6 +1460,68 @@
         this.checkAuthStatusAndAutoLogin();
     }
     
+    async checkAuthStatusAndAutoLogin() {
+        try {
+            // 首先尝试从localStorage恢复session
+            if (!this.sessionId) {
+                const storedSessionId = localStorage.getItem('spotify_session_id');
+                if (storedSessionId) {
+                    this.sessionId = storedSessionId;
+                    this.log(`🔄 从localStorage恢复sessionId: ${this.sessionId.substring(0, 8)}...`);
+                }
+            }
+            
+            // 如果有sessionId，验证其有效性
+            if (this.sessionId) {
+                this.log('🔍 验证现有session状态...');
+                const isValid = await this.tryBackgroundRefresh();
+                if (isValid) {
+                    this.log('✅ Session有效，启动播放器');
+                    this.showPlayerSection();
+                    this.startTracking();
+                    this.startTokenRefreshTimer();
+                    return;
+                }
+            }
+            
+            // 检查是否在登录页面并需要自动触发登录
+            const authSectionVisible = this.authSection && 
+                                      getComputedStyle(this.authSection).display !== 'none';
+                              
+            const playerSectionHidden = this.playerSection && 
+                                      getComputedStyle(this.playerSection).display === 'none';
+            
+            const loginButton = document.querySelector('#login-btn, .login-btn, [href*="auth"]');
+            const hasLoginButton = loginButton && getComputedStyle(loginButton).display !== 'none';
+            
+            this.log(`🔍 页面状态 - 认证区域可见: ${authSectionVisible}, 播放器隐藏: ${playerSectionHidden}, 有登录按钮: ${hasLoginButton}`);
+            
+            // 如果检测到在登录页面，立即触发登录
+            if (authSectionVisible || playerSectionHidden || hasLoginButton) {
+                this.log('🚀 检测到登录页面，立即触发自动登录');
+                
+                // 延迟1秒后自动点击登录按钮
+                setTimeout(() => {
+                    if (loginButton && getComputedStyle(loginButton).display !== 'none') {
+                        this.log('🖱️ 自动点击登录按钮');
+                        loginButton.click();
+                    } else {
+                        // 直接跳转到认证页面
+                        this.log('🔗 直接跳转到认证页面');
+                        window.location.href = '/api/auth';
+                    }
+                }, 1000);
+            } else {
+                this.log('ℹ️ 播放器已运行或状态未知，尝试checkAuthStatus');
+                this.checkAuthStatus();
+            }
+        } catch (error) {
+            this.log(`❌ 自动登录检查失败: ${error.message}`);
+            // 失败时显示登录页面
+            this.showAuthSection();
+        }
+    }
+    
     // 显示session过期提示（不强制跳转）
     showSessionExpiredMessage() {
         const messageDiv = document.createElement('div');
