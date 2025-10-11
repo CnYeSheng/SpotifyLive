@@ -4078,12 +4078,40 @@
                 this.log('🔑 Queue API遇到401，立即刷新Session');
                 const refreshSuccess = await this.tryBackgroundRefresh();
                 if (refreshSuccess) {
-                    this.log('✅ Session刷新成功，重新加载播放清单');
-                    // 刷新成功，重新加载播放清单
-                    this.showPlaylistModal();
+                    this.log('✅ Session刷新成功，重新获取播放清单数据');
+                    // 刷新成功后直接重新请求，避免无限递归
+                    const retryResponse = await fetch('/api/player/queue', {
+                        headers: { 'X-Session-Id': this.sessionId }
+                    });
+                    
+                    if (retryResponse.ok) {
+                        const retryData = await retryResponse.json();
+                        if (retryData.queue && retryData.queue.length > 0) {
+                            this.displayPlaylist(retryData.queue);
+                        } else {
+                            this.playlistContent.innerHTML = '<div class="loading">播放清單為空</div>';
+                        }
+                        return;
+                    }
                 } else {
-                    this.log('❌ Session刷新失败');
-                    this.playlistContent.innerHTML = '<div class="loading">認證失敗，請重新登入</div>';
+                    this.log('❌ Session刷新失败，尝试重新认证');
+                    // 清理无效session并显示登录选项
+                    this.sessionId = null;
+                    localStorage.removeItem('spotify_session_id');
+                    this.playlistContent.innerHTML = `
+                        <div class="loading">
+                            <p>認證已過期</p>
+                            <button onclick="window.location.href='/api/auth'" style="
+                                background: #1db954;
+                                color: white;
+                                border: none;
+                                padding: 8px 16px;
+                                border-radius: 20px;
+                                cursor: pointer;
+                                margin-top: 10px;
+                            ">重新登入</button>
+                        </div>
+                    `;
                 }
                 return;
             }
