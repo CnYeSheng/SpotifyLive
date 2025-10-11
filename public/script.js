@@ -1645,6 +1645,16 @@
             }
             
             this.log('❌ 所有后台刷新方法都失败');
+            
+            // 所有方法失败，触发自动登录
+            this.log('🚨 触发自动登录作为最后手段...');
+            setTimeout(() => {
+                this.showAutoLoginMessage('Session已过期，正在自动重新登录...');
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 2000);
+            }, 1000);
+            
             return false;
         } catch (error) {
             this.log(`❌ 后台刷新异常: ${error.message}`);
