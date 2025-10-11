@@ -1820,8 +1820,8 @@
                 if (this.consecutiveAuthErrors <= 12) { // 增加到12次
                     this.log('🔄 认证失败但继续运行，避免频繁跳转登录...');
                     // 不立即触发重新登录，让用户继续使用
-                    // 每3次失败尝试一次静默恢复
-                    if (this.consecutiveAuthErrors % 3 === 0) {
+                    // 每5次失败尝试一次静默恢复，减少频率
+                    if (this.consecutiveAuthErrors % 5 === 0) {
                         this.log('🔧 尝试静默session刷新...');
                         this.tryBackgroundRefresh().then(success => {
                             if (success) {
