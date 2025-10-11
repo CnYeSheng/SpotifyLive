@@ -4606,6 +4606,11 @@ SpotifyLyricsPlayer.prototype.updatePlayButtonAnimation = function(isPlaying) {
 SpotifyLyricsPlayer.prototype.updateProgressPulse = function(isPlaying) {
     const progressFill = document.querySelector('.progress-fill');
     if (progressFill) progressFill.classList.toggle('progress-pulse', isPlaying);
+    
+    // 通知动态背景系统播放状态变化
+    if (window.dynamicBG) {
+        window.dynamicBG.onPlayStateChange(isPlaying);
+    }
 };
 
 SpotifyLyricsPlayer.prototype.addAlbumBreathingEffect = function(enabled) {
