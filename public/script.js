@@ -1459,45 +1459,7 @@
         // 立即检查认证状态，不等待
         this.checkAuthStatusAndAutoLogin();
     }
-            // 更全面的检查登录页面状态
-            const authSectionVisible = this.authSection && 
-                                      (this.authSection.style.display === 'block' || 
-                                       this.authSection.style.display === '' ||
-                                       !this.authSection.style.display ||
-                                       getComputedStyle(this.authSection).display !== 'none');
-                              
-            const playerSectionHidden = this.playerSection && 
-                                      (this.playerSection.style.display === 'none' ||
-                                       getComputedStyle(this.playerSection).display === 'none');
-            
-            // 检查是否有登录按钮存在
-            const loginButton = document.querySelector('#login-btn, .login-btn, [href*="auth"]');
-            const hasLoginButton = loginButton && getComputedStyle(loginButton).display !== 'none';
-            
-            this.log(`🔍 页面状态检查 - 认证区域可见: ${authSectionVisible}, 播放器隐藏: ${playerSectionHidden}, 有登录按钮: ${hasLoginButton}`);
-            
-            // 如果检测到需要认证，尝试后台静默刷新
-            if (authSectionVisible || playerSectionHidden || hasLoginButton) {
-                this.log('🔍 检测到需要认证，尝试后台静默刷新session...');
-                
-                // 尝试后台刷新session
-                this.tryBackgroundRefresh().then(success => {
-                    if (success) {
-                        this.log('✅ 后台session刷新成功，继续使用');
-                        // 刷新成功后重新检查当前状态
-                        setTimeout(() => {
-                            this.checkCurrentTrack();
-                        }, 1000);
-                    } else {
-                        this.log('❌ 后台session刷新失败，但继续运行');
-                        // 静默失败，不打断用户体验
-                        this.consecutiveAuthErrors = 0; // 重置错误计数
-                    }
-                });
-            } else {
-                this.log('✅ 页面状态正常，无需认证处理');
-            }
-        }, this.autoLoginDelay);
+
     }
     
     // 显示session过期提示（不强制跳转）

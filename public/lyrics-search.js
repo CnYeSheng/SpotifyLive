@@ -247,4 +247,5 @@ SpotifyLyricsPlayer.prototype.showErrorMessage = function(message) {
     }, 4000);
 };
 
-console.log('✅ 歌詞搜尋功能已加載');
+    console.log('✅ 歌詞搜尋功能已加載');
+}

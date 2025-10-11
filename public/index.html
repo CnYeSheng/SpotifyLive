@@ -347,24 +347,6 @@
     <script src="lyrics-search.js"></script>
     <!-- 动态背景脚本已移除 -->
     
-    <script>
-        // 初始化动态背景系统
-        document.addEventListener('DOMContentLoaded', () => {
-            // 等待所有脚本加载完成
-            setTimeout(() => {
-                if (window.DynamicBackground) {
-                    window.dynamicBG = new window.DynamicBackground();
-                    console.log('🎨 Dynamic Background System loaded');
-                } else {
-                    console.warn('DynamicBackground class not found');
-                }
-                
-                // 如果播放器也准备好了，通知它
-                if (window.initDynamicBackgroundOnReady) {
-                    window.initDynamicBackgroundOnReady();
-                }
-            }, 100);
-        });
-    </script>
+    <!-- 动态背景相关脚本已完全移除 -->
 </body>
 </html>
