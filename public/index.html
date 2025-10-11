@@ -9,6 +9,18 @@
     <link rel="preload" href="font/SpotifyMix-Extrabold.woff2" as="font" type="font/woff2" crossorigin>
 </head>
 <body>
+    <!-- 🎵 Dynamic Background System -->
+    <div class="dynamic-background">
+        <div class="bg-gradient-layer"></div>
+        <div class="bg-particles"></div>
+        <div class="bg-shapes"></div>
+        <div class="bg-ripple"></div>
+        <div class="bg-glow"></div>
+        <div class="bg-glow"></div>
+        <div class="bg-glow"></div>
+        <div class="bg-grid"></div>
+    </div>
+
     <div class="container">
         <!-- 認證區域 -->
         <div id="auth-section" class="auth-section">
@@ -343,5 +355,26 @@
     <script src="opencc.js"></script>
     <script src="script.js"></script>
     <script src="lyrics-search.js"></script>
+    <script src="dynamic-background.js"></script>
+    
+    <script>
+        // 初始化动态背景系统
+        document.addEventListener('DOMContentLoaded', () => {
+            // 等待所有脚本加载完成
+            setTimeout(() => {
+                if (window.DynamicBackground) {
+                    window.dynamicBG = new window.DynamicBackground();
+                    console.log('🎨 Dynamic Background System loaded');
+                } else {
+                    console.warn('DynamicBackground class not found');
+                }
+                
+                // 如果播放器也准备好了，通知它
+                if (window.initDynamicBackgroundOnReady) {
+                    window.initDynamicBackgroundOnReady();
+                }
+            }, 100);
+        });
+    </script>
 </body>
 </html>

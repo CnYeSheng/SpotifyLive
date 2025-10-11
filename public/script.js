@@ -128,6 +128,14 @@
         // 設置全局播放器引用供手機控制使用
         window.player = this;
         
+        // 设置全局动态背景引用
+        window.initDynamicBackgroundOnReady = () => {
+            if (window.DynamicBackground && !window.dynamicBG) {
+                window.dynamicBG = new window.DynamicBackground();
+                this.log('🎨 Dynamic Background System initialized');
+            }
+        };
+        
         // 頁面載入完成後安排自動登入 - 增加延迟确保DOM就绪
         setTimeout(() => {
             this.scheduleAutoLogin();

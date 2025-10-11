@@ -1,0 +1,374 @@
+/**
+ * 🎵 Dynamic Background System - Apple Music Style
+ * 动态背景系统，根据音乐和专辑封面创建动态效果
+ */
+
+class DynamicBackground {
+    constructor() {
+        this.backgroundContainer = document.querySelector('.dynamic-background');
+        this.gradientLayer = document.querySelector('.bg-gradient-layer');
+        this.particleLayer = document.querySelector('.bg-particles');
+        this.shapesLayer = document.querySelector('.bg-shapes');
+        this.rippleLayer = document.querySelector('.bg-ripple');
+        this.glowElements = document.querySelectorAll('.bg-glow');
+        this.gridLayer = document.querySelector('.bg-grid');
+        
+        this.isPlaying = false;
+        this.currentColors = ['#667eea', '#764ba2', '#f093fb', '#4facfe'];
+        this.rippleTimer = null;
+        this.beatTimer = null;
+        
+        this.init();
+    }
+
+    init() {
+        this.log('🎨 Dynamic Background System initialized');
+        this.setDefaultColors();
+        this.startIdleAnimations();
+    }
+
+    log(message) {
+        console.log(`[Dynamic Background] ${message}`);
+    }
+
+    /**
+     * 从专辑封面提取颜色
+     */
+    async extractColorsFromImage(imageUrl) {
+        try {
+            this.log(`🎨 正在提取专辑封面颜色: ${imageUrl}`);
+            
+            // 创建临时canvas来分析图片
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+            
+            // 设置跨域
+            img.crossOrigin = 'anonymous';
+            
+            return new Promise((resolve) => {
+                img.onload = () => {
+                    canvas.width = 100;
+                    canvas.height = 100;
+                    ctx.drawImage(img, 0, 0, 100, 100);
+                    
+                    const colors = this.analyzeImageColors(ctx, canvas);
+                    this.log(`✅ 成功提取颜色: ${colors.join(', ')}`);
+                    resolve(colors);
+                };
+                
+                img.onerror = () => {
+                    this.log('❌ 专辑封面加载失败，使用默认颜色');
+                    resolve(this.getRandomColors());
+                };
+                
+                img.src = imageUrl;
+            });
+        } catch (error) {
+            this.log(`❌ 颜色提取错误: ${error.message}`);
+            return this.getRandomColors();
+        }
+    }
+
+    /**
+     * 分析图片颜色
+     */
+    analyzeImageColors(ctx, canvas) {
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        const colorMap = new Map();
+        
+        // 采样像素点
+        for (let i = 0; i < data.length; i += 16) { // 每4个像素采样一次
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            const a = data[i + 3];
+            
+            // 跳过透明或太暗的像素
+            if (a < 128 || (r + g + b) < 100) continue;
+            
+            const color = `${Math.floor(r/32)*32},${Math.floor(g/32)*32},${Math.floor(b/32)*32}`;
+            colorMap.set(color, (colorMap.get(color) || 0) + 1);
+        }
+        
+        // 获取最常见的颜色
+        const sortedColors = Array.from(colorMap.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 8)
+            .map(([color]) => {
+                const [r, g, b] = color.split(',').map(Number);
+                return this.enhanceColor(r, g, b);
+            });
+        
+        // 确保至少有4种颜色
+        while (sortedColors.length < 4) {
+            sortedColors.push(this.getRandomColor());
+        }
+        
+        return sortedColors.slice(0, 4);
+    }
+
+    /**
+     * 增强颜色饱和度和亮度
+     */
+    enhanceColor(r, g, b) {
+        // 转换为HSL进行调整
+        const [h, s, l] = this.rgbToHsl(r, g, b);
+        
+        // 增强饱和度和亮度
+        const newS = Math.min(s + 0.2, 1);
+        const newL = Math.max(0.3, Math.min(l + 0.1, 0.7));
+        
+        const [newR, newG, newB] = this.hslToRgb(h, newS, newL);
+        return `rgb(${newR}, ${newG}, ${newB})`;
+    }
+
+    /**
+     * RGB转HSL
+     */
+    rgbToHsl(r, g, b) {
+        r /= 255; g /= 255; b /= 255;
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        let h, s, l = (max + min) / 2;
+
+        if (max === min) {
+            h = s = 0;
+        } else {
+            const d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            switch (max) {
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                case g: h = (b - r) / d + 2; break;
+                case b: h = (r - g) / d + 4; break;
+            }
+            h /= 6;
+        }
+        return [h, s, l];
+    }
+
+    /**
+     * HSL转RGB
+     */
+    hslToRgb(h, s, l) {
+        const hue2rgb = (p, q, t) => {
+            if (t < 0) t += 1;
+            if (t > 1) t -= 1;
+            if (t < 1/6) return p + (q - p) * 6 * t;
+            if (t < 1/2) return q;
+            if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+            return p;
+        };
+
+        let r, g, b;
+        if (s === 0) {
+            r = g = b = l;
+        } else {
+            const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+            const p = 2 * l - q;
+            r = hue2rgb(p, q, h + 1/3);
+            g = hue2rgb(p, q, h);
+            b = hue2rgb(p, q, h - 1/3);
+        }
+        return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+    }
+
+    /**
+     * 获取随机颜色组合
+     */
+    getRandomColors() {
+        const colorSets = [
+            ['#667eea', '#764ba2', '#f093fb', '#4facfe'],
+            ['#ff9a9e', '#fecfef', '#fecfef', '#ff6b6b'],
+            ['#a8edea', '#fed6e3', '#ffecd2', '#fcb69f'],
+            ['#667eea', '#764ba2', '#ee9ca7', '#ffdde1'],
+            ['#89f7fe', '#66a6ff', '#667eea', '#764ba2'],
+            ['#fdbb2d', '#22c1c3', '#fdbb2d', '#ee9ca7']
+        ];
+        return colorSets[Math.floor(Math.random() * colorSets.length)];
+    }
+
+    getRandomColor() {
+        const colors = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#ff9a9e', '#fecfef', '#a8edea', '#fed6e3'];
+        return colors[Math.floor(Math.random() * colors.length)];
+    }
+
+    /**
+     * 设置默认颜色
+     */
+    setDefaultColors() {
+        this.updateColors(this.currentColors);
+    }
+
+    /**
+     * 更新背景颜色
+     */
+    updateColors(colors) {
+        this.currentColors = colors;
+        
+        if (this.gradientLayer) {
+            this.gradientLayer.style.setProperty('--color-1', colors[0]);
+            this.gradientLayer.style.setProperty('--color-2', colors[1]);
+            this.gradientLayer.style.setProperty('--color-3', colors[2]);
+            this.gradientLayer.style.setProperty('--color-4', colors[3]);
+        }
+
+        // 更新光晕颜色
+        this.glowElements.forEach((glow, index) => {
+            if (colors[index]) {
+                glow.style.setProperty('--glow-color', colors[index].replace('rgb', 'rgba').replace(')', ', 0.3)'));
+            }
+        });
+
+        this.log(`🎨 颜色已更新: ${colors.join(', ')}`);
+    }
+
+    /**
+     * 当歌曲变化时更新背景
+     */
+    async onSongChange(albumArtUrl) {
+        this.log('🎵 歌曲变化，更新背景');
+        
+        // 添加歌曲切换特效
+        this.gradientLayer?.classList.add('song-change');
+        setTimeout(() => {
+            this.gradientLayer?.classList.remove('song-change');
+        }, 2000);
+
+        // 如果有专辑封面，提取颜色
+        if (albumArtUrl) {
+            const colors = await this.extractColorsFromImage(albumArtUrl);
+            this.updateColors(colors);
+        } else {
+            // 使用随机颜色
+            const colors = this.getRandomColors();
+            this.updateColors(colors);
+        }
+
+        // 触发波纹效果
+        this.triggerRipple();
+    }
+
+    /**
+     * 播放状态改变
+     */
+    onPlayStateChange(isPlaying) {
+        this.isPlaying = isPlaying;
+        this.log(`🎵 播放状态: ${isPlaying ? '播放' : '暂停'}`);
+
+        // 添加或移除播放状态类
+        const playingClass = 'playing';
+        if (isPlaying) {
+            this.gradientLayer?.classList.add(playingClass);
+            this.particleLayer?.classList.add(playingClass);
+            this.glowElements.forEach(el => el.classList.add(playingClass));
+            this.startBeatSync();
+        } else {
+            this.gradientLayer?.classList.remove(playingClass);
+            this.particleLayer?.classList.remove(playingClass);
+            this.glowElements.forEach(el => el.classList.remove(playingClass));
+            this.stopBeatSync();
+        }
+    }
+
+    /**
+     * 触发波纹效果
+     */
+    triggerRipple(x = 50, y = 50) {
+        if (!this.rippleLayer) return;
+
+        // 设置波纹位置
+        this.rippleLayer.style.setProperty('--ripple-x', `${x}%`);
+        this.rippleLayer.style.setProperty('--ripple-y', `${y}%`);
+        
+        // 触发动画
+        this.rippleLayer.classList.remove('active');
+        setTimeout(() => {
+            this.rippleLayer.classList.add('active');
+        }, 10);
+
+        // 清除定时器
+        if (this.rippleTimer) {
+            clearTimeout(this.rippleTimer);
+        }
+        
+        this.rippleTimer = setTimeout(() => {
+            this.rippleLayer?.classList.remove('active');
+        }, 3000);
+    }
+
+    /**
+     * 开始节拍同步动画
+     */
+    startBeatSync() {
+        this.stopBeatSync();
+        
+        // 模拟音乐节拍 (约120 BPM)
+        this.beatTimer = setInterval(() => {
+            if (this.isPlaying) {
+                this.gradientLayer?.classList.add('bg-beat-sync');
+                setTimeout(() => {
+                    this.gradientLayer?.classList.remove('bg-beat-sync');
+                }, 800);
+                
+                // 随机位置触发波纹
+                const x = 20 + Math.random() * 60;
+                const y = 20 + Math.random() * 60;
+                this.triggerRipple(x, y);
+            }
+        }, 2000); // 每2秒一次节拍效果
+    }
+
+    /**
+     * 停止节拍同步
+     */
+    stopBeatSync() {
+        if (this.beatTimer) {
+            clearInterval(this.beatTimer);
+            this.beatTimer = null;
+        }
+    }
+
+    /**
+     * 开始空闲动画
+     */
+    startIdleAnimations() {
+        // 定期随机触发波纹（空闲时）
+        setInterval(() => {
+            if (!this.isPlaying && Math.random() < 0.3) {
+                const x = 20 + Math.random() * 60;
+                const y = 20 + Math.random() * 60;
+                this.triggerRipple(x, y);
+            }
+        }, 10000);
+    }
+
+    /**
+     * 手动触发节拍效果（可以由音频分析触发）
+     */
+    triggerBeat() {
+        this.gradientLayer?.classList.add('bg-beat-sync');
+        setTimeout(() => {
+            this.gradientLayer?.classList.remove('bg-beat-sync');
+        }, 800);
+        
+        // 触发波纹
+        const x = 30 + Math.random() * 40;
+        const y = 30 + Math.random() * 40;
+        this.triggerRipple(x, y);
+    }
+
+    /**
+     * 销毁背景系统
+     */
+    destroy() {
+        this.stopBeatSync();
+        if (this.rippleTimer) {
+            clearTimeout(this.rippleTimer);
+        }
+        this.log('🎨 Dynamic Background System destroyed');
+    }
+}
+
+// 导出给window使用
+window.DynamicBackground = DynamicBackground;
