@@ -4541,6 +4541,11 @@ async function spotifyRequest(url, options = {}) {
 
 // 🎵 动画系统扩展
 SpotifyLyricsPlayer.prototype.triggerSongChangeAnimation = function() {
+    // 通知动态背景系统歌曲变化
+    if (window.dynamicBG && this.currentTrack?.item?.album?.images?.[0]?.url) {
+        window.dynamicBG.onSongChange(this.currentTrack.item.album.images[0].url);
+    }
+    
     this.log('🎭 触发歌曲切换动画');
     
     // 播放器容器动画
