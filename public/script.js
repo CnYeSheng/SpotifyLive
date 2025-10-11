@@ -4172,9 +4172,15 @@
             
             return `
             <div class="playlist-item ${track.id === this.currentTrack?.id ? 'current' : ''}" data-track-id="${track.id}">
-                <img src="${track.image || '/default-album.png'}" alt="${track.name}" 
-                     style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px; margin-right: 12px;"
-                     onerror="this.src='/default-album.png'; this.style.opacity='0.5';">
+                ${track.image ? 
+                    `<img src="${track.image}" alt="${track.name}" 
+                          style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px; margin-right: 12px;"
+                          onerror="this.style.display='none'; this.nextElementSibling.style.marginLeft='0';">` 
+                    : 
+                    `<div style="width: 48px; height: 48px; background: linear-gradient(135deg, #333, #555); 
+                               border-radius: 4px; margin-right: 12px; display: flex; align-items: center; 
+                               justify-content: center; color: #999; font-size: 20px;">🎵</div>`
+                }
                 <div class="playlist-item-info">
                     <div class="playlist-item-title">${this.escapeHtml(track.name || '未知歌曲')}</div>
                     <div class="playlist-item-artist">${this.escapeHtml(track.artist || '未知歌手')}</div>
