@@ -64,7 +64,6 @@ body {
     justify-content: center;
     position: relative;
     overflow-x: hidden;
-    z-index: 2; /* 确保内容在动态背景之上 */
 }
 
 /* 旧的动态背景已被新系统替换 - 注释掉避免冲突 */

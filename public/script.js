@@ -129,12 +129,7 @@
         window.player = this;
         
         // 设置全局动态背景引用
-        window.initDynamicBackgroundOnReady = () => {
-            if (window.DynamicBackground && !window.dynamicBG) {
-                window.dynamicBG = new window.DynamicBackground();
-                this.log('🎨 Dynamic Background System initialized');
-            }
-        };
+        // 动态背景系统已移除
         
         // 頁面載入完成後安排自動登入 - 增加延迟确保DOM就绪
         setTimeout(() => {
@@ -2332,13 +2327,7 @@
         if (this.currentTrack.image && this.currentTrack.image !== this.lastExtractedImageUrl) {
             this.lastExtractedImageUrl = this.currentTrack.image;
             this.extractColorsAndUpdateBackground(this.currentTrack.image);
-            
-            // 同时通知动态背景系统使用相同的颜色
-            if (window.dynamicBG) {
-                setTimeout(() => {
-                    window.dynamicBG.onSongChange(this.currentTrack.image);
-                }, 800);
-            }
+
         }
         
         // 更新設備信息
@@ -2413,10 +2402,7 @@
                 return;
             }
 
-            // 定期触发节拍效果（模拟音频分析）
-            if (this.currentTrack?.isPlaying && window.dynamicBG && Math.random() < 0.08) {
-                window.dynamicBG.triggerBeat();
-            }
+            // 节拍效果已移除
 
             let elapsedTime;
             if (this.currentTrack.isPlaying) {
@@ -3815,15 +3801,7 @@
                     this.updateDynamicBackground(colors);
                     console.log('✅ 成功提取專輯封面顏色:', colors);
                     
-                    // 通知动态背景系统使用提取的颜色
-                    if (window.dynamicBG) {
-                        const colorStrings = colors.map(c => `rgb(${c.r}, ${c.g}, ${c.b})`);
-                        window.dynamicBG.updateColors(colorStrings);
-                        // 触发歌曲切换特效
-                        setTimeout(() => {
-                            window.dynamicBG.triggerRipple(50, 50);
-                        }, 200);
-                    }
+        
                 } else {
                     this.useDefaultBackground();
                 }
@@ -3936,7 +3914,7 @@
                     left: 0;
                     width: 100%;
                     height: 100%;
-                    z-index: 0;
+                    z-index: -1;
                     transition: opacity 1s ease;
                 `;
                 document.body.appendChild(bgContainer);
@@ -4564,9 +4542,7 @@ async function spotifyRequest(url, options = {}) {
 // 🎵 动画系统扩展
 SpotifyLyricsPlayer.prototype.triggerSongChangeAnimation = function() {
     // 通知动态背景系统歌曲变化
-    if (window.dynamicBG && this.currentTrack?.item?.album?.images?.[0]?.url) {
-        window.dynamicBG.onSongChange(this.currentTrack.item.album.images[0].url);
-    }
+    // 动态背景系统已移除
     
     this.log('🎭 触发歌曲切换动画');
     
