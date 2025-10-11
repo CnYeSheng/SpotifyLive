@@ -207,9 +207,9 @@ class DynamicBackground {
         this.currentColors = colors;
         
         if (this.gradientLayer) {
-            // 将颜色转换为更明显的叠加效果
+            // 将颜色转换为适度的叠加效果
             const overlayColors = colors.map(color => {
-                return color.replace('rgb', 'rgba').replace(')', ', 0.5)');
+                return color.replace('rgb', 'rgba').replace(')', ', 0.3)');
             });
             
             this.gradientLayer.style.setProperty('--color-1', overlayColors[0]);

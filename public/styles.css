@@ -64,6 +64,7 @@ body {
     justify-content: center;
     position: relative;
     overflow-x: hidden;
+    z-index: 2; /* 确保内容在动态背景之上 */
 }
 
 /* 旧的动态背景已被新系统替换 - 注释掉避免冲突 */
@@ -2737,11 +2738,9 @@ body {
     left: 0;
     width: 100vw;
     height: 100vh;
-    z-index: -1;
+    z-index: 1; /* 提高z-index到专辑封面之上 */
     overflow: hidden;
     pointer-events: none;
-    /* 临时调试边框 - 确认显示 */
-    border: 3px solid rgba(255, 0, 0, 0.5);
     /* 移除背景色，让专辑封面透过 */
 }
 
@@ -2758,11 +2757,10 @@ body {
         radial-gradient(circle at var(--pos-x3, 40%) var(--pos-y3, 40%), var(--color-3, rgba(240, 147, 251, 0.6)) 0%, transparent 60%),
         radial-gradient(circle at var(--pos-x4, 60%) var(--pos-y4, 60%), var(--color-4, rgba(79, 172, 254, 0.6)) 0%, transparent 60%);
     animation: gradientFloat 20s ease-in-out infinite;
-    opacity: 0.8; /* 提高透明度让效果更明显 */
+    opacity: 0.6; /* 适度透明度配合混合模式 */
     filter: blur(60px); /* 保持模糊但降低一点 */
     transition: all 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-    /* 暂时移除混合模式测试 */
-    /* mix-blend-mode: overlay; */
+    mix-blend-mode: overlay; /* 恢复与专辑封面的混合模式 */
 }
 
 /* 粒子背景层 - 基于专辑颜色的粒子 */
