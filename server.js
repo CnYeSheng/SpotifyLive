@@ -396,6 +396,52 @@ app.get('/api/current-track', async (req, res) => {
     }
 });
 
+// 静默刷新token端点
+// ===============================
+// 🔄 Refresh Spotify Access Token
+// ===============================
+app.post('/api/refresh-token', async (req, res) => {
+  try {
+    const refreshToken = process.env.SPOTIFY_REFRESH_TOKEN || global.spotifyRefreshToken;
+    if (!refreshToken) {
+      console.log("❌ 無 refresh_token，請重新登入 Spotify");
+      return res.status(400).json({ error: 'No refresh token available' });
+    }
+
+    const authHeader = Buffer.from(
+      `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
+    ).toString('base64');
+
+    const response = await axios.post(
+      'https://accounts.spotify.com/api/token',
+      new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken
+      }),
+      {
+        headers: {
+          'Authorization': `Basic ${authHeader}`,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      }
+    );
+
+    const newAccessToken = response.data.access_token;
+    if (newAccessToken) {
+      global.spotifyAccessToken = newAccessToken;
+      console.log('✅ Spotify access token refreshed successfully');
+      return res.json({ success: true, access_token: newAccessToken });
+    } else {
+      console.error('❌ Spotify refresh response missing access_token');
+      return res.status(500).json({ error: 'No access_token in response' });
+    }
+
+  } catch (err) {
+    console.error('❌ Failed to refresh Spotify token:', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // Authentication middleware
 function authenticateSpotify(req, res, next) {
     const session = getUserSession(req);
@@ -492,53 +538,6 @@ app.get('/api/auth-status', async (req, res) => {
         sessionId: sessionId
     });
 });
-
-// 静默刷新token端点
-// ===============================
-// 🔄 Refresh Spotify Access Token
-// ===============================
-app.post('/api/refresh-token', async (req, res) => {
-  try {
-    const refreshToken = process.env.SPOTIFY_REFRESH_TOKEN || global.spotifyRefreshToken;
-    if (!refreshToken) {
-      console.log("❌ 無 refresh_token，請重新登入 Spotify");
-      return res.status(400).json({ error: 'No refresh token available' });
-    }
-
-    const authHeader = Buffer.from(
-      `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
-    ).toString('base64');
-
-    const response = await axios.post(
-      'https://accounts.spotify.com/api/token',
-      new URLSearchParams({
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken
-      }),
-      {
-        headers: {
-          'Authorization': `Basic ${authHeader}`,
-          'Content-Type': 'application/x-www-form-urlencoded'
-        }
-      }
-    );
-
-    const newAccessToken = response.data.access_token;
-    if (newAccessToken) {
-      global.spotifyAccessToken = newAccessToken;
-      console.log('✅ Spotify access token refreshed successfully');
-      return res.json({ success: true, access_token: newAccessToken });
-    } else {
-      console.error('❌ Spotify refresh response missing access_token');
-      return res.status(500).json({ error: 'No access_token in response' });
-    }
-
-  } catch (err) {
-    console.error('❌ Failed to refresh Spotify token:', err.message);
-    return res.status(500).json({ error: err.message });
-  }
-});
-
 
 // Get available devices
 app.get('/api/devices', async (req, res) => {
