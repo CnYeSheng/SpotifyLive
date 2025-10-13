@@ -1150,16 +1150,16 @@
         this.log('🔄 Token 刷新定時器已啟動 (每 30 分鐘檢查一次)');
     }
 
-    // 自動登入定時器 - 每 15 分鐘更新一次 session
+    // 自動登入定時器 - 每 30 分鐘更新一次 session (降低頻率)
     startAutoLoginTimer() {
         if (!this.autoLoginEnabled) return;
         
         this.autoLoginInterval = setInterval(() => {
-            this.log('⏰ 15分鐘 Session 更新檢查');
-            this.performSessionRefresh();
-        }, 15 * 60 * 1000); // 15 分鐘
+            this.log('⏰ 30分鐘 Session 靜默檢查');
+            this.performQuietSessionCheck();
+        }, 30 * 60 * 1000); // 30 分鐘
         
-        this.log('🔄 Session 更新定時器已啟動 (每 15 分鐘檢查一次)');
+        this.log('🔄 Session 更新定時器已啟動 (每 30 分鐘檢查一次)');
     }
 
     // 執行自動登入
@@ -2537,7 +2537,7 @@
 
         try {
             // 由於 CORS 限制，直接使用本地代理
-            const proxyUrl = `/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}`;
+            const proxyUrl = `/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}?p=lrclib,netease,musixmatch`;
             console.log(`📡 通過代理請求歌詞: ${proxyUrl}`);
             
             const response = await fetch(proxyUrl, {
@@ -4096,6 +4096,38 @@
         } catch (error) {
             console.error('載入播放清單失敗:', error);
             this.playlistContent.innerHTML = '<div class="loading">網絡錯誤，請重試</div>';
+        }
+    }
+
+    // 執行靜默 Session 檢查（降低頻率，不顯示動畫）
+    async performQuietSessionCheck() {
+        if (!this.sessionId) {
+            this.log('⚠️ 沒有 sessionId，跳過靜默檢查');
+            return;
+        }
+        
+        try {
+            // 靜默檢查，不顯示任何UI變化
+            const authResponse = await fetch('/api/auth-status', {
+                headers: { 'X-Session-Id': this.sessionId }
+            });
+            
+            const authData = await authResponse.json();
+            
+            if (authData.authenticated) {
+                this.log('✅ 靜默檢查 - Session 有效');
+                // 更新 sessionId（如果有變化）
+                if (authData.sessionId && authData.sessionId !== this.sessionId) {
+                    this.sessionId = authData.sessionId;
+                    localStorage.setItem('spotify_session_id', this.sessionId);
+                    this.log(`🔄 Session ID 已靜默更新: ${this.sessionId.substring(0, 8)}...`);
+                }
+            } else {
+                this.log('❌ 靜默檢查 - Session 已失效');
+                // 只記錄，不強制重新登入
+            }
+        } catch (error) {
+            this.log(`❌ 靜默檢查失敗: ${error.message}`);
         }
     }
 

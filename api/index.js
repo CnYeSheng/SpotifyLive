@@ -585,93 +585,62 @@ app.get('/api/search-lyrics/:query', async (req, res) => {
     }
 });
 
-// Get lyrics from wmcc API
+// Get lyrics with multiple providers support
 app.get('/api/lyrics/:artist/:title', async (req, res) => {
     const { artist, title } = req.params;
+    const providers = req.query.p || 'lrclib,netease';
     
     try {
-        console.log(`🎤 請求歌詞: ${artist} - ${title}`);
+        console.log(`🎤 請求歌詞: ${artist} - ${title} (providers: ${providers})`);
         
-        // 從指定的 API 獲取歌詞
-        const lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`;
-        console.log(`📡 請求 URL: ${lyricsUrl}`);
+        // 使用 Python 腳本獲取多個提供商的歌詞
+        const { spawn } = require('child_process');
+        const python = spawn('python', ['lyrics.py', artist, title, providers]);
         
-        const response = await axios.get(lyricsUrl, {
-            timeout: 20000, // 減少超時時間到8秒
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'application/json, text/plain, */*'
-            }
+        let output = '';
+        let errorOutput = '';
+        
+        python.stdout.on('data', (data) => {
+            output += data.toString();
         });
         
-        if (response.data) {
-            console.log(`✅ 成功獲取歌詞，數據類型: ${typeof response.data}`);
-            
-            // 處理不同的響應格式
-            let lyrics = [];
-            let lyricsType = 'plain';
-            
-            if (typeof response.data === 'string') {
-                // 如果是字符串，檢查是否為 LRC 格式
-                const lrcResult = parseLrcFormat(response.data);
-                if (lrcResult.isLrc) {
-                    lyrics = lrcResult.lyrics;
-                    lyricsType = 'synced';
-                } else {
-                    // 普通文本歌詞
-                    lyrics = response.data.split('\n')
-                        .filter(line => line.trim() !== '')
-                        .map(line => ({ text: line.trim() }));
-                }
-            } else if (response.data.lyrics) {
-                // 如果有 lyrics 字段
-                if (Array.isArray(response.data.lyrics)) {
-                    lyrics = response.data.lyrics;
-                    lyricsType = response.data.type || 'plain';
-                } else if (typeof response.data.lyrics === 'string') {
-                    // 檢查字符串是否為 LRC 格式
-                    const lrcResult = parseLrcFormat(response.data.lyrics);
-                    if (lrcResult.isLrc) {
-                        lyrics = lrcResult.lyrics;
-                        lyricsType = 'synced';
-                    } else {
-                        lyrics = response.data.lyrics.split('\n')
-                            .filter(line => line.trim() !== '')
-                            .map(line => ({ text: line.trim() }));
+        python.stderr.on('data', (data) => {
+            errorOutput += data.toString();
+        });
+        
+        const result = await new Promise((resolve, reject) => {
+            python.on('close', (code) => {
+                if (code === 0) {
+                    try {
+                        const parsed = JSON.parse(output.trim());
+                        resolve(parsed);
+                    } catch (e) {
+                        reject(new Error('Failed to parse Python output'));
                     }
-                }
-            } else if (Array.isArray(response.data)) {
-                // 如果直接是數組
-                lyrics = response.data;
-            } else {
-                // 嘗試將整個響應作為歌詞文本
-                const textContent = JSON.stringify(response.data);
-                const lrcResult = parseLrcFormat(textContent);
-                if (lrcResult.isLrc) {
-                    lyrics = lrcResult.lyrics;
-                    lyricsType = 'synced';
                 } else {
-                    lyrics = textContent.split('\n')
-                        .filter(line => line.trim() !== '')
-                        .map(line => ({ text: line.trim() }));
+                    reject(new Error(`Python script failed with code ${code}: ${errorOutput}`));
                 }
-            }
+            });
+        });
+        
+        if (result.success && result.results && result.results.length > 0) {
+            console.log(`✅ 找到 ${result.results.length} 個歌詞結果`);
             
-            if (lyrics.length > 0) {
-                console.log(`✅ 解析歌詞成功: ${lyrics.length} 行`);
-                res.json({
-                    success: true,
-                    lyrics: lyrics,
-                    type: lyricsType,
-                    source: 'wmcc.jp.eu.org'
-                });
-            } else {
-                console.log(`❌ 歌詞內容為空`);
-                res.json({ success: false, error: '歌詞內容為空' });
-            }
+            // 返回多個結果，讓用戶選擇
+            res.json({
+                success: true,
+                results: result.results,
+                total: result.total,
+                message: `找到 ${result.total} 個歌詞版本`
+            });
         } else {
-            console.log(`❌ API 響應無數據`);
-            res.json({ success: false, error: '找不到歌詞' });
+            console.log(`❌ 沒有找到歌詞: ${result.error || '未知錯誤'}`);
+            res.json({ 
+                success: false, 
+                error: result.error || '找不到歌詞',
+                results: [],
+                total: 0
+            });
         }
     } catch (error) {
         console.error('❌ 獲取歌詞失敗:', error.message);
