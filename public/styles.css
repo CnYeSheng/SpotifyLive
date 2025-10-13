@@ -423,6 +423,36 @@ body {
     gap: 8px;
 }
 
+.lyrics-controls button {
+    width: 44px;
+    height: 44px;
+    border: none;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    backdrop-filter: blur(10px);
+}
+
+.lyrics-controls button:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.05);
+}
+
+.lyrics-controls button:active {
+    transform: scale(0.95);
+}
+
+.lyrics-controls button.active {
+    background: linear-gradient(135deg, #1db954, #1ed760);
+    color: white;
+}
+
 /* 預覽設定部分 */
 .preview-settings-section {
     position: relative;

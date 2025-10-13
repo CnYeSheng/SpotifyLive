@@ -979,6 +979,47 @@ app.get('/api/player/queue', async (req, res) => {
     }
 });
 
+// Parse LRC format function
+function parseLrcFormat(lrcString) {
+    const lines = lrcString.split('\n');
+    const lyrics = [];
+    let isLrc = false;
+    
+    for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (!trimmedLine) continue;
+        
+        // Check for LRC time format [mm:ss.xx] or [mm:ss]
+        const timeMatch = trimmedLine.match(/^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/);
+        if (timeMatch) {
+            isLrc = true;
+            const minutes = parseInt(timeMatch[1]);
+            const seconds = parseInt(timeMatch[2]);
+            const milliseconds = timeMatch[3] ? parseInt(timeMatch[3].padEnd(3, '0')) : 0;
+            
+            const timeMs = minutes * 60000 + seconds * 1000 + milliseconds;
+            const text = trimmedLine.replace(/^\[\d{1,2}:\d{2}(?:\.\d{1,3})?\]/, '').trim();
+            
+            if (text) {
+                lyrics.push({
+                    time: timeMs,
+                    text: text
+                });
+            }
+        } else if (!isLrc && trimmedLine) {
+            // If no time stamps found, treat as plain lyrics
+            lyrics.push({
+                text: trimmedLine
+            });
+        }
+    }
+    
+    return {
+        isLrc: isLrc,
+        lyrics: lyrics
+    };
+}
+
 // 添加 CORS 處理中間件
 app.use('/api/lyrics', (req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
@@ -1155,59 +1196,104 @@ app.get('/api/get-lyrics/:source/:id', async (req, res) => {
     }
 });
 
-// Get lyrics with multiple providers support (本地代理)
+// Get lyrics with multiple providers support using API calls
 app.get('/api/lyrics/:artist/:title', async (req, res) => {
     const { artist, title } = req.params;
-    const providers = req.query.p || 'lrclib,netease';
+    const providers = req.query.p || 'Musixmatch,Lrclib,NetEase';
     
     try {
         console.log(`🎤 請求歌詞: ${artist} - ${title} (providers: ${providers})`);
         
-        // 使用 Python 腳本獲取多個提供商的歌詞
-        const { spawn } = require('child_process');
-        const python = spawn('python', ['lyrics.py', artist, title, providers]);
+        // Parse providers
+        const requestedProviders = providers.split(',').map(p => p.trim());
+        console.log(`📋 請求的提供商: ${requestedProviders.join(', ')}`);
         
-        let output = '';
-        let errorOutput = '';
+        const results = [];
         
-        python.stdout.on('data', (data) => {
-            output += data.toString();
-        });
-        
-        python.stderr.on('data', (data) => {
-            errorOutput += data.toString();
-        });
-        
-        const result = await new Promise((resolve, reject) => {
-            python.on('close', (code) => {
-                if (code === 0) {
-                    try {
-                        const parsed = JSON.parse(output.trim());
-                        resolve(parsed);
-                    } catch (e) {
-                        reject(new Error('Failed to parse Python output'));
+        // Fetch lyrics from each provider
+        for (const provider of requestedProviders) {
+            try {
+                console.log(`🔍 正在從 ${provider} 搜尋歌詞...`);
+                
+                let apiUrl;
+                switch (provider.toLowerCase()) {
+                    case 'musixmatch':
+                        apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Musixmatch`;
+                        break;
+                    case 'lrclib':
+                        apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Lrclib`;
+                        break;
+                    case 'netease':
+                        apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=NetEase`;
+                        break;
+                    default:
+                        console.log(`⚠️ 不支援的提供商: ${provider}`);
+                        continue;
+                }
+                
+                const response = await axios.get(apiUrl, {
+                    timeout: 15000,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'Accept': 'application/json, text/plain, */*'
+                    }
+                });
+                
+                if (response.data && response.data.success && response.data.lyrics) {
+                    let lyrics = [];
+                    let lyricsType = 'plain';
+                    
+                    if (Array.isArray(response.data.lyrics)) {
+                        lyrics = response.data.lyrics;
+                        lyricsType = response.data.type || 'synced';
+                    } else if (typeof response.data.lyrics === 'string') {
+                        // Parse LRC format if it's a string
+                        const lrcResult = parseLrcFormat(response.data.lyrics);
+                        if (lrcResult.isLrc) {
+                            lyrics = lrcResult.lyrics;
+                            lyricsType = 'synced';
+                        } else {
+                            lyrics = response.data.lyrics.split('\n')
+                                .filter(line => line.trim() !== '')
+                                .map(line => ({ text: line.trim() }));
+                            lyricsType = 'plain';
+                        }
+                    }
+                    
+                    if (lyrics.length > 0) {
+                        results.push({
+                            provider: provider,
+                            lyrics: lyrics,
+                            type: lyricsType,
+                            artist: artist,
+                            title: title
+                        });
+                        console.log(`✅ ${provider} 找到歌詞: ${lyrics.length} 行`);
+                    } else {
+                        console.log(`❌ ${provider} 歌詞內容為空`);
                     }
                 } else {
-                    reject(new Error(`Python script failed with code ${code}: ${errorOutput}`));
+                    console.log(`❌ ${provider} 沒有找到歌詞`);
                 }
-            });
-        });
+            } catch (error) {
+                console.error(`❌ ${provider} 搜尋失敗:`, error.message);
+            }
+        }
         
-        if (result.success && result.results && result.results.length > 0) {
-            console.log(`✅ 找到 ${result.results.length} 個歌詞結果`);
+        if (results.length > 0) {
+            console.log(`✅ 找到 ${results.length} 個歌詞結果`);
             
-            // 返回多個結果，讓用戶選擇
             res.json({
                 success: true,
-                results: result.results,
-                total: result.total,
-                message: `找到 ${result.total} 個歌詞版本`
+                results: results,
+                total: results.length,
+                message: `找到 ${results.length} 個歌詞版本`
             });
         } else {
-            console.log(`❌ 沒有找到歌詞: ${result.error || '未知錯誤'}`);
+            console.log(`❌ 沒有找到歌詞`);
             res.json({ 
                 success: false, 
-                error: result.error || '找不到歌詞',
+                error: '查不到歌詞',
                 results: [],
                 total: 0
             });
