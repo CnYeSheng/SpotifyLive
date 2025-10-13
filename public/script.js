@@ -2541,15 +2541,9 @@
 
         try {
             // 由於 CORS 限制，直接使用本地代理
-            const proxyUrl = `/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}?p=lrclib,netease,musixmatch`;
-            console.log(`📡 通過代理請求歌詞: ${proxyUrl}`);
+            const proxyUrl = `/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}`;
+            const response = await fetch(proxyUrl);
             
-            const response = await fetch(proxyUrl, {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json'
-                }
-            });
             if (!response.ok) {
                 throw new Error(`API 響應錯誤: ${response.status} ${response.statusText}`);
             }
@@ -4136,72 +4130,33 @@
     }
 
     displayPlaylist(tracks) {
-        if (!tracks || tracks.length === 0) {
-            this.playlistContent.innerHTML = '<div class="loading">播放清單為空</div>';
-            return;
-        }
+    if (!tracks || tracks.length === 0) {
+        this.playlistContent.innerHTML = '<div class="loading">播放清單為空</div>';
+        return;
+    }
 
-        // 🔍 详细调试：检查前端接收到的数据
-        console.log('🎵 前端收到的播放清单数据详细分析:', {
-            数据总数: tracks.length,
-            数据类型: typeof tracks,
-            是否为数组: Array.isArray(tracks),
-            第一首歌完整数据: tracks[0],
-            前3首歌数据验证: tracks.slice(0, 3).map((track, i) => ({
-                序号: i + 1,
-                歌曲名: track.name,
-                歌手信息: {
-                    原始值: track.artist,
-                    类型: typeof track.artist,
-                    不为空: !!track.artist,
-                    不是未知: track.artist !== '未知歌手'
-                },
-                图片信息: {
-                    原始值: track.image,
-                    类型: typeof track.image,
-                    不为空: !!track.image,
-                    长度: track.image?.length,
-                    预览: track.image ? track.image.substring(0, 50) + '...' : 'NO_IMAGE'
-                },
-                完整track对象: track
-            }))
-        });
-        
-        const playlistHTML = tracks.map((track, index) => {
-            // 更详细的数据检查
-            if (index === 0) {
-                console.log('🔍 详细检查第一首歌:', {
-                    完整数据: track,
-                    歌曲名: track.name,
-                    歌手: track.artist, 
-                    封面链接: track.image,
-                    封面是否存在: !!track.image,
-                    数据类型检查: {
-                        name: typeof track.name,
-                        artist: typeof track.artist,
-                        image: typeof track.image
-                    }
-                });
+    const playlistHTML = tracks.map((track, index) => {
+        // ✅ 正確解析 artists 與 album images
+        const artistNames = track.artists?.map(a => a.name).join(', ') || '未知歌手';
+        const imageUrl = track.album?.images?.[0]?.url || null;
+
+        return `
+        <div class="playlist-item ${track.id === this.currentTrack?.id ? 'current' : ''}" data-track-id="${track.id}">
+            ${imageUrl ? 
+                `<img src="${imageUrl}" alt="${track.name}" 
+                      style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px; margin-right: 12px;"
+                      onerror="this.style.display='none'; this.nextElementSibling.style.marginLeft='0';">` 
+                : 
+                `<div style="width: 48px; height: 48px; background: linear-gradient(135deg, #333, #555); 
+                           border-radius: 4px; margin-right: 12px; display: flex; align-items: center; 
+                           justify-content: center; color: #999; font-size: 20px;">🎵</div>`
             }
-            
-            return `
-            <div class="playlist-item ${track.id === this.currentTrack?.id ? 'current' : ''}" data-track-id="${track.id}">
-                ${track.image ? 
-                    `<img src="${track.image}" alt="${track.name}" 
-                          style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px; margin-right: 12px;"
-                          onerror="this.style.display='none'; this.nextElementSibling.style.marginLeft='0';">` 
-                    : 
-                    `<div style="width: 48px; height: 48px; background: linear-gradient(135deg, #333, #555); 
-                               border-radius: 4px; margin-right: 12px; display: flex; align-items: center; 
-                               justify-content: center; color: #999; font-size: 20px;">🎵</div>`
-                }
-                <div class="playlist-item-info">
-                    <div class="playlist-item-title">${this.escapeHtml(track.name || '未知歌曲')}</div>
-                    <div class="playlist-item-artist">${this.escapeHtml(track.artist || '未知歌手')}</div>
-                </div>
+            <div class="playlist-item-info">
+                <div class="playlist-item-title">${this.escapeHtml(track.name || '未知歌曲')}</div>
+                <div class="playlist-item-artist">${this.escapeHtml(artistNames)}</div>
             </div>
-        `;
-        }).join('');
+        </div>`;
+    }).join('');
 
         this.playlistContent.innerHTML = playlistHTML;
 

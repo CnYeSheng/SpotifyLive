@@ -186,13 +186,11 @@ async function refreshAccessToken(session) {
         );
         
         session.accessToken = response.data.access_token;
-        if (response.data.refresh_token) {
-            session.refreshToken = response.data.refresh_token;
-            console.log(`[${new Date().toLocaleTimeString()}] ✅ 獲得新的 refresh token`);
-        }
-        // 提前 20 分鐘過期，確保有足夠時間刷新
-        session.expiresAt = Date.now() + ((response.data.expires_in - 1200) * 1000);
-        console.log(`[${new Date().toLocaleTimeString()}] ✅ Token 刷新成功，新的過期時間: ${new Date(session.expiresAt).toLocaleString()}`);
+    if (response.data.refresh_token) {
+        session.refreshToken = response.data.refresh_token;
+    }
+        session.expiresAt = Date.now() + (response.data.expires_in * 1000);
+        console.log('✅ Token refreshed');
         return true;
     } catch (error) {
         console.error(`[${new Date().toLocaleTimeString()}] ❌ Token 刷新失敗:`, error.response?.data || error.message);
@@ -586,62 +584,59 @@ app.get('/api/search-lyrics/:query', async (req, res) => {
 });
 
 // Get lyrics with multiple providers support
+// Get lyrics with multiple providers support
 app.get('/api/lyrics/:artist/:title', async (req, res) => {
     const { artist, title } = req.params;
-    const providers = req.query.p || 'lrclib,netease';
-    
+    const providersParam = req.query.p; // e.g. "lrclib", "netease", etc.
+
     try {
-        console.log(`🎤 請求歌詞: ${artist} - ${title} (providers: ${providers})`);
-        
-        // 使用 Python 腳本獲取多個提供商的歌詞
-        const { spawn } = require('child_process');
-        const python = spawn('python', ['lyrics.py', artist, title, providers]);
-        
-        let output = '';
-        let errorOutput = '';
-        
-        python.stdout.on('data', (data) => {
-            output += data.toString();
-        });
-        
-        python.stderr.on('data', (data) => {
-            errorOutput += data.toString();
-        });
-        
-        const result = await new Promise((resolve, reject) => {
-            python.on('close', (code) => {
-                if (code === 0) {
-                    try {
-                        const parsed = JSON.parse(output.trim());
-                        resolve(parsed);
-                    } catch (e) {
-                        reject(new Error('Failed to parse Python output'));
-                    }
-                } else {
-                    reject(new Error(`Python script failed with code ${code}: ${errorOutput}`));
-                }
-            });
-        });
-        
-        if (result.success && result.results && result.results.length > 0) {
-            console.log(`✅ 找到 ${result.results.length} 個歌詞結果`);
-            
-            // 返回多個結果，讓用戶選擇
-            res.json({
-                success: true,
-                results: result.results,
-                total: result.total,
-                message: `找到 ${result.total} 個歌詞版本`
-            });
-        } else {
-            console.log(`❌ 沒有找到歌詞: ${result.error || '未知錯誤'}`);
-            res.json({ 
-                success: false, 
-                error: result.error || '找不到歌詞',
-                results: [],
-                total: 0
-            });
+        console.log(`🎤 請求歌詞: ${artist} - ${title} (provider: ${providersParam || 'default'})`);
+
+        // ======================
+        // 情境一：自動載入（無 ?p=）
+        // ======================
+        if (!providersParam) {
+            const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`;
+            console.log(`🔍 自動載入歌詞 URL: ${apiUrl}`);
+            const response = await axios.get(apiUrl, { timeout: 15000 });
+            // ... (same as your existing parsing logic)
+            return res.json({ success: true, lyrics, type: lyricsType, provider: 'default' });
         }
+
+        // ======================
+        // 情境二：用戶搜尋（有 ?p=）
+        // ======================
+        const results = [];
+        const requestedProviders = providersParam.split(',').map(p => p.trim().toLowerCase());
+
+        for (const provider of requestedProviders) {
+            let pParam;
+            switch (provider) {
+                case 'musixmatch': pParam = 'Musixmatch'; break;
+                case 'lrclib': pParam = 'Lrclib'; break;
+                case 'netease': pParam = 'NetEase'; break;
+                default: continue;
+            }
+
+            const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${pParam}`;
+            console.log(`📡 查詢 ${provider}: ${apiUrl}`);
+
+            try {
+                const response = await axios.get(apiUrl, { timeout: 15000 });
+                // ... parse lyrics ...
+                if (lyrics.length > 0) {
+                    results.push({ provider, lyrics, type: lyricsType, artist, title });
+                }
+            } catch (error) {
+                console.error(`❌ ${provider} 搜尋失敗:`, error.message);
+            }
+        }
+
+        return res.json({
+            success: true,
+            results,
+            total: results.length
+        });
     } catch (error) {
         console.error('❌ 獲取歌詞失敗:', error.message);
         if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {

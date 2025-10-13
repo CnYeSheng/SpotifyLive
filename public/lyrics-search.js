@@ -65,13 +65,20 @@ SpotifyLyricsPlayer.prototype.performLyricsSearch = async function() {
     document.getElementById('search-results').style.display = 'none';
     
     try {
-        const response = await fetch(`${this.apiBase}/api/search-lyrics/${encodeURIComponent(query)}`);
-        const data = await response.json();
-        
-        this.log(`📊 搜尋結果: ${data.success ? `找到 ${data.total} 個結果` : data.error}`);
-        
-        if (data.success && data.results && data.results.length > 0) {
-            this.displaySearchResults(data.results);
+        // ✅ 手動搜尋：分別請求三個來源
+        const providers = ['lrclib', 'netease', 'musixmatch'];
+        const allResults = [];
+
+        for (const provider of providers) {
+            const response = await fetch(`${this.apiBase}/api/lyrics/${encodeURIComponent(query)}/?p=${provider}`);
+            const data = await response.json();
+            if (data.success && data.results) {
+                allResults.push(...data.results);
+            }
+        }
+
+        if (allResults.length > 0) {
+            this.displaySearchResults(allResults);
         } else {
             this.displayNoResults();
         }
