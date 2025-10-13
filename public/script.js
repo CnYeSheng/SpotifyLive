@@ -773,7 +773,10 @@
                 headers['X-Session-Id'] = this.sessionId;
             }
             
-            const response = await fetch(`${this.apiBase}/api/player/queue`, { headers });
+            const response = await fetch(`${this.apiBase}/api/player/queue`, { 
+                headers,
+                credentials: 'same-origin'
+            });
             
             if (response.ok) {
                 const queueData = await response.json();
@@ -1252,7 +1255,8 @@
         try {
             // 嘗試一個輕量級的 API 調用來觸發服務端 token 刷新
             const response = await fetch(`${this.apiBase}/api/current-track`, {
-                headers: { 'X-Session-Id': this.sessionId }
+                headers: { 'X-Session-Id': this.sessionId },
+                credentials: 'same-origin'
             });
             
             if (response.status === 401) {
