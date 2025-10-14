@@ -24,11 +24,10 @@ const REDIRECT_URI = process.env.REDIRECT_URI;
 const { kv } = require('@vercel/kv');
 
 // 取代 userSessions = new Map()
-async function getUserSession(req) {
-  const sessionId = req.headers['x-session-id'] || req.query.sessionId;
-  if (!sessionId) return null;
-  const session = await kv.get(`session:${sessionId}`);
-  return session ? JSON.parse(session) : null;
+// Get user session from request
+function getUserSession(req) {
+    const sessionId = req.headers['x-session-id'] || req.query.sessionId;
+    return sessionId ? userSessions.get(sessionId) : null;
 }
 
 // 儲存 session
