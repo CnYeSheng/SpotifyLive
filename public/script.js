@@ -1,4 +1,4 @@
-﻿class SpotifyLyricsPlayer {
+class SpotifyLyricsPlayer {
     constructor() {
         this.currentTrack = null;
         this.lyrics = [];
@@ -2414,7 +2414,7 @@ async fetchNextSongData() {
             this.showMobileLyricsControls();
         }
         
-        // 立即检查喜欢状态，确保按钮状态同步
+        // 立即檢查喜歡狀態，確保按钮状态同步
         setTimeout(() => {
             this.checkIfTrackIsLiked();
         }, 200);
@@ -2473,30 +2473,14 @@ async fetchNextSongData() {
     }
 
     async loadLyrics() {
-        if (!this.currentTrack) {
-            console.log('❌ 沒有當前歌曲，跳過歌詞載入');
-            return;
-        }
-
-        // 如果是 Podcast，顯示特殊訊息而不載入歌詞
-        if (this.currentTrack.contentType === 'podcast') {
-            this.showLyricsPlaceholder('🎙️ 正在播放 Podcast\n\n享受精彩的音頻內容吧！');
-            this.updateStatus('lyrics', true);
+        if (!this.currentTrack || !this.currentTrack.name || !this.currentTrack.artist) {
+            console.log('❌ 無法載入歌詞: 缺少歌曲資訊');
+            this.showLyricsError('缺少歌曲資訊');
             return;
         }
 
         const trackKey = `${this.currentTrack.id}-${this.currentTrack.name}-${this.currentTrack.artist}`;
-        console.log(`🎤 請求歌詞: ${this.currentTrack.artist} - ${this.currentTrack.name}`);
-        
-        // 檢查是否已有該歌曲的歌詞（更宽松的检查）
-        if (this.lyrics && this.lyrics.length > 0 && 
-            this.currentLyricsTrackId === this.currentTrack.id &&
-            this.currentLyricsTrackId !== null) {
-            console.log('✅ 歌詞已存在，跳過載入');
-            return;
-        }
-        
-        this.log(`🎤 開始載入歌詞: ${this.currentTrack.name} - ${this.currentTrack.artist}`);
+        console.log(`🔍 開始搜尋歌詞: ${this.currentTrack.artist} ${this.currentTrack.name}`);
 
         // 防止重複請求 - 使用更嚴格的檢查
         if (this.isLoadingLyrics) {
@@ -2536,8 +2520,10 @@ async fetchNextSongData() {
         this.showLyricsPlaceholder('🎵 正在載入歌詞...');
 
         try {
-            // 由於 CORS 限制，直接使用本地代理
-            const proxyUrl = `/api/lyrics/${encodeURIComponent(this.currentTrack.name)}/${encodeURIComponent(this.currentTrack.artist)}`;
+            // 使用本地代理
+            const proxyUrl = `/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}`;
+            console.log(`📡 請求歌詞: ${proxyUrl}`);
+            
             const response = await fetch(proxyUrl);
             
             if (!response.ok) {
@@ -2545,7 +2531,7 @@ async fetchNextSongData() {
             }
             
             const data = await response.json();
-            console.log('歌詞 API 回應:', data);
+            console.log('📥 歌詞 API 回應:', data);
 
             if (data.success && data.lyrics && Array.isArray(data.lyrics) && data.lyrics.length > 0) {
                 const validLyrics = data.lyrics.filter(line => {
@@ -2570,13 +2556,15 @@ async fetchNextSongData() {
                     this.showLyricsError('歌詞內容格式錯誤');
                 }
             } else {
-                const errorMsg = data.error || '找不到歌詞';
-                console.log(`❌ 歌詞載入失敗: ${errorMsg}`);
-                this.showLyricsError(errorMsg);
+                // 尝试备用API
+                console.log('🔄 嘗試使用備用API...');
+                await this.loadLyricsFromBackup();
             }
         } catch (error) {
             console.error('載入歌詞失敗:', error);
-            this.showLyricsError('載入歌詞失敗: ' + error.message);
+            // 尝试备用API
+            console.log('🔄 嘗試使用備用API...');
+            await this.loadLyricsFromBackup();
         } finally {
             clearTimeout(loadingTimeout);
             this.isLoadingLyrics = false;
@@ -2585,6 +2573,45 @@ async fetchNextSongData() {
                 clearTimeout(this.lyricsLoadTimeout);
                 this.lyricsLoadTimeout = null;
             }
+        }
+    }
+
+    async loadLyricsFromBackup() {
+        try {
+            const backupUrl = `https://lyrics.ovh/v1/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}`;
+            console.log(`📡 備用API請求: ${backupUrl}`);
+            
+            const response = await fetch(backupUrl);
+            
+            if (!response.ok) {
+                throw new Error(`備用API 響應錯誤: ${response.status} ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            console.log('📥 備用API回應:', data);
+            
+            if (data.lyrics) {
+                const lyrics = data.lyrics
+                    .split('\n')
+                    .filter(line => line && line.trim() !== '');
+                
+                if (lyrics.length > 0) {
+                    this.lyrics = lyrics.map(line => ({ text: line }));
+                    this.lyricsType = 'plain';
+                    this.currentLyricsTrackId = this.currentTrack.id;
+                    this.displayLyrics();
+                    this.updateStatus('lyrics', true);
+                    console.log(`✅ 備用API歌詞載入成功: ${lyrics.length} 行`);
+                    return;
+                }
+            }
+            
+            const errorMsg = data.error || '找不到歌詞';
+            console.log(`❌ 備用API歌詞載入失敗: ${errorMsg}`);
+            this.showLyricsError(errorMsg);
+        } catch (error) {
+            console.error('備用API載入歌詞失敗:', error);
+            this.showLyricsError('無法載入歌詞，請稍後再試');
         }
     }
 
@@ -4100,6 +4127,15 @@ async fetchNextSongData() {
             return;
         }
         
+        // 减少检查频率，每10分钟检查一次
+        const now = Date.now();
+        if (this.lastSessionCheck && (now - this.lastSessionCheck) < 10 * 60 * 1000) {
+            this.log('⏱️ 跳過會話檢查，距離上次檢查不足10分鐘');
+            return;
+        }
+        
+        this.lastSessionCheck = now;
+        
         try {
             // 靜默檢查，不顯示任何UI變化
             const authResponse = await fetch('/api/auth-status', {
@@ -4132,9 +4168,21 @@ async fetchNextSongData() {
     }
 
     const playlistHTML = tracks.map((track, index) => {
-        // ✅ 正確解析 artists 與 album images
-        const artistNames = track.artists?.map(a => a.name).join(', ') || '未知歌手';
-        const imageUrl = track.album?.images?.[0]?.url || null;
+        // 确保正确解析艺术家和专辑封面
+        let artistNames = '未知歌手';
+        let imageUrl = null;
+        
+        // 处理不同的数据结构
+        if (track.track) {
+            // 如果是播放列表项
+            artistNames = track.track.artists?.map(a => a.name).join(', ') || '未知歌手';
+            imageUrl = track.track.album?.images?.[0]?.url || null;
+            track = track.track; // 指向实际的曲目对象
+        } else {
+            // 如果是队列项或其他直接曲目结构
+            artistNames = track.artists?.map(a => a.name).join(', ') || '未知歌手';
+            imageUrl = track.album?.images?.[0]?.url || null;
+        }
 
         return `
         <div class="playlist-item ${track.id === this.currentTrack?.id ? 'current' : ''}" data-track-id="${track.id}">
