@@ -4,6 +4,7 @@ const axios = require('axios');
 
 const app = express();
 
+
 // Middleware
 app.use(cors({
     origin: true,
@@ -17,7 +18,35 @@ const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI;
 
 // Store user sessions (in production, use a proper database)
-const userSessions = new Map();
+// const userSessions = new Map();
+
+// 引入 KV
+import { kv } from '@vercel/kv';
+
+// 取代 userSessions = new Map()
+async function getUserSession(req) {
+  const sessionId = req.headers['x-session-id'] || req.query.sessionId;
+  if (!sessionId) return null;
+  const session = await kv.get(`session:${sessionId}`);
+  return session ? JSON.parse(session) : null;
+}
+
+// 儲存 session
+async function setSession(sessionId, session) {
+  await kv.set(`session:${sessionId}`, JSON.stringify(session), {
+    ex: 3600 // 1 小時過期
+  });
+}
+
+// 在 /callback 中儲存
+await setSession(sessionId, {
+  accessToken: response.data.access_token,
+  refreshToken: response.data.refresh_token,
+  expiresAt: Date.now() + (response.data.expires_in * 1000)
+});
+
+// 在 refreshAccessToken 中更新
+await setSession(sessionId, session);
 
 // Generate a simple session ID
 function generateSessionId() {
@@ -759,6 +788,128 @@ app.get('/api/library/check/:trackId', async (req, res) => {
     }
 });
 
+// ==============================
+// 🎵 歌詞相關 API（解決問題 1 & 2）
+// ==============================
+
+// 搜尋歌詞
+app.get('/api/search-lyrics/:query', async (req, res) => {
+    const { query } = req.params;
+    try {
+        console.log(`🔍 搜尋歌詞: ${query}`);
+        const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(query)}`;
+        const response = await axios.get(apiUrl, { timeout: 15000 });
+        if (response.data) {
+            let lyrics = [];
+            let lyricsType = 'plain';
+            if (Array.isArray(response.data)) {
+                lyrics = response.data;
+            } else if (typeof response.data === 'string') {
+                const lrcResult = parseLrcFormat(response.data);
+                if (lrcResult.isLrc) {
+                    lyrics = lrcResult.lyrics;
+                    lyricsType = 'synced';
+                } else {
+                    lyrics = response.data.split('\n').filter(line => line.trim() !== '');
+                }
+            } else if (response.data.lyrics) {
+                lyrics = Array.isArray(response.data.lyrics) ? response.data.lyrics : [response.data.lyrics];
+                lyricsType = response.data.type || 'plain';
+            }
+            if (lyrics.length > 0) {
+                res.json({
+                    success: true,
+                    results: [{
+                        artist: '未知歌手',
+                        title: query,
+                        lyrics,
+                        type: lyricsType,
+                        source: 'wmcc'
+                    }],
+                    total: 1
+                });
+            } else {
+                res.json({ success: false, error: '無歌詞內容', results: [], total: 0 });
+            }
+        } else {
+            res.json({ success: false, error: 'API 無回應', results: [], total: 0 });
+        }
+    } catch (error) {
+        console.error('❌ 搜尋歌詞失敗:', error.message);
+        res.status(500).json({ success: false, error: '搜尋失敗', results: [], total: 0 });
+    }
+});
+
+// 獲取歌詞（自動載入用）
+app.get('/api/lyrics/:artist/:title', async (req, res) => {
+    const { artist, title } = req.params;
+    try {
+        const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`;
+        console.log(`🎤 請求歌詞: ${apiUrl}`);
+        const response = await axios.get(apiUrl, { timeout: 15000 });
+        if (response.data) {
+            let lyrics = [];
+            let lyricsType = 'plain';
+            if (Array.isArray(response.data)) {
+                lyrics = response.data;
+            } else if (typeof response.data === 'string') {
+                const lrcResult = parseLrcFormat(response.data);
+                if (lrcResult.isLrc) {
+                    lyrics = lrcResult.lyrics;
+                    lyricsType = 'synced';
+                } else {
+                    lyrics = response.data.split('\n').filter(line => line.trim() !== '');
+                }
+            } else if (response.data.lyrics) {
+                lyrics = Array.isArray(response.data.lyrics) ? response.data.lyrics : [response.data.lyrics];
+                lyricsType = response.data.type || 'plain';
+            }
+            if (lyrics.length > 0) {
+                res.json({ success: true, lyrics, type: lyricsType });
+            } else {
+                res.json({ success: false, error: '無歌詞內容' });
+            }
+        } else {
+            res.json({ success: false, error: 'API 無回應' });
+        }
+    } catch (error) {
+        console.error('❌ 獲取歌詞失敗:', error.message);
+        res.status(500).json({ success: false, error: '載入失敗' });
+    }
+});
+
+// LRC 解析函數（複製到 api/index.js）
+function parseLrcFormat(lrcText) {
+    if (!lrcText || typeof lrcText !== 'string') return { isLrc: false, lyrics: [] };
+    const lines = lrcText.split('\n');
+    const lyrics = [];
+    let hasTimeStamps = false;
+    for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (!trimmedLine) continue;
+        const timeMatch = trimmedLine.match(/^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\](.*)/);
+        if (timeMatch) {
+            hasTimeStamps = true;
+            const minutes = parseInt(timeMatch[1]);
+            const seconds = parseInt(timeMatch[2]);
+            const milliseconds = timeMatch[3] ? parseInt(timeMatch[3].padEnd(3, '0')) : 0;
+            const text = timeMatch[4].trim();
+            const timeMs = (minutes * 60 + seconds) * 1000 + milliseconds;
+            if (text) {
+                lyrics.push({ time: timeMs, text });
+            }
+        } else {
+            if (!trimmedLine.startsWith('[') || !trimmedLine.includes(']')) {
+                lyrics.push({ text: trimmedLine });
+            }
+        }
+    }
+    if (hasTimeStamps) {
+        lyrics.sort((a, b) => (a.time || 0) - (b.time || 0));
+    }
+    return { isLrc: hasTimeStamps, lyrics };
+}
+
 // Extract colors from image
 app.post('/api/extract-colors', async (req, res) => {
     const { imageUrl } = req.body;
@@ -867,6 +1018,31 @@ app.get('/api/player/queue', async (req, res) => {
     }
 });
 
+// ==============================
+// ▶️ 播放控制 API（解決問題 3）
+// ==============================
+
+// 播放指定歌曲
+app.put('/api/player/play', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    const { uris, device_id } = req.body;
+    try {
+        const data = {};
+        if (uris) data.uris = uris;
+        if (device_id) data.device_id = device_id;
+        await axios.put('https://api.spotify.com/v1/me/player/play', data, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error playing track:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: '播放失敗' });
+    }
+});
+
 // Transfer playback to device
 app.put('/api/player/transfer', async (req, res) => {
     const session = getUserSession(req);
@@ -911,6 +1087,21 @@ app.put('/api/player/transfer', async (req, res) => {
             details: error.response?.data?.error?.message || error.message
         });
     }
+
+    // 靜默刷新 token（不推薦，但可臨時用）
+    app.post('/api/refresh-token', async (req, res) => {
+    const session = getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ success: false });
+    }
+    const refreshed = await refreshAccessToken(session);
+    if (refreshed) {
+        // 如果你用 KV，這裡要更新
+        res.json({ success: true, sessionId: req.headers['x-session-id'] });
+    } else {
+        res.status(401).json({ success: false });
+    }
+    });
 });
 
 // Export for Vercel

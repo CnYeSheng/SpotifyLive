@@ -2541,7 +2541,7 @@
 
         try {
             // 由於 CORS 限制，直接使用本地代理
-            const proxyUrl = `/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}`;
+            const proxyUrl = `/api/lyrics/${encodeURIComponent(this.currentTrack.name)}/${encodeURIComponent(this.currentTrack.artist)}`;
             const response = await fetch(proxyUrl);
             
             if (!response.ok) {
