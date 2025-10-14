@@ -65,18 +65,44 @@ SpotifyLyricsPlayer.prototype.performLyricsSearch = async function() {
     document.getElementById('search-results').style.display = 'none';
     
     try {
-        // ✅ 手動搜尋：分別請求三個來源
-        const providers = ['lrclib', 'netease', 'musixmatch'];
-        const allResults = [];
-
-        for (const provider of providers) {
-            const response = await fetch(`${this.apiBase}/api/lyrics/${encodeURIComponent(query)}/?p=${provider}`);
-            const data = await response.json();
-            if (data.success && data.results) {
-                allResults.push(...data.results);
-            }
+        // 解析查詢：嘗試分離歌手與歌名
+        let artist = '', title = '';
+        const parts = query.split(/[-–\s]+/);
+        if (parts.length >= 2) {
+            artist = parts[0].trim();
+            title = parts.slice(1).join(' ').trim();
+        } else {
+            title = query.trim();
         }
 
+        // 定義三個來源
+        const providers = ['musixmatch', 'lrclib', 'netease'];
+        const allResults = [];
+
+        // 並行搜尋三個來源
+        await Promise.all(providers.map(async (provider) => {
+            try {
+                const proxyUrl = `/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
+                this.log(`📡 搜尋 ${provider}: ${proxyUrl}`);
+                
+                const response = await fetch(proxyUrl);
+                const data = await response.json();
+                
+                if (data.success && data.results && data.results.length > 0) {
+                    // 取第一個結果（通常只有一個）
+                    const result = data.results[0];
+                    result.provider = provider; // 標記來源
+                    allResults.push(result);
+                    this.log(`✅ ${provider} 找到歌詞`);
+                } else {
+                    this.log(`❌ ${provider} 無歌詞`);
+                }
+            } catch (error) {
+                this.log(`❌ ${provider} 搜尋失敗: ${error.message}`);
+            }
+        }));
+
+        // 顯示結果
         if (allResults.length > 0) {
             this.displaySearchResults(allResults);
         } else {
@@ -108,7 +134,14 @@ SpotifyLyricsPlayer.prototype.displaySearchResults = function(results) {
         const resultElement = document.createElement('div');
         resultElement.className = 'result-item';
         
-        // 生成歌詞預覽（前幾行歌詞）
+        // 來源顯示（中文化）
+        const sourceNames = {
+            'musixmatch': 'Musixmatch',
+            'lrclib': 'LrcLib',
+            'netease': '網易雲'
+        };
+        const sourceName = sourceNames[result.provider] || result.provider;
+        
         let preview = '點擊查看歌詞';
         if (result.lyrics && result.lyrics.length > 0) {
             const firstFewLines = result.lyrics.slice(0, 3)
@@ -122,7 +155,7 @@ SpotifyLyricsPlayer.prototype.displaySearchResults = function(results) {
             <div class="result-title">${this.escapeHtml(result.title)}</div>
             <div class="result-artist">${this.escapeHtml(result.artist)}</div>
             <div class="result-preview">${this.escapeHtml(preview)}</div>
-            <span class="result-source">${this.escapeHtml(result.source)}</span>
+            <span class="result-source">${this.escapeHtml(sourceName)}</span>
         `;
         
         resultElement.addEventListener('click', () => {
