@@ -616,30 +616,28 @@
     }
 
     // 更新下一首歌曲預覽內容
-    updateNextSongPreviewContent() {
-        if (!this.nextSongData) {
-            this.log('⚠️ 无下一首数据，跳过内容更新');
-            return;
-        }
-
-        const { name, artists, album } = this.nextSongData;
-        this.log(`📝 更新下一首预览内容: ${name} - ${artists ? artists[0]?.name : 'Unknown'}`);
-        
-        if (this.nextSongTitle) {
-            this.nextSongTitle.textContent = name || '未知歌曲';
-        }
-        
-        if (this.nextSongArtist) {
-            const artistNames = artists ? artists.map(artist => artist.name).join(', ') : '未知藝人';
-            this.nextSongArtist.textContent = artistNames;
-        }
-        
-        if (this.nextSongCover && album && album.images && album.images.length > 0) {
-            this.nextSongCover.src = album.images[0].url;
-        } else if (this.nextSongCover) {
-            this.nextSongCover.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIGZpbGw9Im5vbmUiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMjAgMGMxMSAwIDIwIDkgMjAgMjBzLTkgMjAtMjAgMjBTMCAzMSAwIDIwIDkgMCAyMCAweiIgZmlsbD0iIzMzMzMzMyIvPjx0ZXh0IHg9IjIwIiB5PSIyNSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiBmaWxsPSIjNjY2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj7wn465PC90ZXh0Pjwvc3ZnPg==';
-        }
+    // 更新下一首歌曲預覽內容
+updateNextSongPreviewContent() {
+    if (!this.nextSongData) {
+        this.log('⚠️ 无下一首数据，跳过内容更新');
+        return;
     }
+    const { name, artists, album } = this.nextSongData;
+    this.log(`📝 更新下一首预览内容: ${name} - ${artists ? artists[0]?.name : 'Unknown'}`);
+    if (this.nextSongTitle) {
+        this.nextSongTitle.textContent = name || '未知歌曲';
+    }
+    if (this.nextSongArtist) {
+        // ✅ 正確解析 artists
+        const artistNames = artists ? artists.map(artist => artist.name).join(', ') : '未知藝人';
+        this.nextSongArtist.textContent = artistNames;
+    }
+    if (this.nextSongCover && album && album.images && album.images.length > 0) {
+        this.nextSongCover.src = album.images[0].url;
+    } else if (this.nextSongCover) {
+        this.nextSongCover.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIGZpbGw9Im5vbmUiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMjAgMGMxMSAwIDIwIDkgMjAgMjBzLTkgMjAtMjAgMjBTMCAzMSAwIDIwIDkgMCAyMCAweiIgZmlsbD0iIzMzMzMzMyIvPjx0ZXh0IHg9IjIwIiB5PSIyNSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiBmaWxsPSIjNjY2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj7wn465PC90ZXh0Pjwvc3ZnPg==';
+    }
+}
 
     // 安排下一首歌曲預覽（使用自定义进度）
     scheduleNextSongPreviewWithProgress(customProgress) {
@@ -766,33 +764,31 @@
     }
 
     // 獲取下一首歌曲信息
-    async fetchNextSongData() {
-        try {
-            const headers = {};
-            if (this.sessionId) {
-                headers['X-Session-Id'] = this.sessionId;
-            }
-            
-            const response = await fetch(`${this.apiBase}/api/player/queue`, { 
-                headers,
-                credentials: 'same-origin'
-            });
-            
-            if (response.ok) {
-                const queueData = await response.json();
-                if (queueData.queue && queueData.queue.length > 0) {
-                    this.nextSongData = queueData.queue[0];
-                    this.log('🎵 獲取下一首歌曲信息成功');
-                    return true;
-                }
-            }
-        } catch (error) {
-            this.log(`❌ 獲取下一首歌曲信息失敗: ${error.message}`);
+async fetchNextSongData() {
+    try {
+        const headers = {};
+        if (this.sessionId) {
+            headers['X-Session-Id'] = this.sessionId;
         }
-        
-        this.nextSongData = null;
-        return false;
+        const response = await fetch(`${this.apiBase}/api/player/queue`, { 
+            headers,
+            credentials: 'same-origin'
+        });
+        if (response.ok) {
+            const queueData = await response.json();
+            if (queueData.queue && queueData.queue.length > 0) {
+                // ✅ 確保 nextSongData 包含完整結構
+                this.nextSongData = queueData.queue[0];
+                this.log('🎵 獲取下一首歌曲信息成功');
+                return true;
+            }
+        }
+    } catch (error) {
+        this.log(`❌ 獲取下一首歌曲信息失敗: ${error.message}`);
     }
+    this.nextSongData = null;
+    return false;
+}
 
     // 測試下一首歌曲預覽功能（調試用）
     testNextSongPreview() {
@@ -4158,19 +4154,18 @@
         </div>`;
     }).join('');
 
-        this.playlistContent.innerHTML = playlistHTML;
-
-        this.playlistContent.querySelectorAll('.playlist-item').forEach(item => {
-            item.addEventListener('click', () => {
-                const trackId = item.dataset.trackId;
-                if (trackId && trackId !== 'undefined') {
-                    this.playTrack(trackId);
-                } else {
-                    this.showErrorMessage('無法播放此歌曲：歌曲ID無效');
-                }
-            });
+    this.playlistContent.innerHTML = playlistHTML;
+    this.playlistContent.querySelectorAll('.playlist-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const trackId = item.dataset.trackId;
+            if (trackId && trackId !== 'undefined') {
+                this.playTrack(trackId);
+            } else {
+                this.showErrorMessage('無法播放此歌曲：歌曲ID無效');
+            }
         });
-    }
+    });
+}
 
     async showDevicesModal() {
         this.devicesModal.style.display = 'flex';
