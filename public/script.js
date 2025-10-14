@@ -511,6 +511,44 @@ class SpotifyLyricsPlayer {
         });
     }
 
+    // 隱藏下一首歌曲預覽設定下拉菜單
+    hidePreviewSettingsDropdown() {
+        if (this.previewSettingsDropdown) {
+            this.previewSettingsDropdown.style.display = 'none';
+        }
+    }
+
+    // 顯示下一首歌曲預覽設定下拉菜單
+    togglePreviewSettingsDropdown() {
+        if (this.previewSettingsDropdown) {
+            const isVisible = this.previewSettingsDropdown.style.display === 'block';
+            this.previewSettingsDropdown.style.display = isVisible ? 'none' : 'block';
+        }
+    }
+
+    // 恢復下一首歌曲預覽設定
+    restoreNextSongPreviewSettings() {
+        const savedMode = localStorage.getItem('nextSongPreviewMode') || '10';
+        const radioButton = document.querySelector(`input[name="preview-mode"][value="${savedMode}"]`);
+        if (radioButton) {
+            radioButton.checked = true;
+        }
+        this.nextSongPreviewMode = savedMode;
+    }
+
+    // 更新下一首歌曲預覽模式
+    updateNextSongPreviewMode(mode) {
+        this.nextSongPreviewMode = mode;
+        localStorage.setItem('nextSongPreviewMode', mode);
+        this.log(`下一首歌曲預覽模式已更新為: ${mode}`);
+    }
+
+    // 測試下一首歌曲預覽功能
+    testNextSongPreview() {
+        this.log('🧪 測試下一首歌曲預覽功能...');
+        // 這裡可以添加測試代碼
+    }
+
     async handleAuthError() {
         if (this.isHandlingAuthError) {
             this.log('⚠️ 已經在處理認證錯誤，跳過重複處理');
@@ -4277,8 +4315,8 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
-async function spotifyRequest(url, options = {}) {
-    const player = window.spotifyPlayer;
+async function fetchWithAuth(url, options = {}) {
+    const player = window.player;
     if (!player) return Promise.reject(new Error('播放器尚未初始化'));
 
     const headers = options.headers || {};
@@ -4291,7 +4329,6 @@ async function spotifyRequest(url, options = {}) {
     if (response.status === 401) {
         console.warn('🔑 認證失敗，觸發自動登入...');
         player.scheduleAutoLogin();
-        this.scheduleAutoLogin();
         return Promise.reject(new Error('認證失敗，已觸發自動登入'));
     }
 
@@ -4383,8 +4420,11 @@ SpotifyLyricsPlayer.prototype.addAlbumBreathingEffect = function(enabled) {
 // 頁面卸載時清理
 window.addEventListener('beforeunload', () => {
     if (player) {
-        player.stopTracking();
-        player.stopPeriodicSessionCheck();
+        const player = window.player;
+        if (player) {
+            player.stopTracking();
+            player.stopPeriodicSessionCheck();
+        }
         console.log('🧹 播放器已清理');
     }
 });
@@ -4392,6 +4432,7 @@ window.addEventListener('beforeunload', () => {
 // 页面完全加载后再次检查是否需要自动登录
 window.addEventListener('load', () => {
     setTimeout(() => {
+        const player = window.player;
         if (player) {
             // 不仅检查sessionId，还要检查页面状态
             const needsLogin = !player.sessionId || 
@@ -4408,17 +4449,20 @@ window.addEventListener('load', () => {
 
 // 页面变为可见时检查认证状态
 document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && player) {
-        // 增强的可见性检查
-        const needsLogin = !player.sessionId || 
-                          document.querySelector('#login-btn, .login-btn, [href*="auth"]') ||
-                          (player.authSection && getComputedStyle(player.authSection).display !== 'none');
-                          
-        if (needsLogin) {
-            console.log('🔄 页面变为可见，检查认证状态...');
-            setTimeout(() => {
-                player.scheduleAutoLogin();
-            }, 1000);
+    if (!document.hidden) {
+        const player = window.player;
+        if (player) {
+            // 增强的可见性检查
+            const needsLogin = !player.sessionId || 
+                              document.querySelector('#login-btn, .login-btn, [href*="auth"]') ||
+                              (player.authSection && getComputedStyle(player.authSection).display !== 'none');
+                              
+            if (needsLogin) {
+                console.log('🔄 页面变为可见，检查认证状态...');
+                setTimeout(() => {
+                    player.scheduleAutoLogin();
+                }, 1000);
+            }
         }
     }
 });
@@ -4430,6 +4474,7 @@ new MutationObserver(() => {
     if (url !== lastUrl) {
         lastUrl = url;
         setTimeout(() => {
+            const player = window.player;
             if (player && (!player.sessionId || document.querySelector('#login-btn, .login-btn, [href*="auth"]'))) {
                 console.log('🔄 URL变化，检查是否需要自动登录...');
                 player.scheduleAutoLogin();
