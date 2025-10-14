@@ -21,7 +21,7 @@ const REDIRECT_URI = process.env.REDIRECT_URI;
 // const userSessions = new Map();
 
 // 引入 KV
-import { kv } from '@vercel/kv';
+const { kv } = require('@vercel/kv');
 
 // 取代 userSessions = new Map()
 async function getUserSession(req) {
