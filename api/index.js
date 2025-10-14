@@ -53,12 +53,6 @@ function generateSessionId() {
     return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 }
 
-// Get user session from request
-function getUserSession(req) {
-    const sessionId = req.headers['x-session-id'] || req.query.sessionId;
-    return sessionId ? userSessions.get(sessionId) : null;
-}
-
 // Spotify authorization URL with enhanced scopes
 app.get('/api/auth', (req, res) => {
     const sessionId = generateSessionId();
