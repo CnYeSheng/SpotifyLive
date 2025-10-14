@@ -921,12 +921,23 @@ app.get('/api/player/queue', async (req, res) => {
         })));
         
         const queue = rawQueue.map((track, index) => {
+            // 修复：确保正确处理艺术家和封面信息
+            const artists = track.artists || [];
+            const artistNames = artists.map(artist => artist.name).join(', ') || '未知歌手';
+            
+            const album = track.album || {};
+            const images = album.images || [];
+            const imageUrl = images.length > 0 ? images[0].url : null;
+            
             const trackData = {
                 id: track.id,
                 name: track.name,
-                artist: track.artists?.map(a => a.name).join(', ') || '未知歌手',
-                image: track.album?.images?.[0]?.url || null,
-                duration: track.duration_ms
+                artist: artistNames,
+                image: imageUrl,
+                duration: track.duration_ms,
+                // 添加更多详细信息
+                artists: artists,
+                album: album
             };
             
             // 调试：记录前几首歌的处理结果
@@ -977,9 +988,9 @@ app.get('/api/player/queue', async (req, res) => {
             return res.redirect(307, req.originalUrl);
         }
         
-        console.error('Error fetching queue:', error.response?.data || error.message);
+        console.error('Error getting queue:', error.response?.data || error.message);
         res.status(error.response?.status || 500).json({ 
-            error: 'Failed to fetch queue',
+            error: 'Failed to get queue',
             details: error.response?.data?.error?.message || error.message
         });
     }
