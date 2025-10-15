@@ -3676,40 +3676,26 @@
     // 更新下一首歌曲預覽內容（確保包含歌手和封面）
     updateNextTrackPreviewContent() {
         if (!this.nextSongData) return;
-        
-        // 確保預覽元素存在
-        if (!this.nextSongPreview) {
-            this.nextSongPreview = document.getElementById('next-song-preview');
-        }
-        
-        if (!this.nextSongPreview) return;
-        
-        // 更新封面
-        if (this.nextSongCover && this.nextSongData.image) {
-            this.nextSongCover.src = this.nextSongData.image;
-            this.nextSongCover.style.display = 'block';
-            this.nextSongCover.onerror = () => this.nextSongCover.style.display = 'none';
-        } else if (this.nextSongCover) {
-            this.nextSongCover.style.display = 'none';
-        }
-        
-        // 更新歌曲名稱
-        const nextSongTitle = this.nextSongPreview.querySelector('.next-song-title') || this.nextSongTitle;
-        if (nextSongTitle) {
-            nextSongTitle.textContent = this.nextSongData.name;
-        }
-        
-        // 更新歌手名稱
-        const nextSongArtist = this.nextSongPreview.querySelector('.next-song-artist') || this.nextSongArtist;
-        if (nextSongArtist) {
-            nextSongArtist.textContent = this.nextSongData.artist;
+
+        // 直接使用已初始化的元素引用（確保在 initializeElements 中有）
+        const coverEl = this.nextSongCover; // 來自 initializeElements
+        const titleEl = this.nextSongTitle;
+        const artistEl = this.nextSongArtist;
+
+        if (coverEl && this.nextSongData.image) {
+            coverEl.src = this.nextSongData.image;
+            coverEl.style.display = 'block';
+            coverEl.onerror = () => {
+                coverEl.style.display = 'none';
+            };
+        } else if (coverEl) {
+            coverEl.style.display = 'none';
         }
 
-        // 更新文字
-        if (this.nextSongTitle) this.nextSongTitle.textContent = this.nextSongData.name;
-        if (this.nextSongArtist) this.nextSongArtist.textContent = this.nextSongData.artist;
-        
-        this.log(`🎯 下一首歌曲預覽內容已更新: ${this.nextSongData.name} - ${this.nextSongData.artist}`);
+        if (titleEl) titleEl.textContent = this.nextSongData.name || '未知歌曲';
+        if (artistEl) artistEl.textContent = this.nextSongData.artist || '未知歌手';
+
+        this.log(`🎯 下一首預覽已更新: ${this.nextSongData.name} - ${this.nextSongData.artist}`);
     }
     
     // 始終顯示下一首預覽（不消失）
