@@ -2069,16 +2069,7 @@ class SpotifyLyricsPlayer {
             }
         }
         
-        // 每秒自動更新進度條和同步API時間（當音樂正在播放時）
-        if (this.currentTrack && this.currentTrack.isPlaying) {
-            setTimeout(() => {
-                if (this.currentTrack && this.currentTrack.isPlaying) {
-                    // 每秒增加進度並自動同步API
-                    this.currentTrack.progress += 1000;
-                    this.updateProgress();
-                }
-            }, 1000);
-        }
+        // 移除自動遞增進度的邏輯，讓API來控制時間同步
     }
 
     updateProgress_old() {
@@ -2255,11 +2246,8 @@ class SpotifyLyricsPlayer {
                             break;
                         }
                     } else {
-                        // 檢查響應結構，處理空結果的情況
+                        // 正確處理API回應，不要誤報結果數量
                         let errorMsg = data.error || `${provider} 未找到歌詞`;
-                        if (data.results !== undefined && data.total !== undefined) {
-                            errorMsg = `${provider} 搜尋到 ${data.total} 個結果，但無有效歌詞`;
-                        }
                         lastError = errorMsg;
                         providerResults.push(`${provider}: ${errorMsg}`);
                         this.log(`⚠️ ${provider} 未找到歌詞: ${errorMsg}`);
@@ -3609,14 +3597,26 @@ class SpotifyLyricsPlayer {
             return;
         }
         
-        // 獲取下一首歌曲信息
-        if (!this.nextSongData && this.currentTrack?.queue && this.currentTrack.queue.length > 0) {
-            const nextTrack = this.currentTrack.queue[0];
-            this.nextSongData = {
-                name: nextTrack.name || '未知歌曲',
-                artist: nextTrack.artist || '未知歌手',
-                image: nextTrack.image || null
-            };
+        // 確保從正確的數據源獲取下一首歌曲信息
+        if (!this.nextSongData && this.currentTrack) {
+            // 優先從 queue 獲取
+            if (this.currentTrack.queue && this.currentTrack.queue.length > 0) {
+                const nextTrack = this.currentTrack.queue[0];
+                this.nextSongData = {
+                    name: nextTrack.name || '未知歌曲',
+                    artist: nextTrack.artist || nextTrack.artists?.map(a => a.name).join(', ') || '未知歌手',
+                    image: nextTrack.image || nextTrack.album?.images?.[0]?.url || null
+                };
+            }
+            // 或者從 nextTrack 獲取
+            else if (this.currentTrack.nextTrack) {
+                const nextTrack = this.currentTrack.nextTrack;
+                this.nextSongData = {
+                    name: nextTrack.name || '未知歌曲',
+                    artist: nextTrack.artist || nextTrack.artists?.map(a => a.name).join(', ') || '未知歌手',
+                    image: nextTrack.image || nextTrack.album?.images?.[0]?.url || null
+                };
+            }
         }
         
         if (!this.nextSongData) {
@@ -3645,11 +3645,15 @@ class SpotifyLyricsPlayer {
         
         this.log(`🎵 顯示下一首歌曲預覽: ${this.nextSongData.name} - ${this.nextSongData.artist}`);
         
-        // 只有非始終顯示模式才設置自動隱藏
+        // 修復：始終顯示模式下不設置自動隱藏定時器
         if (this.nextSongPreviewMode !== 'always') {
             setTimeout(() => {
-                this.hideNextSongPreview();
+                if (this.nextSongPreviewMode !== 'always') { // 雙重檢查防止模式被改變
+                    this.hideNextSongPreview();
+                }
             }, 10000);
+        } else {
+            this.log('🔒 始終顯示模式，預覽將保持可見');
         }
     }
     
