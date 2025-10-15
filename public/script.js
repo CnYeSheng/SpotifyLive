@@ -2034,6 +2034,50 @@ class SpotifyLyricsPlayer {
 
     updateProgress() {
         if (!this.currentTrack) return;
+        
+        const currentTime = this.currentTrack.progress;
+        const duration = this.currentTrack.duration;
+        
+        if (duration > 0) {
+            const progressPercent = (currentTime / duration) * 100;
+            this.progressFill.style.width = `${progressPercent}%`;
+            
+            this.currentTime.textContent = this.formatTime(currentTime);
+            this.totalTime.textContent = this.formatTime(duration);
+            
+            // 檢查是否接近歌曲結尾
+            const remainingTime = duration - currentTime;
+            this.isNearTrackEnd = remainingTime <= 30000; // 30 seconds
+            
+            // 動態調整輪詢間隔
+            this.adjustPollingInterval();
+            
+            // 更新同步歌詞
+            if (this.lyricsType === 'synced' && this.lyrics.length > 0) {
+                const adjustedTime = currentTime + this.lyricsTimeOffset;
+                this.updateSyncedLyrics(adjustedTime);
+            }
+            
+            // 檢查並安排下一首歌曲預覽
+            if (this.nextSongPreviewMode !== 'never') {
+                this.scheduleNextSongPreviewWithProgress(currentTime);
+            }
+        }
+        
+        // 每秒自動更新進度條和同步API時間（當音樂正在播放時）
+        if (this.currentTrack && this.currentTrack.isPlaying) {
+            setTimeout(() => {
+                if (this.currentTrack && this.currentTrack.isPlaying) {
+                    // 每秒增加進度並自動同步API
+                    this.currentTrack.progress += 1000;
+                    this.updateProgress();
+                }
+            }, 1000);
+        }
+    }
+
+    updateProgress_old() {
+        if (!this.currentTrack) return;
 
         if (this.animationFrameId) {
             cancelAnimationFrame(this.animationFrameId);

@@ -1216,6 +1216,152 @@ app.get('/api/get-lyrics/:source/:id', async (req, res) => {
 // Get lyrics with multiple providers support using API calls
 app.get('/api/lyrics/:artist/:title', async (req, res) => {
     const { artist, title } = req.params;
+    const provider = req.query.p || 'musixmatch'; // 默認使用 musixmatch
+    
+    try {
+        console.log(`🎤 搜尋歌詞: ${title} by ${artist} (來源: ${provider})`);
+        
+        let lyricsData = null;
+        
+        // 根據指定的提供者搜尋歌詞
+        switch (provider) {
+            case 'musixmatch':
+                lyricsData = await searchMusixmatchLyrics(artist, title);
+                break;
+            case 'lrclib':
+                lyricsData = await searchLrclibLyrics(artist, title);
+                break;
+            case 'netease':
+                lyricsData = await searchNeteaseLyrics(artist, title);
+                break;
+            default:
+                // 如果未指定或不支援的提供者，嘗試所有來源
+                for (const src of ['musixmatch', 'lrclib', 'netease']) {
+                    try {
+                        switch (src) {
+                            case 'musixmatch':
+                                lyricsData = await searchMusixmatchLyrics(artist, title);
+                                break;
+                            case 'lrclib':
+                                lyricsData = await searchLrclibLyrics(artist, title);
+                                break;
+                            case 'netease':
+                                lyricsData = await searchNeteaseLyrics(artist, title);
+                                break;
+                        }
+                        if (lyricsData && lyricsData.success) {
+                            break;
+                        }
+                    } catch (error) {
+                        console.log(`⚠️ ${src} 搜尋失敗: ${error.message}`);
+                    }
+                }
+        }
+        
+        if (lyricsData && lyricsData.success) {
+            res.json(lyricsData);
+        } else {
+            res.status(404).json({
+                success: false,
+                error: '未找到歌詞',
+                provider: provider
+            });
+        }
+        
+    } catch (error) {
+        console.error(`❌ 歌詞搜尋失敗: ${error.message}`);
+        res.status(500).json({
+            success: false,
+            error: '歌詞搜尋失敗: ' + error.message,
+            provider: provider
+        });
+    }
+});
+
+// 搜尋 Musixmatch 歌詞
+async function searchMusixmatchLyrics(artist, title) {
+    try {
+        const query = `${title} ${artist}`;
+        const response = await axios.get(`https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`, {
+            timeout: 15000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+        
+        if (response.data) {
+            const lrcResult = parseLrcFormat(response.data);
+            return {
+                success: true,
+                lyrics: lrcResult.lyrics,
+                type: lrcResult.isLrc ? 'synced' : 'plain',
+                source: 'musixmatch'
+            };
+        }
+        
+        return { success: false, error: 'No lyrics found' };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+}
+
+// 搜尋 LRCLib 歌詞
+async function searchLrclibLyrics(artist, title) {
+    try {
+        const response = await axios.get(`https://lrclib.net/api/search`, {
+            params: {
+                artist_name: artist,
+                track_name: title
+            },
+            timeout: 15000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+        
+        if (response.data && response.data.length > 0) {
+            const track = response.data[0];
+            if (track.syncedLyrics) {
+                const lrcResult = parseLrcFormat(track.syncedLyrics);
+                return {
+                    success: true,
+                    lyrics: lrcResult.lyrics,
+                    type: 'synced',
+                    source: 'lrclib'
+                };
+            } else if (track.plainLyrics) {
+                const lyrics = track.plainLyrics.split('\n')
+                    .filter(line => line.trim() !== '')
+                    .map(line => ({ text: line.trim() }));
+                return {
+                    success: true,
+                    lyrics: lyrics,
+                    type: 'plain',
+                    source: 'lrclib'
+                };
+            }
+        }
+        
+        return { success: false, error: 'No lyrics found' };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+}
+
+// 搜尋 NetEase 歌詞
+async function searchNeteaseLyrics(artist, title) {
+    try {
+        // 這裡可以實現 NetEase 音樂的歌詞搜尋
+        // 由於 API 限制，暫時返回失敗
+        return { success: false, error: 'NetEase provider not implemented yet' };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+}
+
+// 原有的歌詞端點（保持向後兼容）
+app.get('/api/lyrics-legacy/:artist/:title', async (req, res) => {
+    const { artist, title } = req.params;
     const providersParam = req.query.p || ''; // e.g. "lrclib,musixmatch,netease"
     
     try {
