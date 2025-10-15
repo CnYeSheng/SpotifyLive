@@ -1,4 +1,4 @@
-class SpotifyLyricsPlayer {
+﻿class SpotifyLyricsPlayer {
     constructor() {
         this.currentTrack = null;
         this.lyrics = [];
@@ -2125,6 +2125,7 @@ class SpotifyLyricsPlayer {
     }
 
     async loadLyrics() {
+        const apiUrl = `/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}`;
         if (!this.currentTrack) {
             console.log('❌ 沒有當前歌曲，跳過歌詞載入');
             return;
@@ -4309,7 +4310,7 @@ class SpotifyLyricsPlayer {
                 headers['X-Session-Id'] = this.sessionId;
             }
 
-            const playUrl = '/api/play';
+            const playUrl = '/api/player/play';
             this.log(`📡 播放請求 URL: ${playUrl}`);
 
             const response = await fetch(playUrl, {
@@ -4544,7 +4545,7 @@ class SpotifyLyricsPlayer {
                     const nextTrack = queueData.queue[0];
                     
                     const artists = nextTrack.artists || [];
-                    const artistNames = artists.map(artist => artist.name).join(', ') || '未知歌手';
+                    const artistNames = nextTrack.artist || '未知歌手';
                     
                     const album = nextTrack.album || {};
                     const images = album.images || [];

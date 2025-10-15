@@ -1213,88 +1213,102 @@ app.get('/api/get-lyrics/:source/:id', async (req, res) => {
     }
 });
 
-// Get lyrics with multiple providers support using API calls
+// Get lyrics with multiple providers support
 app.get('/api/lyrics/:artist/:title', async (req, res) => {
     const { artist, title } = req.params;
-    const provider = req.query.p || 'auto'; // 默認自動搜尋所有來源
-    
+    const provider = req.query.p; // undefined 表示自動模式
+
     try {
-        console.log(`🎤 搜尋歌詞: ${title} by ${artist} (來源: ${provider})`);
-        
-        let lyricsData = null;
-        
-        if (provider === 'auto') {
-            // 自動模式：依序嘗試所有提供者
+        console.log(`🎤 請求歌詞: ${artist} - ${title} (provider: ${provider || 'auto'})`);
+
+        // ========== 自動模式：無 ?p= ==========
+        if (!provider) {
             const providers = ['musixmatch', 'lrclib', 'netease'];
-            for (const providerName of providers) {
+            for (const p of providers) {
                 try {
-                    console.log(`🔍 嘗試 ${providerName}...`);
+                    const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${p}`;
+                    console.log(`🔍 自動模式嘗試 ${p}: ${apiUrl}`);
                     
-                    switch (providerName) {
-                        case 'musixmatch':
-                            lyricsData = await searchMusixmatchLyrics(artist, title);
-                            break;
-                        case 'lrclib':
-                            lyricsData = await searchLrclibLyrics(artist, title);
-                            break;
-                        case 'netease':
-                            lyricsData = await searchNeteaseLyrics(artist, title);
-                            break;
-                    }
-                    
-                    if (lyricsData && lyricsData.success) {
-                        console.log(`✅ 從 ${providerName} 找到歌詞`);
-                        lyricsData.provider = providerName;
-                        break;
+                    const response = await axios.get(apiUrl, {
+                        timeout: 15000,
+                        headers: { 'User-Agent': 'Spotify-Lyrics-Player/1.0' }
+                    });
+
+                    // 檢查是否成功取得有效歌詞
+                    if (response.data?.success && Array.isArray(response.data.lyrics) && response.data.lyrics.length > 0) {
+                        console.log(`✅ 自動模式從 ${p} 成功取得歌詞`);
+                        return res.json({
+                            success: true,
+                            lyrics: response.data.lyrics,
+                            type: response.data.type || 'plain',
+                            provider: p
+                        });
                     }
                 } catch (error) {
-                    console.log(`⚠️ ${providerName} 搜尋失敗: ${error.message}`);
+                    console.error(`⚠️ 自動模式 ${p} 失敗:`, error.message);
                 }
             }
-        } else {
-            // 指定提供者模式
-            switch (provider) {
-                case 'musixmatch':
-                    lyricsData = await searchMusixmatchLyrics(artist, title);
-                    break;
-                case 'lrclib':
-                    lyricsData = await searchLrclibLyrics(artist, title);
-                    break;
-                case 'netease':
-                    lyricsData = await searchNeteaseLyrics(artist, title);
-                    break;
-                default:
-                    return res.status(400).json({
-                        success: false,
-                        error: '不支援的歌詞提供者',
-                        supportedProviders: ['musixmatch', 'lrclib', 'netease', 'auto']
-                    });
-            }
-            
-            if (lyricsData && lyricsData.success) {
-                lyricsData.provider = provider;
-            }
-        }
-        
-        if (lyricsData && lyricsData.success) {
-            res.json(lyricsData);
-        } else {
-            res.status(404).json({
+
+            // 所有來源都失敗
+            console.log('❌ 自動模式：所有來源均未找到歌詞');
+            return res.status(404).json({
                 success: false,
                 error: '未找到歌詞',
-                provider: provider,
-                searchedProviders: provider === 'auto' ? ['musixmatch', 'lrclib', 'netease'] : [provider],
-                results: [],
-                total: 0
+                searched: ['musixmatch', 'lrclib', 'netease']
             });
         }
-        
+
+        // ========== 指定來源模式：有 ?p= ==========
+        const validProviders = ['musixmatch', 'lrclib', 'netease'];
+        if (!validProviders.includes(provider)) {
+            return res.status(400).json({
+                success: false,
+                error: '不支援的歌詞來源',
+                supported: validProviders
+            });
+        }
+
+        try {
+            const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
+            console.log(`📡 指定來源 ${provider}: ${apiUrl}`);
+            
+            const response = await axios.get(apiUrl, {
+                timeout: 15000,
+                headers: { 'User-Agent': 'Spotify-Lyrics-Player/1.0' }
+            });
+
+            if (response.data?.success && Array.isArray(response.data.lyrics) && response.data.lyrics.length > 0) {
+                console.log(`✅ 指定來源 ${provider} 成功取得歌詞`);
+                return res.json({
+                    success: true,
+                    lyrics: response.data.lyrics,
+                    type: response.data.type || 'plain',
+                    provider: provider
+                });
+            } else {
+                console.log(`❌ 指定來源 ${provider} 未找到歌詞`);
+                return res.status(404).json({
+                    success: false,
+                    error: `${provider} 未找到歌詞`,
+                    provider: provider
+                });
+            }
+        } catch (error) {
+            console.error(`❌ 指定來源 ${provider} 請求失敗:`, error.message);
+            return res.status(500).json({
+                success: false,
+                error: `載入 ${provider} 歌詞失敗`,
+                provider: provider,
+                details: error.message
+            });
+        }
+
     } catch (error) {
-        console.error(`❌ 歌詞搜尋失敗: ${error.message}`);
-        res.status(500).json({
+        console.error('🔥 /api/lyrics 路由發生未預期錯誤:', error);
+        return res.status(500).json({
             success: false,
-            error: '歌詞搜尋失敗: ' + error.message,
-            provider: provider
+            error: '伺服器內部錯誤',
+            details: error.message
         });
     }
 });
