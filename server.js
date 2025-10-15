@@ -1216,46 +1216,64 @@ app.get('/api/get-lyrics/:source/:id', async (req, res) => {
 // Get lyrics with multiple providers support using API calls
 app.get('/api/lyrics/:artist/:title', async (req, res) => {
     const { artist, title } = req.params;
-    const provider = req.query.p || 'musixmatch'; // 默認使用 musixmatch
+    const provider = req.query.p || 'auto'; // 默認自動搜尋所有來源
     
     try {
         console.log(`🎤 搜尋歌詞: ${title} by ${artist} (來源: ${provider})`);
         
         let lyricsData = null;
         
-        // 根據指定的提供者搜尋歌詞
-        switch (provider) {
-            case 'musixmatch':
-                lyricsData = await searchMusixmatchLyrics(artist, title);
-                break;
-            case 'lrclib':
-                lyricsData = await searchLrclibLyrics(artist, title);
-                break;
-            case 'netease':
-                lyricsData = await searchNeteaseLyrics(artist, title);
-                break;
-            default:
-                // 如果未指定或不支援的提供者，嘗試所有來源
-                for (const src of ['musixmatch', 'lrclib', 'netease']) {
-                    try {
-                        switch (src) {
-                            case 'musixmatch':
-                                lyricsData = await searchMusixmatchLyrics(artist, title);
-                                break;
-                            case 'lrclib':
-                                lyricsData = await searchLrclibLyrics(artist, title);
-                                break;
-                            case 'netease':
-                                lyricsData = await searchNeteaseLyrics(artist, title);
-                                break;
-                        }
-                        if (lyricsData && lyricsData.success) {
+        if (provider === 'auto') {
+            // 自動模式：依序嘗試所有提供者
+            const providers = ['musixmatch', 'lrclib', 'netease'];
+            for (const providerName of providers) {
+                try {
+                    console.log(`🔍 嘗試 ${providerName}...`);
+                    
+                    switch (providerName) {
+                        case 'musixmatch':
+                            lyricsData = await searchMusixmatchLyrics(artist, title);
                             break;
-                        }
-                    } catch (error) {
-                        console.log(`⚠️ ${src} 搜尋失敗: ${error.message}`);
+                        case 'lrclib':
+                            lyricsData = await searchLrclibLyrics(artist, title);
+                            break;
+                        case 'netease':
+                            lyricsData = await searchNeteaseLyrics(artist, title);
+                            break;
                     }
+                    
+                    if (lyricsData && lyricsData.success) {
+                        console.log(`✅ 從 ${providerName} 找到歌詞`);
+                        lyricsData.provider = providerName;
+                        break;
+                    }
+                } catch (error) {
+                    console.log(`⚠️ ${providerName} 搜尋失敗: ${error.message}`);
                 }
+            }
+        } else {
+            // 指定提供者模式
+            switch (provider) {
+                case 'musixmatch':
+                    lyricsData = await searchMusixmatchLyrics(artist, title);
+                    break;
+                case 'lrclib':
+                    lyricsData = await searchLrclibLyrics(artist, title);
+                    break;
+                case 'netease':
+                    lyricsData = await searchNeteaseLyrics(artist, title);
+                    break;
+                default:
+                    return res.status(400).json({
+                        success: false,
+                        error: '不支援的歌詞提供者',
+                        supportedProviders: ['musixmatch', 'lrclib', 'netease', 'auto']
+                    });
+            }
+            
+            if (lyricsData && lyricsData.success) {
+                lyricsData.provider = provider;
+            }
         }
         
         if (lyricsData && lyricsData.success) {
@@ -1264,7 +1282,8 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
             res.status(404).json({
                 success: false,
                 error: '未找到歌詞',
-                provider: provider
+                provider: provider,
+                searchedProviders: provider === 'auto' ? ['musixmatch', 'lrclib', 'netease'] : [provider]
             });
         }
         

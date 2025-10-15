@@ -1844,6 +1844,11 @@ class SpotifyLyricsPlayer {
         // 更新下一首預覽（使用一次性獲取的數據）
         this.updateNextTrackPreview();
         
+        // 更新播放清單信息（確保包含歌手和封面）
+        if (data.queue && data.queue.length > 0) {
+            this.updatePlaylist(data.queue, data.nextTrack || null);
+        }
+        
         // 每次都需要更新的內容
         this.updatePlayerControls();
         this.updateProgress();
@@ -2136,7 +2141,7 @@ class SpotifyLyricsPlayer {
 
         // 如果是 Podcast，顯示特殊訊息而不載入歌詞
         if (this.currentTrack.contentType === 'podcast') {
-            this.showLyricsPlaceholder('🎙️ 正在播放 Podcast\n\n享受精彩的音頻內容吧！');
+            this.showLyricsPlaceholder('🎙️ 正在播放 Podcast\\n\\n享受精彩的音頻內容吧！');
             this.updateStatus('lyrics', true);
             return;
         }
@@ -2192,43 +2197,72 @@ class SpotifyLyricsPlayer {
         this.showLyricsPlaceholder('🎵 正在載入歌詞...');
 
         try {
-            // 由於 CORS 限制，直接使用本地代理
-            const proxyUrl = `${this.apiBase}/lyrics/${encodeURIComponent(this.currentTrack.name)}/${encodeURIComponent(this.currentTrack.artist)}`;
-            const response = await fetch(proxyUrl);
+            // 修復：使用多個歌詞來源 - 三個解決方案讓用戶選擇
+            const providers = ['musixmatch', 'lrclib', 'netease'];
+            let lyricsFound = false;
+            let lastError = null;
             
-            if (!response.ok) {
-                throw new Error(`API 響應錯誤: ${response.status} ${response.statusText}`);
+            for (const provider of providers) {
+                try {
+                    this.log(`🔍 嘗試從 ${provider} 載入歌詞...`);
+                    
+                    // 構建 API URL with provider parameter
+                    let apiUrl = `${this.apiBase}/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}?p=${provider}`;
+                    if (this.apiBase === '') {
+                        apiUrl = `/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}?p=${provider}`;
+                    }
+                    
+                    this.log(`📡 請求歌詞 API: ${apiUrl}`);
+
+                    const response = await fetch(apiUrl, {
+                        timeout: 25000,
+                        headers: {
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`API 響應錯誤: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    
+                    if (data.success && data.lyrics && data.lyrics.length > 0) {
+                        const validLyrics = data.lyrics.filter(line => {
+                            const text = line.text || line;
+                            return text && text.trim() !== '' && this.isValidText(text);
+                        });
+
+                        if (validLyrics.length > 0) {
+                            this.lyrics = validLyrics;
+                            this.lyricsType = data.type || 'plain';
+                            this.currentLyricsTrackId = this.currentTrack.id;
+                            this.log(`✅ 從 ${provider} 載入歌詞成功: ${validLyrics.length} 行，類型: ${this.lyricsType}`);
+                            this.displayLyrics();
+                            this.updateStatus('lyrics', true, `歌詞來源: ${provider}`);
+                            
+                            // 如果是同步歌詞，立即更新當前行
+                            if (this.lyricsType === 'synced' && this.currentTrack) {
+                                const adjustedTime = this.currentTrack.progress + this.lyricsTimeOffset;
+                                this.updateSyncedLyrics(adjustedTime);
+                            }
+                            
+                            lyricsFound = true;
+                            break;
+                        }
+                    } else {
+                        lastError = data.error || `${provider} 未找到歌詞`;
+                        this.log(`⚠️ ${provider} 未找到歌詞`);
+                    }
+                } catch (error) {
+                    lastError = error.message;
+                    this.log(`❌ ${provider} 載入失敗: ${error.message}`);
+                }
             }
             
-            const data = await response.json();
-            console.log('歌詞 API 回應:', data);
-
-            if (data.success && data.lyrics && Array.isArray(data.lyrics) && data.lyrics.length > 0) {
-                const validLyrics = data.lyrics.filter(line => {
-                    const text = line.text || line;
-                    return text && text.trim() !== '' && this.isValidText(text);
-                });
-
-                if (validLyrics.length > 0) {
-                    // 確保這是當前歌曲的歌詞
-                    if (this.currentTrack && this.currentTrack.id) {
-                        this.lyrics = validLyrics;
-                        this.lyricsType = data.type || 'plain';
-                        this.currentLyricsTrackId = this.currentTrack.id;
-                        this.displayLyrics();
-                        this.updateStatus('lyrics', true);
-                        console.log(`✅ 歌詞載入成功: ${validLyrics.length} 行 (${this.lyricsType}) 來源: ${data.source}`);
-                    } else {
-                        console.log('⚠️ 歌曲已切換，忽略此歌詞響應');
-                    }
-                } else {
-                    console.log(`❌ 歌詞內容無效或為亂碼`);
-                    this.showLyricsError('歌詞內容格式錯誤');
-                }
-            } else {
-                const errorMsg = data.error || '找不到歌詞';
-                console.log(`❌ 歌詞載入失敗: ${errorMsg}`);
-                this.showLyricsError(errorMsg);
+            if (!lyricsFound) {
+                throw new Error(lastError || '所有來源都未找到歌詞');
             }
         } catch (error) {
             console.error('載入歌詞失敗:', error);
@@ -2821,7 +2855,7 @@ class SpotifyLyricsPlayer {
         }, 600);
     }
 
-    updateStatus(type, status) {
+    updateStatus(type, status, message = null) {
         const statusDot = type === 'spotify' ? this.spotifyStatus : this.lyricsStatus;
         if (!statusDot) return;
 
@@ -2829,8 +2863,19 @@ class SpotifyLyricsPlayer {
         
         if (status === true) {
             statusDot.classList.add('connected');
+            if (message && type === 'lyrics') {
+                statusDot.title = message;
+            }
         } else if (status === false) {
             statusDot.classList.add('error');
+            if (message) {
+                statusDot.title = message;
+            }
+        } else if (status === null) {
+            // Loading state - 可以添加loading樣式
+            if (message) {
+                statusDot.title = message;
+            }
         }
     }
 
@@ -3480,6 +3525,136 @@ class SpotifyLyricsPlayer {
         }
     }
 
+    // 修復：scheduleNextSongPreview 函數
+    scheduleNextSongPreview() {
+        // 清除現有的定時器
+        if (this.nextSongPreviewTimeout) {
+            clearTimeout(this.nextSongPreviewTimeout);
+            this.nextSongPreviewTimeout = null;
+        }
+        
+        if (!this.currentTrack || !this.currentTrack.duration) {
+            return;
+        }
+        
+        const currentTime = this.currentTrack.progress || 0;
+        const duration = this.currentTrack.duration;
+        const remainingTime = duration - currentTime;
+        
+        let triggerTime = 0;
+        
+        switch (this.nextSongPreviewMode) {
+            case '10':
+                triggerTime = 10000; // 10 seconds before end
+                break;
+            case '20':
+                triggerTime = 20000; // 20 seconds before end
+                break;
+            case '30':
+                triggerTime = 30000; // 30 seconds before end
+                break;
+            case 'always':
+                // 總是顯示，在歌曲開始播放後5秒顯示
+                triggerTime = duration - 5000;
+                break;
+            case 'never':
+                return; // 永不顯示
+            default:
+                triggerTime = 10000; // 默認10秒
+        }
+        
+        // 如果剩餘時間小於等於觸發時間，立即顯示
+        if (remainingTime <= triggerTime) {
+            this.showNextSongPreview();
+            return;
+        }
+        
+        // 計算延遲時間
+        const delay = remainingTime - triggerTime;
+        
+        this.log(`🔮 安排下一首歌曲預覽，延遲 ${delay / 1000} 秒後顯示`);
+        
+        this.nextSongPreviewTimeout = setTimeout(() => {
+            this.showNextSongPreview();
+        }, delay);
+    }
+
+    // 顯示下一首歌曲預覽
+    showNextSongPreview() {
+        if (this.nextSongPreviewMode === 'never') {
+            return;
+        }
+        
+        // 檢查是否已經顯示過了
+        if (this.isNextSongPreviewShown) {
+            return;
+        }
+        
+        // 獲取下一首歌曲信息
+        if (!this.nextSongData && this.currentTrack?.queue && this.currentTrack.queue.length > 0) {
+            const nextTrack = this.currentTrack.queue[0];
+            this.nextSongData = {
+                name: nextTrack.name || '未知歌曲',
+                artist: nextTrack.artist || '未知歌手',
+                image: nextTrack.image || null
+            };
+        }
+        
+        if (!this.nextSongData) {
+            this.log('⚠️ 沒有下一首歌曲數據，無法顯示預覽');
+            return;
+        }
+        
+        // 確保預覽元素存在
+        if (!this.nextSongPreview) {
+            this.nextSongPreview = document.getElementById('next-song-preview');
+        }
+        
+        if (!this.nextSongPreview) {
+            this.log('❌ 找不到下一首歌曲預覽元素');
+            return;
+        }
+        
+        // 更新預覽內容
+        if (this.nextSongCover && this.nextSongData.image) {
+            this.nextSongCover.src = this.nextSongData.image;
+        }
+        if (this.nextSongTitle) {
+            this.nextSongTitle.textContent = this.nextSongData.name;
+        }
+        if (this.nextSongArtist) {
+            this.nextSongArtist.textContent = this.nextSongData.artist;
+        }
+        
+        // 顯示預覽
+        this.nextSongPreview.style.display = 'block';
+        this.nextSongPreview.classList.add('slide-in');
+        this.isNextSongPreviewShown = true;
+        
+        this.log(`🎵 顯示下一首歌曲預覽: ${this.nextSongData.name} - ${this.nextSongData.artist}`);
+        
+        // 設置自動隱藏（10秒後）
+        setTimeout(() => {
+            this.hideNextSongPreview();
+        }, 10000);
+    }
+    
+    // 隱藏下一首歌曲預覽
+    hideNextSongPreview() {
+        if (this.nextSongPreview) {
+            this.nextSongPreview.classList.remove('slide-in');
+            this.nextSongPreview.classList.add('slide-out');
+            
+            setTimeout(() => {
+                if (this.nextSongPreview) {
+                    this.nextSongPreview.style.display = 'none';
+                    this.nextSongPreview.classList.remove('slide-out');
+                }
+            }, 500);
+        }
+        this.isNextSongPreviewShown = false;
+    }
+
     extractColorsAndUpdateBackground(imageUrl) {
         this.fetchImageThroughProxy(imageUrl)
             .then(colors => {
@@ -3795,58 +3970,89 @@ class SpotifyLyricsPlayer {
     }
 
     displayPlaylist(tracks) {
-    if (!tracks || tracks.length === 0) {
-        this.playlistContent.innerHTML = '<div class="loading">播放清單為空</div>';
-        return;
-    }
-
-    const playlistHTML = tracks.map((track, index) => {
-        // 确保正确解析艺术家和专辑封面
-        let artistNames = '未知歌手';
-        let imageUrl = null;
-        
-        // 处理不同的数据结构
-        if (track.track) {
-            // 如果是播放列表项
-            artistNames = track.track.artists?.map(a => a.name).join(', ') || '未知歌手';
-            imageUrl = track.track.album?.images?.[0]?.url || null;
-            track = track.track; // 指向实际的曲目对象
-        } else {
-            // 如果是队列项或其他直接曲目结构
-            artistNames = track.artists?.map(a => a.name).join(', ') || '未知歌手';
-            imageUrl = track.album?.images?.[0]?.url || null;
+        if (!tracks || tracks.length === 0) {
+            this.playlistContent.innerHTML = '<div class="loading">播放清單為空</div>';
+            return;
         }
 
-        return `
-        <div class="playlist-item ${track.id === this.currentTrack?.id ? 'current' : ''}" data-track-id="${track.id}">
-            ${imageUrl ? 
-                `<img src="${imageUrl}" alt="${track.name}" 
-                      style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px; margin-right: 12px;"
-                      onerror="this.style.display='none'; this.nextElementSibling.style.marginLeft='0';">` 
-                : 
-                `<div style="width: 48px; height: 48px; background: linear-gradient(135deg, #333, #555); 
-                           border-radius: 4px; margin-right: 12px; display: flex; align-items: center; 
-                           justify-content: center; color: #999; font-size: 20px;">🎵</div>`
-            }
-            <div class="playlist-item-info">
-                <div class="playlist-item-title">${this.escapeHtml(track.name || '未知歌曲')}</div>
-                <div class="playlist-item-artist">${this.escapeHtml(artistNames)}</div>
-            </div>
-        </div>`;
-    }).join('');
+        // 根據 queue.json 的結構來處理播放清單
+        console.log('🎯 處理播放清單數據:', tracks);
 
-    this.playlistContent.innerHTML = playlistHTML;
-    this.playlistContent.querySelectorAll('.playlist-item').forEach(item => {
-        item.addEventListener('click', () => {
-            const trackId = item.dataset.trackId;
-            if (trackId && trackId !== 'undefined') {
-                this.playTrack(trackId);
+        const playlistHTML = tracks.map((track, index) => {
+            // 確保正確解析歌手和封面信息
+            let artistNames = '未知歌手';
+            let imageUrl = null;
+            let trackName = '未知歌曲';
+            let trackId = null;
+            let duration = 0;
+            
+            // 處理不同的數據結構
+            if (track.track) {
+                // 如果是播放列表項結構
+                const actualTrack = track.track;
+                artistNames = actualTrack.artists?.map(a => a.name).join(', ') || 
+                             actualTrack.artist || '未知歌手';
+                imageUrl = actualTrack.album?.images?.[0]?.url || 
+                          actualTrack.image || null;
+                trackName = actualTrack.name || '未知歌曲';
+                trackId = actualTrack.id;
+                duration = actualTrack.duration_ms || 0;
             } else {
-                this.showErrorMessage('無法播放此歌曲：歌曲ID無效');
+                // 如果是隊列項或其他直接曲目結構
+                artistNames = track.artists?.map(a => a.name).join(', ') || 
+                             track.artist || '未知歌手';
+                imageUrl = track.album?.images?.[0]?.url || 
+                          track.image || null;
+                trackName = track.name || '未知歌曲';
+                trackId = track.id;
+                duration = track.duration_ms || track.duration || 0;
             }
+
+            // 調試信息
+            if (index < 3) {
+                console.log(`🎵 處理第${index + 1}首歌曲:`, {
+                    name: trackName,
+                    artist: artistNames,
+                    hasImage: !!imageUrl,
+                    imageUrl: imageUrl?.substring(0, 60) || 'NO_IMAGE'
+                });
+            }
+
+            return `
+            <div class="playlist-item ${trackId === this.currentTrack?.id ? 'current' : ''}" data-track-id="${trackId}">
+                ${imageUrl ? 
+                    `<img src="${imageUrl}" alt="${trackName}" 
+                          style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px; margin-right: 12px;"
+                          onerror="this.style.display='none'; this.nextElementSibling.style.marginLeft='0';">` 
+                    : 
+                    `<div style="width: 48px; height: 48px; background: linear-gradient(135deg, #333, #555); 
+                               border-radius: 4px; margin-right: 12px; display: flex; align-items: center; 
+                               justify-content: center; color: #999; font-size: 20px;">🎵</div>`
+                }
+                <div class="playlist-item-info">
+                    <div class="playlist-item-title">${this.escapeHtml(trackName)}</div>
+                    <div class="playlist-item-artist">${this.escapeHtml(artistNames)}</div>
+                    ${duration > 0 ? `<div class="playlist-item-duration">${this.formatTime(duration)}</div>` : ''}
+                </div>
+            </div>`;
+        }).join('');
+
+        this.playlistContent.innerHTML = playlistHTML;
+        
+        // 綁定點擊事件
+        this.playlistContent.querySelectorAll('.playlist-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const trackId = item.dataset.trackId;
+                if (trackId && trackId !== 'undefined' && trackId !== 'null') {
+                    this.playTrack(trackId);
+                } else {
+                    this.showErrorMessage('無法播放此歌曲：歌曲ID無效');
+                }
+            });
         });
-    });
-}
+        
+        console.log(`✅ 播放清單已更新，共 ${tracks.length} 首歌曲`);
+    }
 
     async showDevicesModal() {
         this.devicesModal.style.display = 'flex';
