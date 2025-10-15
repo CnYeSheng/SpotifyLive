@@ -2065,7 +2065,7 @@ class SpotifyLyricsPlayer {
             
             // 檢查並安排下一首歌曲預覽
             if (this.nextSongPreviewMode !== 'never') {
-                this.scheduleNextSongPreviewWithProgress(currentTime);
+                this.scheduleNextSongPreview();
             }
         }
         
@@ -2231,7 +2231,7 @@ class SpotifyLyricsPlayer {
                     const data = await response.json();
                     console.log(`${provider} API 回應:`, data);
                     
-                    if (data.success && data.lyrics && data.lyrics.length > 0) {
+                    if (data.success && data.lyrics && Array.isArray(data.lyrics) && data.lyrics.length > 0) {
                         const validLyrics = data.lyrics.filter(line => {
                             const text = line.text || line;
                             return text && text.trim() !== '' && this.isValidText(text);
@@ -2255,7 +2255,11 @@ class SpotifyLyricsPlayer {
                             break;
                         }
                     } else {
-                        const errorMsg = data.error || `${provider} 未找到歌詞`;
+                        // 檢查響應結構，處理空結果的情況
+                        let errorMsg = data.error || `${provider} 未找到歌詞`;
+                        if (data.results !== undefined && data.total !== undefined) {
+                            errorMsg = `${provider} 搜尋到 ${data.total} 個結果，但無有效歌詞`;
+                        }
                         lastError = errorMsg;
                         providerResults.push(`${provider}: ${errorMsg}`);
                         this.log(`⚠️ ${provider} 未找到歌詞: ${errorMsg}`);

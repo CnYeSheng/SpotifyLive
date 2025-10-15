@@ -1283,7 +1283,9 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                 success: false,
                 error: '未找到歌詞',
                 provider: provider,
-                searchedProviders: provider === 'auto' ? ['musixmatch', 'lrclib', 'netease'] : [provider]
+                searchedProviders: provider === 'auto' ? ['musixmatch', 'lrclib', 'netease'] : [provider],
+                results: [],
+                total: 0
             });
         }
         
@@ -1300,26 +1302,30 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
 // 搜尋 Musixmatch 歌詞
 async function searchMusixmatchLyrics(artist, title) {
     try {
-        const query = `${title} ${artist}`;
-        const response = await axios.get(`https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`, {
+        console.log(`🔍 Musixmatch 搜尋: ${artist} - ${title}`);
+        
+        // 使用統一的API端點格式
+        const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Musixmatch`;
+        
+        const response = await axios.get(apiUrl, {
             timeout: 15000,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
         });
         
-        if (response.data) {
-            const lrcResult = parseLrcFormat(response.data);
+        if (response.data && response.data.lyrics && response.data.lyrics.length > 0) {
             return {
                 success: true,
-                lyrics: lrcResult.lyrics,
-                type: lrcResult.isLrc ? 'synced' : 'plain',
+                lyrics: response.data.lyrics,
+                type: response.data.type || 'plain',
                 source: 'musixmatch'
             };
         }
         
-        return { success: false, error: 'No lyrics found' };
+        return { success: false, error: 'No lyrics found in Musixmatch' };
     } catch (error) {
+        console.log(`⚠️ Musixmatch API 錯誤: ${error.message}`);
         return { success: false, error: error.message };
     }
 }
@@ -1327,42 +1333,30 @@ async function searchMusixmatchLyrics(artist, title) {
 // 搜尋 LRCLib 歌詞
 async function searchLrclibLyrics(artist, title) {
     try {
-        const response = await axios.get(`https://lrclib.net/api/search`, {
-            params: {
-                artist_name: artist,
-                track_name: title
-            },
+        console.log(`🔍 LRCLib 搜尋: ${artist} - ${title}`);
+        
+        // 使用統一的API端點格式
+        const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Lrclib`;
+        
+        const response = await axios.get(apiUrl, {
             timeout: 15000,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
         });
         
-        if (response.data && response.data.length > 0) {
-            const track = response.data[0];
-            if (track.syncedLyrics) {
-                const lrcResult = parseLrcFormat(track.syncedLyrics);
-                return {
-                    success: true,
-                    lyrics: lrcResult.lyrics,
-                    type: 'synced',
-                    source: 'lrclib'
-                };
-            } else if (track.plainLyrics) {
-                const lyrics = track.plainLyrics.split('\n')
-                    .filter(line => line.trim() !== '')
-                    .map(line => ({ text: line.trim() }));
-                return {
-                    success: true,
-                    lyrics: lyrics,
-                    type: 'plain',
-                    source: 'lrclib'
-                };
-            }
+        if (response.data && response.data.lyrics && response.data.lyrics.length > 0) {
+            return {
+                success: true,
+                lyrics: response.data.lyrics,
+                type: response.data.type || 'plain',
+                source: 'lrclib'
+            };
         }
         
-        return { success: false, error: 'No lyrics found' };
+        return { success: false, error: 'No lyrics found in LRCLib' };
     } catch (error) {
+        console.log(`⚠️ LRCLib API 錯誤: ${error.message}`);
         return { success: false, error: error.message };
     }
 }
@@ -1370,48 +1364,30 @@ async function searchLrclibLyrics(artist, title) {
 // 搜尋 NetEase 歌詞
 async function searchNeteaseLyrics(artist, title) {
     try {
-        // 使用第三方 NetEase API
-        const searchUrl = `https://api.wmcc.jp.eu.org/netease/search`;
-        const response = await axios.get(searchUrl, {
-            params: {
-                keywords: `${title} ${artist}`,
-                type: 1, // 單曲
-                limit: 5
-            },
+        console.log(`🔍 NetEase 搜尋: ${artist} - ${title}`);
+        
+        // 使用統一的API端點格式
+        const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=NetEase`;
+        
+        const response = await axios.get(apiUrl, {
             timeout: 15000,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
         });
         
-        if (response.data && response.data.result && response.data.result.songs) {
-            const songs = response.data.result.songs;
-            if (songs.length > 0) {
-                const song = songs[0];
-                // 獲取歌詞
-                const lyricsResponse = await axios.get(`https://api.wmcc.jp.eu.org/netease/lyric`, {
-                    params: { id: song.id },
-                    timeout: 15000,
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                    }
-                });
-                
-                if (lyricsResponse.data && lyricsResponse.data.lrc && lyricsResponse.data.lrc.lyric) {
-                    const lrcResult = parseLrcFormat(lyricsResponse.data.lrc.lyric);
-                    return {
-                        success: true,
-                        lyrics: lrcResult.lyrics,
-                        type: lrcResult.isLrc ? 'synced' : 'plain',
-                        source: 'netease'
-                    };
-                }
-            }
+        if (response.data && response.data.lyrics && response.data.lyrics.length > 0) {
+            return {
+                success: true,
+                lyrics: response.data.lyrics,
+                type: response.data.type || 'plain',
+                source: 'netease'
+            };
         }
         
         return { success: false, error: 'No lyrics found in NetEase' };
     } catch (error) {
-        console.log(`⚠️ NetEase 搜尋失敗: ${error.message}`);
+        console.log(`⚠️ NetEase API 錯誤: ${error.message}`);
         return { success: false, error: error.message };
     }
 }
