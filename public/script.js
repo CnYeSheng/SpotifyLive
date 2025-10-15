@@ -3601,22 +3601,12 @@
         // 確保從正確的數據源獲取下一首歌曲信息
         if (!this.nextSongData && this.currentTrack) {
             // 優先從 queue 獲取
-            if (this.currentTrack.queue && this.currentTrack.queue.length > 0) {
-                const nextTrack = this.currentTrack.queue[0];
-                this.nextSongData = {
-                    name: nextTrack.name || '未知歌曲',
-                    artist: nextTrack.artist || nextTrack.artists?.map(a => a.name).join(', ') || '未知歌手',
-                    image: nextTrack.image || nextTrack.album?.images?.[0]?.url || null
-                };
+            if (this.currentTrack.queue?.length > 0) {
+                this.nextSongData = this.normalizeTrack(this.currentTrack.queue[0]);
             }
-            // 或者從 nextTrack 獲取
+            // 或從 nextTrack 獲取（如果存在）
             else if (this.currentTrack.nextTrack) {
-                const nextTrack = this.currentTrack.nextTrack;
-                this.nextSongData = {
-                    name: nextTrack.name || '未知歌曲',
-                    artist: nextTrack.artist || nextTrack.artists?.map(a => a.name).join(', ') || '未知歌手',
-                    image: nextTrack.image || nextTrack.album?.images?.[0]?.url || null
-                };
+                this.nextSongData = this.normalizeTrack(this.currentTrack.nextTrack);
             }
         }
         
@@ -3695,15 +3685,12 @@
         if (!this.nextSongPreview) return;
         
         // 更新封面
-        const nextSongCover = this.nextSongPreview.querySelector('.next-song-cover') || this.nextSongCover;
-        if (nextSongCover && this.nextSongData.image) {
-            nextSongCover.src = this.nextSongData.image;
-            nextSongCover.style.display = 'block';
-            nextSongCover.onerror = () => {
-                nextSongCover.style.display = 'none';
-            };
-        } else if (nextSongCover) {
-            nextSongCover.style.display = 'none';
+        if (this.nextSongCover && this.nextSongData.image) {
+            this.nextSongCover.src = this.nextSongData.image;
+            this.nextSongCover.style.display = 'block';
+            this.nextSongCover.onerror = () => this.nextSongCover.style.display = 'none';
+        } else if (this.nextSongCover) {
+            this.nextSongCover.style.display = 'none';
         }
         
         // 更新歌曲名稱
@@ -3717,6 +3704,10 @@
         if (nextSongArtist) {
             nextSongArtist.textContent = this.nextSongData.artist;
         }
+
+        // 更新文字
+        if (this.nextSongTitle) this.nextSongTitle.textContent = this.nextSongData.name;
+        if (this.nextSongArtist) this.nextSongArtist.textContent = this.nextSongData.artist;
         
         this.log(`🎯 下一首歌曲預覽內容已更新: ${this.nextSongData.name} - ${this.nextSongData.artist}`);
     }
@@ -3756,9 +3747,10 @@
         if (this.currentTrack && this.currentTrack.queue && this.currentTrack.queue.length > 0) {
             const nextTrack = this.currentTrack.queue[0];
             this.nextSongData = {
+                id: nextTrack.id,
                 name: nextTrack.name || '未知歌曲',
-                artist: nextTrack.artist || '未知歌手',
-                image: nextTrack.image || null
+                artist: (nextTrack.artists?.map(a => a.name).join(', ') || '未知歌手'),
+                image: (nextTrack.album?.images?.[0]?.url || null)
             };
             
             // 更新預覽內容
@@ -4552,12 +4544,10 @@
                     const imageUrl = images.length > 0 ? images[0].url : null;
                     
                     this.nextSongData = {
+                        id: nextTrack.id,
                         name: nextTrack.name || '未知歌曲',
-                        artist: artistNames,
-                        artists: artists,
-                        album: album,
-                        image: imageUrl,
-                        id: nextTrack.id
+                        artist: (nextTrack.artists?.map(a => a.name).join(', ') || '未知歌手'),
+                        image: (nextTrack.album?.images?.[0]?.url || null)
                     };
                     
                     this.log(`✅ 成功获取下一首歌曲: ${this.nextSongData.name} - ${artistNames}`);
@@ -4645,6 +4635,18 @@
                 this.isHandlingAuthError = false;
             }, 5000);
         }
+    }
+
+    // 根據 Spotify Track 物件，標準化為簡化格式
+    normalizeTrack(track) {
+        if (!track) return null;
+        return {
+            id: track.id || null,
+            name: track.name || '未知歌曲',
+            artist: (track.artists?.map(a => a.name).join(', ') || '未知歌手'),
+            image: (track.album?.images?.[0]?.url || null),
+            duration: track.duration_ms || 0
+        };
     }
 }
 
