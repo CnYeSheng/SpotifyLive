@@ -1370,10 +1370,48 @@ async function searchLrclibLyrics(artist, title) {
 // 搜尋 NetEase 歌詞
 async function searchNeteaseLyrics(artist, title) {
     try {
-        // 這裡可以實現 NetEase 音樂的歌詞搜尋
-        // 由於 API 限制，暫時返回失敗
-        return { success: false, error: 'NetEase provider not implemented yet' };
+        // 使用第三方 NetEase API
+        const searchUrl = `https://api.wmcc.jp.eu.org/netease/search`;
+        const response = await axios.get(searchUrl, {
+            params: {
+                keywords: `${title} ${artist}`,
+                type: 1, // 單曲
+                limit: 5
+            },
+            timeout: 15000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+        
+        if (response.data && response.data.result && response.data.result.songs) {
+            const songs = response.data.result.songs;
+            if (songs.length > 0) {
+                const song = songs[0];
+                // 獲取歌詞
+                const lyricsResponse = await axios.get(`https://api.wmcc.jp.eu.org/netease/lyric`, {
+                    params: { id: song.id },
+                    timeout: 15000,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    }
+                });
+                
+                if (lyricsResponse.data && lyricsResponse.data.lrc && lyricsResponse.data.lrc.lyric) {
+                    const lrcResult = parseLrcFormat(lyricsResponse.data.lrc.lyric);
+                    return {
+                        success: true,
+                        lyrics: lrcResult.lyrics,
+                        type: lrcResult.isLrc ? 'synced' : 'plain',
+                        source: 'netease'
+                    };
+                }
+            }
+        }
+        
+        return { success: false, error: 'No lyrics found in NetEase' };
     } catch (error) {
+        console.log(`⚠️ NetEase 搜尋失敗: ${error.message}`);
         return { success: false, error: error.message };
     }
 }
