@@ -104,6 +104,7 @@ function initLyricsSearchFeature() {
             
             if (defaultResponse.ok) {
                 const defaultData = await defaultResponse.json();
+                const allResults = [];
                 
                 if (defaultData.lyrics && Array.isArray(defaultData.lyrics) && defaultData.lyrics.length > 0) {
                     // 預設搜尋成功
@@ -116,16 +117,6 @@ function initLyricsSearchFeature() {
                         provider: 'Default'
                     };
                     this.displaySearchResults([result]);
-                    return;
-                } else if (defaultData.results && Array.isArray(defaultData.results) && defaultData.results.length > 0) {
-                    this.log(`✅ 預設搜尋在 results 中找到歌詞`);
-                    const results = defaultData.results.map(r => ({
-                        ...r,
-                        title: r.title || title,
-                        artist: r.artist || artist,
-                        provider: r.provider || 'Default'
-                    }));
-                    this.displaySearchResults(results);
                     return;
                 }
             }
@@ -360,22 +351,25 @@ function initLyricsSearchFeature() {
 
     SpotifyLyricsPlayer.prototype.overrideLyrics = function(lyrics, lyricsType, source) {
         this.log(`🔄 覆蓋歌詞: ${lyrics.length} 行，類型: ${lyricsType}`);
-        
+            
         // 更新歌詞數據
         this.lyrics = lyrics;
         this.lyricsType = lyricsType || 'plain';
         this.currentLyricIndex = 0;
-        
+            
         // 標記為手動覆蓋
         this.isLyricsOverridden = true;
         this.overriddenLyricsSource = source;
-        
+            
         // 重新顯示歌詞
         this.displayLyrics();
         this.updateStatus('lyrics', true);
-        
+            
         // 添加覆蓋提示
         this.addLyricsOverrideIndicator(source);
+
+        // ✅ 新增這行：啟動同步
+        this.startLyricsSync();
     };
 
     SpotifyLyricsPlayer.prototype.addLyricsOverrideIndicator = function(source) {

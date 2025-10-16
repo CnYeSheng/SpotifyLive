@@ -676,6 +676,7 @@
     startTracking() {
         this.log(`🔄 開始追蹤當前播放狀態，間隔: ${this.currentCheckInterval}ms`);
         this.checkCurrentTrackWithRateLimit();
+        this.startProgressUpdater();
 
         // 每秒更新進度條與歌詞同步
         if (this.lyricsSyncInterval) clearInterval(this.lyricsSyncInterval);
@@ -5061,3 +5062,89 @@ new MutationObserver(() => {
     }
 }).observe(document, { subtree: true, childList: true });
 
+SpotifyLyricsPlayer.prototype.loadLyricsForTrack = async function(track) {
+    if (!track || !track.name || !track.artist) return;
+
+    this.log(`🎵 開始載入歌詞: ${track.artist} - ${track.name}`);
+    this.updateStatus('lyrics', false);
+    this.isLoadingLyrics = true;
+
+    try {
+        const encodedTitle = encodeURIComponent(track.name);
+        const encodedArtist = encodeURIComponent(track.artist);
+        const defaultUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodedTitle}/${encodedArtist}`;
+
+        this.log('🔍 使用默認歌詞 API 搜尋歌詞');
+        let response = await fetch(defaultUrl);
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        let data = await response.json();
+
+        if (!data.lyrics?.length) {
+            // 嘗試 Musixmatch / Lrclib / NetEase
+            const providers = ['Musixmatch', 'Lrclib', 'NetEase'];
+            for (const p of providers) {
+                const providerUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodedTitle}/${encodedArtist}?p=${p}`;
+                this.log(`📡 嘗試 ${p}`);
+                response = await fetch(providerUrl);
+                if (response.ok) {
+                    data = await response.json();
+                    if (data.lyrics?.length) {
+                        this.log(`✅ 使用 ${p} 找到歌詞`);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (data.lyrics?.length) {
+            this.lyrics = data.lyrics;
+            this.lyricsType = data.type || 'plain';
+            this.displayLyrics();
+            this.startLyricsSync();  // 加上這行
+            this.updateStatus('lyrics', true);
+        } else {
+            this.log('❌ 沒有找到歌詞');
+            this.displayNoLyrics();
+        }
+    } catch (e) {
+        this.log(`❌ 歌詞載入失敗: ${e.message}`);
+        this.displayNoLyrics();
+    } finally {
+        this.isLoadingLyrics = false;
+    }
+};
+SpotifyLyricsPlayer.prototype.startProgressUpdater = function() {
+    if (this.progressInterval) clearInterval(this.progressInterval);
+    this.progressInterval = setInterval(() => {
+        if (!this.currentTrack) return;
+        this.currentTrack.progress_ms += 1000;
+        this.updateProgressUI();
+        this.updateLyricsByProgress();
+    }, 1000);
+};
+
+SpotifyLyricsPlayer.prototype.updateProgressUI = function() {
+    if (!this.currentTrack?.duration_ms) return;
+    const percent = (this.currentTrack.progress_ms / this.currentTrack.duration_ms) * 100;
+    if (this.progressFill) this.progressFill.style.width = `${Math.min(percent, 100)}%`;
+};
+
+SpotifyLyricsPlayer.prototype.startLyricsSync = function() {
+    if (this.lyricsSyncInterval) clearInterval(this.lyricsSyncInterval);
+    this.lyricsSyncInterval = setInterval(() => {
+        this.updateLyricsByProgress();
+    }, 1000);
+};
+
+SpotifyLyricsPlayer.prototype.updateLyricsByProgress = function() {
+    if (!this.lyrics || this.lyricsType !== 'synced' || !this.currentTrack) return;
+    const currentMs = this.currentTrack.progress_ms;
+    let index = this.lyrics.findIndex(line => currentMs < (line.time || 0));
+    if (index === -1) index = this.lyrics.length - 1;
+    else if (index > 0) index--;
+    if (index !== this.currentLyricIndex) {
+        this.currentLyricIndex = index;
+        this.displayLyrics();
+    }
+};
