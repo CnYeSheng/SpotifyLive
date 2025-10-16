@@ -76,16 +76,16 @@ SpotifyLyricsPlayer.prototype.performLyricsSearch = async function() {
         }
 
         // 定義三個來源
-        const providers = ['musixmatch', 'lrclib', 'netease'];
+        const providers = ['Musixmatch', 'Lrclib', 'NetEase'];
         const allResults = [];
 
         // 並行搜尋三個來源
         await Promise.all(providers.map(async (provider) => {
             try {
-                const proxyUrl = `/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
-                this.log(`📡 搜尋 ${provider}: ${proxyUrl}`);
+                const lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
+                this.log(`📡 搜尋 ${provider}: ${lyricsUrl}`);
                 
-                const response = await fetch(proxyUrl);
+                const response = await fetch(lyricsUrl);
                 const data = await response.json();
                 
                 if (data.success && data.results && data.results.length > 0) {
@@ -136,9 +136,9 @@ SpotifyLyricsPlayer.prototype.displaySearchResults = function(results) {
         
         // 來源顯示（中文化）
         const sourceNames = {
-            'musixmatch': 'Musixmatch',
-            'lrclib': 'LrcLib',
-            'netease': '網易雲'
+            'Musixmatch': 'Musixmatch',
+            'Lrclib': 'LrcLib',
+            'NetEase': '網易雲'
         };
         const sourceName = sourceNames[result.provider] || result.provider;
         
@@ -186,7 +186,7 @@ SpotifyLyricsPlayer.prototype.displayNoResults = function() {
 };
 
 SpotifyLyricsPlayer.prototype.selectLyricsResult = async function(result) {
-    this.log(`✅ 選擇歌詞: ${result.artist} - ${result.title}`);
+    this.log(`✅ 選擇歌詞: ${result.artist} - ${result.title} (供應商: ${result.provider})`);
     
     // 顯示載入狀態
     document.getElementById('search-loading').style.display = 'flex';
@@ -194,10 +194,25 @@ SpotifyLyricsPlayer.prototype.selectLyricsResult = async function(result) {
     
     try {
         if (result.lyrics && result.lyrics.length > 0) {
+            // 鎖定該歌曲的歌詞供應商
+            if (this.currentTrack && this.currentTrack.id && result.provider) {
+                localStorage.setItem(`lyrics_provider_${this.currentTrack.id}`, result.provider);
+                this.selectedLyricsProvider = result.provider;
+                this.log(`🔒 已鎖定歌曲 "${this.currentTrack.name}" 的歌詞供應商為: ${result.provider}`);
+            }
+            
             // 直接使用搜尋結果中的歌詞數據
             this.overrideLyrics(result.lyrics, result.type || 'plain', result);
             this.hideLyricsSearchModal();
-            this.showSuccessMessage(`✅ 已載入歌詞: ${result.artist} - ${result.title}`);
+            
+            // 顯示成功訊息，包含供應商信息
+            const providerNames = {
+                'Musixmatch': 'Musixmatch',
+                'Lrclib': 'LrcLib',
+                'NetEase': '網易雲'
+            };
+            const providerDisplayName = providerNames[result.provider] || result.provider;
+            this.showSuccessMessage(`✅ 已載入歌詞 (${providerDisplayName}): ${result.artist} - ${result.title}`);
         } else {
             this.showErrorMessage('歌詞數據無效');
             document.getElementById('search-results').style.display = 'block';

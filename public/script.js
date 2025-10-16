@@ -2125,11 +2125,182 @@
     }
 
     async loadLyrics() {
-        const apiUrl = `/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}`;
-        if (!this.currentTrack) {
-            console.log('❌ 沒有當前歌曲，跳過歌詞載入');
+        // 添加歌詞供應商鎖定功能
+        this.selectedLyricsProvider = localStorage.getItem(`lyrics_provider_${this.currentTrack.id}`) || null;
+        
+        if (!this.currentTrack || !this.currentTrack.name || !this.currentTrack.artist) {
+            this.log('❌ 無效的歌曲信息，無法加載歌詞');
+            this.showLyricsError('無效的歌曲信息');
             return;
         }
+
+        // 防止重複載入相同歌曲的歌詞
+        const trackId = this.currentTrack.id || `${this.currentTrack.artist}-${this.currentTrack.name}`;
+        if (this.currentLyricsTrackId === trackId && this.lyrics.length > 0) {
+            this.log('⏭️ 歌詞已載入，跳過重複載入');
+            return;
+        }
+
+        // 檢查是否正在載入歌詞
+        if (this.isLoadingLyrics) {
+            this.log('⏳ 歌詞正在載入中，跳過重複請求');
+            return;
+        }
+
+        this.isLoadingLyrics = true;
+        this.currentLyricsTrackId = trackId;
+
+        // 清除之前的歌詞載入超時
+        if (this.lyricsLoadTimeout) {
+            clearTimeout(this.lyricsLoadTimeout);
+            this.lyricsLoadTimeout = null;
+        }
+
+        // 設置歌詞載入超時（30秒）
+        this.lyricsLoadTimeout = setTimeout(() => {
+            if (this.isLoadingLyrics) {
+                this.log('⏰ 歌詞載入超時');
+                this.isLoadingLyrics = false;
+                this.showLyricsError('歌詞載入超時，請稍後重試');
+            }
+        }, 30000);
+
+        this.log(`🎵 開始載入歌詞: ${this.currentTrack.artist} - ${this.currentTrack.name}`);
+
+        // 顯示載入狀態
+        this.showLyricsLoading();
+        this.updateStatus('lyrics', false);
+
+        try {
+            // 使用新的歌詞 API，優先使用已選定的供應商
+            const artist = encodeURIComponent(this.currentTrack.artist);
+            const title = encodeURIComponent(this.currentTrack.name);
+            
+            let lyricsUrl;
+            if (this.selectedLyricsProvider) {
+                // 如果有選定的供應商，直接使用該供應商
+                lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${title}/${artist}?p=${this.selectedLyricsProvider}`;
+                this.log(`🎯 使用已選定的歌詞供應商: ${this.selectedLyricsProvider}`);
+            } else {
+                // 如果沒有選定供應商，使用默認 API（不指定供應商參數）
+                lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${title}/${artist}`;
+                this.log(`🔍 使用默認歌詞 API 搜尋歌詞`);
+            }
+
+            // 記錄請求
+            this.lastLyricsRequest = {
+                url: lyricsUrl,
+                artist: this.currentTrack.artist,
+                title: this.currentTrack.name,
+                timestamp: Date.now()
+            };
+
+            const response = await fetch(lyricsUrl);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+
+            if (!data.success || !data.results || data.results.length === 0) {
+                throw new Error('沒有找到歌詞');
+            }
+
+            // 取第一個結果
+            const result = data.results[0];
+            
+            if (!result.lyrics || result.lyrics.length === 0) {
+                throw new Error('歌詞數據為空');
+            }
+
+            // 處理歌詞數據
+            this.lyrics = Array.isArray(result.lyrics) ? result.lyrics : [];
+            this.lyricsType = result.type || 'plain';
+            
+            // 記錄成功載入的供應商信息
+            if (result.provider && !this.selectedLyricsProvider) {
+                this.log(`✅ 成功載入歌詞，供應商: ${result.provider}`);
+                // 可以選擇性地記住這個供應商
+                // localStorage.setItem(`lyrics_provider_${this.currentTrack.id}`, result.provider);
+            }
+
+            this.currentLyricIndex = 0;
+            this.displayLyrics();
+            this.updateStatus('lyrics', true);
+
+            this.log(`✅ 歌詞載入成功: ${this.lyrics.length} 行 (${this.lyricsType})`);
+
+        } catch (error) {
+            this.log(`❌ 歌詞載入失敗: ${error.message}`);
+            this.showLyricsError(`載入歌詞失敗: ${error.message}`);
+            this.updateStatus('lyrics', false);
+        } finally {
+            this.isLoadingLyrics = false;
+            
+            // 清除超時定時器
+            if (this.lyricsLoadTimeout) {
+                clearTimeout(this.lyricsLoadTimeout);
+                this.lyricsLoadTimeout = null;
+            }
+        }
+    }
+
+    // 顯示歌詞載入狀態
+    showLyricsLoading() {
+        if (this.lyricsContent) {
+            this.lyricsContent.innerHTML = `
+                <div class="lyrics-loading">
+                    <div class="loading-spinner"></div>
+                    <p>正在載入歌詞...</p>
+                </div>
+            `;
+        }
+    }
+
+    // 顯示歌詞錯誤
+    showLyricsError(message) {
+        if (this.lyricsContent) {
+            this.lyricsContent.innerHTML = `
+                <div class="lyrics-error">
+                    <p>❌ ${message}</p>
+                    <button onclick="window.player.loadLyrics()" class="retry-btn">重試</button>
+                </div>
+            `;
+        }
+    }
+
+    // 更新狀態指示器（如果存在）
+    updateStatus(type, isActive) {
+        const statusElement = type === 'spotify' ? this.spotifyStatus : this.lyricsStatus;
+        if (statusElement) {
+            statusElement.classList.toggle('active', isActive);
+        }
+    }
+
+    // 顯示歌詞載入狀態
+    showLyricsLoading() {
+        if (this.lyricsContent) {
+            this.lyricsContent.innerHTML = `
+                <div class="lyrics-loading">
+                    <div class="loading-spinner"></div>
+                    <p>正在載入歌詞...</p>
+                </div>
+            `;
+        }
+    }
+
+    // 顯示歌詞錯誤
+    async showLyricsError(message) {
+        if (this.lyricsContent) {
+            this.lyricsContent.innerHTML = `
+                <div class="lyrics-error">
+                    <p>❌ ${message}</p>
+                    <button onclick="window.player.loadLyrics()" class="retry-btn">重試</button>
+                </div>
+            `;
+        }
+    
 
         // 如果是 Podcast，顯示特殊訊息而不載入歌詞
         if (this.currentTrack.contentType === 'podcast') {
