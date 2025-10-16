@@ -4532,7 +4532,7 @@
                     this.nextSongData = {
                         id: nextTrack.id,
                         name: nextTrack.name || '未知歌曲',
-                        artist: actualTrack.artists?.map(a => a.name).join(', ') || actualTrack.artist || '未知歌手',
+                        artist: nextTrack.artists?.map(a => a.name).join(', ') || nextTrack.artist || '未知歌手',
                         image: nextTrack.image || nextTrack.album?.images?.[0]?.url || null
                     };
                     
