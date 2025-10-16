@@ -3735,7 +3735,7 @@
             this.nextSongData = {
                 id: nextTrack.id,
                 name: nextTrack.name || '未知歌曲',
-                artist: (nextTrack.artists?.map(a => a.name).join(', ') || '未知歌手'),
+                artist: actualTrack.artists?.map(a => a.name).join(', ') || actualTrack.artist || '未知歌手',
                 image: nextTrack.image || nextTrack.album?.images?.[0]?.url || null
             };
             
@@ -4532,7 +4532,7 @@
                     this.nextSongData = {
                         id: nextTrack.id,
                         name: nextTrack.name || '未知歌曲',
-                        artist: (nextTrack.artists?.map(a => a.name).join(', ') || '未知歌手'),
+                        artist: actualTrack.artists?.map(a => a.name).join(', ') || actualTrack.artist || '未知歌手',
                         image: nextTrack.image || nextTrack.album?.images?.[0]?.url || null
                     };
                     
@@ -4629,7 +4629,7 @@
         return {
             id: track.id || null,
             name: track.name || '未知歌曲',
-            artist: (track.artists?.map(a => a.name).join(', ') || '未知歌手'),
+            artist: actualTrack.artists?.map(a => a.name).join(', ') || actualTrack.artist || '未知歌手',
             image: nextTrack.image || nextTrack.album?.images?.[0]?.url || null,
             duration: track.duration_ms || 0
         };
