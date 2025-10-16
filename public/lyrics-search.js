@@ -49,6 +49,7 @@ SpotifyLyricsPlayer.prototype.hideLyricsSearchModal = function() {
     this.log('❌ 隱藏歌詞搜尋模態框');
 };
 
+// 修復 performLyricsSearch 方法中的 URL 構建
 SpotifyLyricsPlayer.prototype.performLyricsSearch = async function() {
     const searchInput = document.getElementById('lyrics-search-input');
     const query = searchInput.value.trim();
@@ -65,14 +66,30 @@ SpotifyLyricsPlayer.prototype.performLyricsSearch = async function() {
     document.getElementById('search-results').style.display = 'none';
     
     try {
-        // 解析查詢：嘗試分離歌手與歌名
-        let artist = '', title = '';
-        const parts = query.split(/[-–\s]+/);
-        if (parts.length >= 2) {
+        // 更智能的查詢解析：優先使用「-」分隔，其次使用空格
+        let artist = '';
+        let title = '';
+        
+        if (query.includes(' - ')) {
+            // 格式: "Artist - Title"
+            const parts = query.split(' - ');
             artist = parts[0].trim();
-            title = parts.slice(1).join(' ').trim();
+            title = parts.slice(1).join(' - ').trim();
+        } else if (query.includes('-')) {
+            // 格式: "Artist-Title" (無空格)
+            const parts = query.split('-');
+            artist = parts[0].trim();
+            title = parts.slice(1).join('-').trim();
         } else {
-            title = query.trim();
+            // 只有標題，或空格分隔
+            // 嘗試按空格分割，第一個單詞作為藝術家
+            const parts = query.split(/\s+/);
+            if (parts.length >= 2) {
+                artist = parts[0];
+                title = parts.slice(1).join(' ');
+            } else {
+                title = query;
+            }
         }
 
         // 定義三個來源
@@ -82,14 +99,29 @@ SpotifyLyricsPlayer.prototype.performLyricsSearch = async function() {
         // 並行搜尋三個來源
         await Promise.all(providers.map(async (provider) => {
             try {
-                const lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
+                // 修復：正確的 URL 格式是 /api/lyrics/{title}/{artist}?p={provider}
+                const encodedTitle = encodeURIComponent(title);
+                const encodedArtist = encodeURIComponent(artist);
+                const lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodedTitle}/${encodedArtist}?p=${provider}`;
+                
                 this.log(`📡 搜尋 ${provider}: ${lyricsUrl}`);
                 
-                const response = await fetch(lyricsUrl);
+                const response = await fetch(lyricsUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    this.log(`❌ ${provider} HTTP ${response.status}`);
+                    return;
+                }
+                
                 const data = await response.json();
                 
                 if (data.success && data.results && data.results.length > 0) {
-                    // 取第一個結果（通常只有一個）
+                    // 取第一個結果
                     const result = data.results[0];
                     result.provider = provider; // 標記來源
                     allResults.push(result);
@@ -114,6 +146,146 @@ SpotifyLyricsPlayer.prototype.performLyricsSearch = async function() {
     } finally {
         document.getElementById('search-loading').style.display = 'none';
     }
+};
+
+// 修復自動載入歌詞時的搜尋邏輯（在 loadLyrics 中）
+SpotifyLyricsPlayer.prototype.loadLyrics = async function() {
+    // 添加歌詞供應商鎖定功能
+    this.selectedLyricsProvider = localStorage.getItem(`lyrics_provider_${this.currentTrack.id}`) || null;
+    
+    if (!this.currentTrack || !this.currentTrack.name || !this.currentTrack.artist) {
+        this.log('❌ 無效的歌曲信息，無法加載歌詞');
+        this.showLyricsError('無效的歌曲信息');
+        return;
+    }
+
+    // 清理歌手名稱（移除多餘的逗號）
+    const cleanArtist = this.currentTrack.artist.trim().replace(/,\s*$/g, '').split(',')[0].trim();
+    const cleanTitle = this.currentTrack.name.trim().replace(/,\s*$/g, '').trim();
+
+    // 防止重複載入相同歌曲的歌詞
+    const trackId = this.currentTrack.id || `${cleanArtist}-${cleanTitle}`;
+    if (this.currentLyricsTrackId === trackId && this.lyrics.length > 0) {
+        this.log('⏭️ 歌詞已載入，跳過重複載入');
+        return;
+    }
+
+    // 檢查是否正在載入歌詞
+    if (this.isLoadingLyrics) {
+        this.log('⏳ 歌詞正在載入中，跳過重複請求');
+        return;
+    }
+
+    this.isLoadingLyrics = true;
+    this.currentLyricsTrackId = trackId;
+
+    // 清除之前的歌詞載入超時
+    if (this.lyricsLoadTimeout) {
+        clearTimeout(this.lyricsLoadTimeout);
+        this.lyricsLoadTimeout = null;
+    }
+
+    // 設置歌詞載入超時（30秒）
+    this.lyricsLoadTimeout = setTimeout(() => {
+        if (this.isLoadingLyrics) {
+            this.log('⏰ 歌詞載入超時');
+            this.isLoadingLyrics = false;
+            this.showLyricsError('歌詞載入超時，請稍後重試');
+        }
+    }, 30000);
+
+    this.log(`🎵 開始載入歌詞: ${cleanArtist} - ${cleanTitle}`);
+    this.showLyricsLoading();
+    this.updateStatus('lyrics', false);
+
+    try {
+        // 使用新的歌詞 API，優先使用已選定的供應商
+        const encodedTitle = encodeURIComponent(cleanTitle);
+        const encodedArtist = encodeURIComponent(cleanArtist);
+        
+        let lyricsUrl;
+        if (this.selectedLyricsProvider) {
+            // 如果有選定的供應商，直接使用該供應商
+            lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodedTitle}/${encodedArtist}?p=${this.selectedLyricsProvider}`;
+            this.log(`🎯 使用已選定的歌詞供應商: ${this.selectedLyricsProvider}`);
+        } else {
+            // 如果沒有選定供應商，嘗試多個來源
+            lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodedTitle}/${encodedArtist}`;
+            this.log(`🔍 使用默認歌詞 API 搜尋歌詞`);
+        }
+
+        // 記錄請求
+        this.lastLyricsRequest = {
+            url: lyricsUrl,
+            artist: cleanArtist,
+            title: cleanTitle,
+            timestamp: Date.now()
+        };
+
+        const response = await fetch(lyricsUrl, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (!data.success || !data.results || data.results.length === 0) {
+            throw new Error('沒有找到歌詞');
+        }
+
+        // 取第一個結果
+        const result = data.results[0];
+        
+        if (!result.lyrics || result.lyrics.length === 0) {
+            throw new Error('歌詞數據為空');
+        }
+
+        // 處理歌詞數據
+        this.lyrics = Array.isArray(result.lyrics) ? result.lyrics : [];
+        this.lyricsType = result.type || 'plain';
+        
+        // 記錄成功載入的供應商信息
+        if (result.provider && !this.selectedLyricsProvider) {
+            this.log(`✅ 成功載入歌詞，供應商: ${result.provider}`);
+        }
+
+        this.currentLyricIndex = 0;
+        this.displayLyrics();
+        this.updateStatus('lyrics', true);
+
+        this.log(`✅ 歌詞載入成功: ${this.lyrics.length} 行 (${this.lyricsType})`);
+
+    } catch (error) {
+        this.log(`❌ 歌詞載入失敗: ${error.message}`);
+        this.showLyricsError(`載入歌詞失敗: ${error.message}`);
+        this.updateStatus('lyrics', false);
+    } finally {
+        this.isLoadingLyrics = false;
+        
+        // 清除超時定時器
+        if (this.lyricsLoadTimeout) {
+            clearTimeout(this.lyricsLoadTimeout);
+            this.lyricsLoadTimeout = null;
+        }
+    }
+};
+
+// 也修復自動搜尋的查詢解析（在 script.js 的 showLyricsError 中調用的搜尋）
+SpotifyLyricsPlayer.prototype.buildLyricsSearchQuery = function(artist, title) {
+    // 清理多個逗號或奇怪的字符
+    const cleanArtist = (artist || '').trim().replace(/,\s*$/g, '').split(',')[0].trim();
+    const cleanTitle = (title || '').trim().replace(/,\s*$/g, '').trim();
+    
+    return {
+        artist: cleanArtist,
+        title: cleanTitle
+    };
 };
 
 SpotifyLyricsPlayer.prototype.searchCurrentTrackLyrics = function() {
