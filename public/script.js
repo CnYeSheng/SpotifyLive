@@ -676,14 +676,55 @@
     startTracking() {
         this.log(`🔄 開始追蹤當前播放狀態，間隔: ${this.currentCheckInterval}ms`);
         this.checkCurrentTrackWithRateLimit();
-        // 使用動態檢查間隔
+
+        // 每秒更新進度條與歌詞同步
+        if (this.lyricsSyncInterval) clearInterval(this.lyricsSyncInterval);
+        this.lyricsSyncInterval = setInterval(() => {
+            this.updateProgressAndLyrics();
+        }, 1000);
+
+        // Spotify API 狀態輪詢
         this.updateInterval = setInterval(() => {
-            this.log(`⏰ 定時檢查觸發 (間隔: ${this.currentCheckInterval}ms)`);
             this.checkCurrentTrackWithRateLimit();
         }, this.currentCheckInterval);
-        this.log(`✅ 追蹤定時器已設置`);
     }
-    
+
+    updateProgressAndLyrics() {
+        if (!this.currentTrack || !this.currentTrack.progress_ms || !this.currentTrack.duration_ms) return;
+
+        const progress = this.currentTrack.progress_ms + 1000; // 每秒遞增
+        this.currentTrack.progress_ms = progress;
+        
+        // 更新進度條
+        const percent = (progress / this.currentTrack.duration_ms) * 100;
+        if (this.progressFill) {
+            this.progressFill.style.width = `${Math.min(percent, 100)}%`;
+        }
+
+        // 更新時間顯示
+        if (this.currentTime) {
+            const minutes = Math.floor(progress / 60000);
+            const seconds = Math.floor((progress % 60000) / 1000).toString().padStart(2, '0');
+            this.currentTime.textContent = `${minutes}:${seconds}`;
+        }
+
+        // 更新同步歌詞
+        this.updateSyncedLyrics(progress);
+    }
+
+    updateSyncedLyrics(currentMs) {
+        if (!this.lyrics || this.lyricsType !== 'synced') return;
+        
+        let index = this.lyrics.findIndex(line => currentMs < (line.time || 0));
+        if (index === -1) index = this.lyrics.length - 1;
+        else if (index > 0) index--;
+
+        if (index !== this.currentLyricIndex) {
+            this.currentLyricIndex = index;
+            this.displayLyrics(); // 重新渲染當前歌詞
+        }
+    }
+
     // 重新啟動追蹤（用於動態調整間隔）
     restartTracking() {
         if (this.updateInterval) {
