@@ -90,24 +90,60 @@ function initLyricsSearchFeature() {
                 }
             }
 
-            // 定義三個來源
+            const encodedTitle = encodeURIComponent(title);
+            const encodedArtist = encodeURIComponent(artist);
+            
+            // 步驟 1：首先嘗試預設搜尋（不帶 ?p= 參數）
+            this.log(`📡 步驟 1：嘗試預設搜尋 (不指定提供商)...`);
+            const defaultUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodedTitle}/${encodedArtist}`;
+            
+            const defaultResponse = await fetch(defaultUrl, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' }
+            });
+            
+            if (defaultResponse.ok) {
+                const defaultData = await defaultResponse.json();
+                
+                if (defaultData.lyrics && Array.isArray(defaultData.lyrics) && defaultData.lyrics.length > 0) {
+                    // 預設搜尋成功
+                    this.log(`✅ 預設搜尋找到歌詞 (${defaultData.lyrics.length} 行，格式: ${defaultData.type})`);
+                    const result = {
+                        lyrics: defaultData.lyrics,
+                        type: defaultData.type || 'synced',
+                        title: title,
+                        artist: artist,
+                        provider: 'Default'
+                    };
+                    this.displaySearchResults([result]);
+                    return;
+                } else if (defaultData.results && Array.isArray(defaultData.results) && defaultData.results.length > 0) {
+                    this.log(`✅ 預設搜尋在 results 中找到歌詞`);
+                    const results = defaultData.results.map(r => ({
+                        ...r,
+                        title: r.title || title,
+                        artist: r.artist || artist,
+                        provider: r.provider || 'Default'
+                    }));
+                    this.displaySearchResults(results);
+                    return;
+                }
+            }
+            
+            // 步驟 2：預設搜尋無結果，嘗試指定提供商
+            this.log(`⚠️ 預設搜尋無結果，嘗試指定提供商...`);
             const providers = ['Musixmatch', 'Lrclib', 'NetEase'];
             const allResults = [];
 
-            // 並行搜尋三個來源
             await Promise.all(providers.map(async (provider) => {
                 try {
-                    const encodedTitle = encodeURIComponent(title);
-                    const encodedArtist = encodeURIComponent(artist);
-                    const lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodedTitle}/${encodedArtist}?p=${provider}`;
+                    const providerUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodedTitle}/${encodedArtist}?p=${provider}`;
                     
-                    this.log(`📡 搜尋 ${provider}: ${lyricsUrl}`);
+                    this.log(`📡 搜尋 ${provider}...`);
                     
-                    const response = await fetch(lyricsUrl, {
+                    const response = await fetch(providerUrl, {
                         method: 'GET',
-                        headers: {
-                            'Accept': 'application/json'
-                        }
+                        headers: { 'Accept': 'application/json' }
                     });
                     
                     if (!response.ok) {
@@ -117,9 +153,7 @@ function initLyricsSearchFeature() {
                     
                     const data = await response.json();
                     
-                    // 支持兩種 API 格式
                     if (data.lyrics && Array.isArray(data.lyrics) && data.lyrics.length > 0) {
-                        // 新格式：直接有 lyrics
                         const result = {
                             lyrics: data.lyrics,
                             type: data.type || 'synced',
@@ -128,30 +162,29 @@ function initLyricsSearchFeature() {
                             provider: provider
                         };
                         allResults.push(result);
-                        this.log(`✅ ${provider} 找到歌詞 (${data.lyrics.length} 行，格式: ${data.type})`);
-                    } else if (data.success && data.results && data.results.length > 0) {
-                        // 舊格式：在 results 陣列中
+                        this.log(`✅ ${provider} 找到歌詞 (${data.lyrics.length} 行)`);
+                    } else if (data.results && Array.isArray(data.results) && data.results.length > 0) {
                         const result = data.results[0];
                         result.provider = provider;
+                        result.title = result.title || title;
+                        result.artist = result.artist || artist;
                         allResults.push(result);
                         this.log(`✅ ${provider} 找到歌詞 (${result.lyrics?.length || 0} 行)`);
                     } else {
-                        const reason = data.message || data.error || '未知原因';
-                        this.log(`❌ ${provider} 無歌詞 (原因: ${reason})`);
+                        const reason = data.message || data.error || '無歌詞';
+                        this.log(`❌ ${provider} 無結果 (${reason})`);
                     }
                 } catch (error) {
                     this.log(`❌ ${provider} 搜尋失敗: ${error.message}`);
                 }
             }));
 
-            // 顯示結果
             if (allResults.length > 0) {
                 this.displaySearchResults(allResults);
             } else {
-                // 嘗試備用搜尋
-                this.log('⚠️ 首次搜尋無結果，嘗試備用搜尋...');
-                this.attemptBackupSearch(title, artist);
+                this.displayNoResults();
             }
+            
         } catch (error) {
             this.log(`❌ 搜尋歌詞失敗: ${error.message}`);
             this.showErrorMessage('搜尋失敗，請稍後重試');
