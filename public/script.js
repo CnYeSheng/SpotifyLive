@@ -3736,7 +3736,7 @@
                 id: nextTrack.id,
                 name: nextTrack.name || '未知歌曲',
                 artist: (nextTrack.artists?.map(a => a.name).join(', ') || '未知歌手'),
-                image: (nextTrack.album?.images?.[0]?.url || null)
+                image: nextTrack.image || nextTrack.album?.images?.[0]?.url || null
             };
             
             // 更新預覽內容
@@ -4533,7 +4533,7 @@
                         id: nextTrack.id,
                         name: nextTrack.name || '未知歌曲',
                         artist: (nextTrack.artists?.map(a => a.name).join(', ') || '未知歌手'),
-                        image: (nextTrack.album?.images?.[0]?.url || null)
+                        image: nextTrack.image || nextTrack.album?.images?.[0]?.url || null
                     };
                     
                     this.log(`✅ 成功获取下一首歌曲: ${this.nextSongData.name} - ${artistNames}`);
@@ -4630,7 +4630,7 @@
             id: track.id || null,
             name: track.name || '未知歌曲',
             artist: (track.artists?.map(a => a.name).join(', ') || '未知歌手'),
-            image: (track.album?.images?.[0]?.url || null),
+            image: nextTrack.image || nextTrack.album?.images?.[0]?.url || null,
             duration: track.duration_ms || 0
         };
     }
