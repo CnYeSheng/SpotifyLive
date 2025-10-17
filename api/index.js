@@ -198,7 +198,6 @@ app.get('/api/current-track', checkSessionValidity, async (req, res) => {
             isPlaying: data.is_playing,
             name: track.name,
             artist: track.artists.map(artist => artist.name).join(', '),
-            artists: queueTrack.artists,
             album: track.album.name,
             image: track.album.images[0]?.url,
             duration: track.duration_ms,
