@@ -4349,7 +4349,7 @@
                 headers['X-Session-Id'] = this.sessionId;
             }
 
-            const playUrl = '/api/play';
+            const playUrl = '/api/player/play';
             this.log(`📡 播放請求 URL: ${playUrl}`);
 
             const response = await fetch(playUrl, {
