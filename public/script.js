@@ -590,6 +590,40 @@
         }
     }
 
+    // 更新下一首預覽
+    updateNextTrackPreview() {
+        // 獲取下一首歌曲信息並更新預覽
+        if (this.currentTrack && this.currentTrack.queue && this.currentTrack.queue.length > 0) {
+            const nextTrack = this.currentTrack.queue[0];
+            this.nextSongData = {
+                id: nextTrack.id,
+                name: nextTrack.name || '未知歌曲',
+                artist: nextTrack.artists?.map(a => a.name).join(', ') || nextTrack.artist || '未知歌手',
+                image: nextTrack.image || nextTrack.album?.images?.[0]?.url || null
+            };
+            
+            // 更新預覽內容
+            this.updateNextTrackPreviewContent();
+        }
+        
+        // 根據設定處理預覽顯示
+        if (this.nextSongPreviewMode === 'always') {
+            this.showNextSongPreviewAlways();
+        } else {
+            // 清除現有的預覽定時器並重新安排
+            if (this.nextSongPreviewTimeout) {
+                clearTimeout(this.nextSongPreviewTimeout);
+                this.nextSongPreviewTimeout = null;
+            }
+            this.isNextSongPreviewShown = false;
+            
+            // 如果音樂正在播放，安排下一首預覽
+            if (this.currentTrack?.isPlaying && this.nextSongPreviewMode !== 'never') {
+                this.scheduleNextSongPreview();
+            }
+        }
+    }
+
     // 隱藏下一首歌曲預覽
     hideNextSongPreview() {
         if (this.nextSongPreview && this.isNextSongPreviewShown) {
@@ -622,22 +656,36 @@
             return;
         }
 
-        const { name, artists, album } = this.nextSongData;
-        this.log(`📝 更新下一首预览内容: ${name} - ${artists ? artists[0]?.name : 'Unknown'}`);
+        const { name, artists, album, artist, image, lyricsPreview } = this.nextSongData;
+        this.log(`📝 更新下一首预览内容: ${name} - ${artist || (artists ? artists[0]?.name : 'Unknown')}`);
         
         if (this.nextSongTitle) {
             this.nextSongTitle.textContent = name || '未知歌曲';
         }
         
         if (this.nextSongArtist) {
-            const artistNames = artists ? artists.map(artist => artist.name).join(', ') : '未知藝人';
+            const artistNames = artist || (artists ? artists.map(a => a.name).join(', ') : '未知藝人');
             this.nextSongArtist.textContent = artistNames;
         }
         
-        if (this.nextSongCover && album && album.images && album.images.length > 0) {
-            this.nextSongCover.src = album.images[0].url;
-        } else if (this.nextSongCover) {
-            this.nextSongCover.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIGZpbGw9Im5vbmUiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMjAgMGMxMSAwIDIwIDkgMjAgMjBzLTkgMjAtMjAgMjBTMCAzMSAwIDIwIDkgMCAyMCAweiIgZmlsbD0iIzMzMzMzMyIvPjx0ZXh0IHg9IjIwIiB5PSIyNSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiBmaWxsPSIjNjY2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj7wn465PC90ZXh0Pjwvc3ZnPg==';
+        // 添加歌詞預覽顯示
+        const lyricsPreviewElement = document.getElementById('next-song-lyrics-preview');
+        if (lyricsPreviewElement) {
+            if (lyricsPreview && lyricsPreview.trim()) {
+                lyricsPreviewElement.textContent = lyricsPreview;
+                lyricsPreviewElement.style.display = 'block';
+            } else {
+                lyricsPreviewElement.style.display = 'none';
+            }
+        }
+        
+        if (this.nextSongCover) {
+            const coverUrl = image || (album && album.images && album.images.length > 0 ? album.images[0].url : null);
+            if (coverUrl) {
+                this.nextSongCover.src = coverUrl;
+            } else {
+                this.nextSongCover.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIGZpbGw9Im5vbmUiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMjAgMGMxMSAwIDIwIDkgMjAgMjBzLTkgMjAtMjAgMjBTMCAzMSAwIDIwIDkgMCAyMCAweiIgZmlsbD0iIzMzMzMzMyIvPjx0ZXh0IHg9IjIwIiB5PSIyNSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiBmaWxsPSIjNjY2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj7wn465PC90ZXh0Pjwvc3ZnPg==';
+            }
         }
     }
 
@@ -4138,7 +4186,8 @@
     const playlistHTML = tracks.map((track, index) => {
         // ✅ 正確解析 artists 與 album images
         const artistNames = track.artists?.map(a => a.name).join(', ') || '未知歌手';
-        const imageUrl = track.album?.images?.[0]?.url || null;
+        const imageUrl = track.image || track.album?.images?.[0]?.url || null;
+        
 
         return `
         <div class="playlist-item ${track.id === this.currentTrack?.id ? 'current' : ''}" data-track-id="${track.id}">

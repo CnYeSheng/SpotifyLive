@@ -58,27 +58,32 @@ SpotifyLyricsPlayer.prototype.performLyricsSearch = async function() {
         return;
     }
 
-    this.log(`🔍 開始搜尋歌詞: ${query}`);
+    // 解析 artist 和 title
+    let artist = '', title = '';
+    const parts = query.split(/[-–\s]+/);
+    if (parts.length >= 2) {
+        artist = parts[0].trim();
+        title = parts.slice(1).join(' ').trim();
+    } else {
+        title = query;
+    }
+
+    this.log(`🔍 開始搜尋歌詞: ${artist} - ${title}`);
     
-    // 顯示載入狀態
     document.getElementById('search-loading').style.display = 'flex';
     document.getElementById('search-results').style.display = 'none';
     
     try {
-        // ✅ 手動搜尋：分別請求三個來源
-        const providers = ['lrclib', 'netease', 'musixmatch'];
-        const allResults = [];
+        // ✅ 改用多供應商端點
+        const response = await fetch(
+            `${this.apiBase}/api/lyrics-search-multi/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`
+        );
+        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
 
-        for (const provider of providers) {
-            const response = await fetch(`${this.apiBase}/api/lyrics/${encodeURIComponent(query)}/?p=${provider}`);
-            const data = await response.json();
-            if (data.success && data.results) {
-                allResults.push(...data.results);
-            }
-        }
-
-        if (allResults.length > 0) {
-            this.displaySearchResults(allResults);
+        if (data.success && Array.isArray(data.results)) {
+            this.displaySearchResults(data.results);
         } else {
             this.displayNoResults();
         }
@@ -104,13 +109,18 @@ SpotifyLyricsPlayer.prototype.displaySearchResults = function(results) {
     
     resultsContainer.innerHTML = '';
     
-    results.forEach(result => {
+    // 分離成功和失敗的結果
+    const successResults = results.filter(r => r.success !== false);
+    const failedResults = results.filter(r => r.success === false);
+    
+    // 顯示成功的結果
+    successResults.forEach((result, index) => {
         const resultElement = document.createElement('div');
-        resultElement.className = 'result-item';
+        resultElement.className = 'result-item success';
         
-        // 生成歌詞預覽（前幾行歌詞）
-        let preview = '點擊查看歌詞';
-        if (result.lyrics && result.lyrics.length > 0) {
+        // 生成歌詞預覽
+        let preview = result.lyricsPreview || '點擊查看歌詞';
+        if (!result.lyricsPreview && result.lyrics && result.lyrics.length > 0) {
             const firstFewLines = result.lyrics.slice(0, 3)
                 .map(line => typeof line === 'string' ? line : line.text || '')
                 .filter(line => line.trim() !== '')
@@ -119,17 +129,60 @@ SpotifyLyricsPlayer.prototype.displaySearchResults = function(results) {
         }
         
         resultElement.innerHTML = `
-            <div class="result-title">${this.escapeHtml(result.title)}</div>
-            <div class="result-artist">${this.escapeHtml(result.artist)}</div>
+            <div class="result-header">
+                <div class="result-provider">✅ ${this.escapeHtml(result.provider || result.source || 'Unknown')}</div>
+                <div class="result-type">${result.type === 'synced' ? '同步歌詞' : '普通歌詞'}</div>
+            </div>
+            <div class="result-title">${this.escapeHtml(result.title || result.artist)}</div>
+            <div class="result-artist">${this.escapeHtml(result.artist || '未知歌手')}</div>
             <div class="result-preview">${this.escapeHtml(preview)}</div>
-            <span class="result-source">${this.escapeHtml(result.source)}</span>
+            <div class="result-actions">
+                <button class="use-lyrics-btn" data-index="${index}">使用此歌詞</button>
+                <button class="lock-provider-btn" data-provider="${result.provider}" data-artist="${result.artist}" data-title="${result.title}">鎖定供應商</button>
+            </div>
         `;
         
-        resultElement.addEventListener('click', () => {
-            this.selectLyricsResult(result);
+        resultsContainer.appendChild(resultElement);
+    });
+    
+    // 顯示失敗的結果
+    if (failedResults.length > 0) {
+        const failedSection = document.createElement('div');
+        failedSection.className = 'failed-results-section';
+        failedSection.innerHTML = '<h4 style="color: #666; margin: 20px 0 10px 0;">❌ 未找到歌詞的供應商</h4>';
+        
+        failedResults.forEach(result => {
+            const failedElement = document.createElement('div');
+            failedElement.className = 'result-item failed';
+            failedElement.innerHTML = `
+                <div class="result-header">
+                    <div class="result-provider">❌ ${this.escapeHtml(result.provider || 'Unknown')}</div>
+                </div>
+                <div class="result-error">${this.escapeHtml(result.error || '無法獲取歌詞')}</div>
+            `;
+            failedSection.appendChild(failedElement);
         });
         
-        resultsContainer.appendChild(resultElement);
+        resultsContainer.appendChild(failedSection);
+    }
+    
+    // 綁定按鈕事件
+    resultsContainer.querySelectorAll('.use-lyrics-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const index = parseInt(e.target.dataset.index);
+            this.selectLyricsResult(successResults[index]);
+        });
+    });
+    
+    resultsContainer.querySelectorAll('.lock-provider-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const provider = e.target.dataset.provider;
+            const artist = e.target.dataset.artist;
+            const title = e.target.dataset.title;
+            this.lockProvider(provider, artist, title, e.target);
+        });
     });
     
     searchResults.style.display = 'block';
@@ -222,6 +275,59 @@ SpotifyLyricsPlayer.prototype.escapeHtml = function(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+};
+
+// 鎖定供應商功能
+SpotifyLyricsPlayer.prototype.lockProvider = function(provider, artist, title, buttonElement) {
+    const key = `${artist}-${title}`.toLowerCase();
+    
+    // 保存到 localStorage
+    const saved = JSON.parse(localStorage.getItem('lockedLyricsProviders') || '{}');
+    saved[key] = provider;
+    localStorage.setItem('lockedLyricsProviders', JSON.stringify(saved));
+
+    // 更新按鈕狀態
+    buttonElement.textContent = '✅ 已鎖定';
+    buttonElement.style.background = '#1db954';
+    buttonElement.disabled = true;
+
+    this.showSuccessMessage(`已鎖定 ${provider} 為 "${artist} - ${title}" 的歌詞供應商`);
+    this.log(`🔒 已鎖定供應商: ${provider} for ${artist} - ${title}`);
+};
+
+// 檢查鎖定的供應商
+SpotifyLyricsPlayer.prototype.getLockedProvider = function(artist, title) {
+    const key = `${artist}-${title}`.toLowerCase();
+    const saved = JSON.parse(localStorage.getItem('lockedLyricsProviders') || '{}');
+    return saved[key] || null;
+};
+
+// 顯示成功訊息
+SpotifyLyricsPlayer.prototype.showSuccessMessage = function(message) {
+    const successDiv = document.createElement('div');
+    successDiv.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: linear-gradient(135deg, #1db954, #1ed760);
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(29, 185, 84, 0.3);
+        z-index: 10000;
+        font-size: 14px;
+        font-weight: 500;
+        animation: slideIn 0.3s ease;
+    `;
+    successDiv.textContent = message;
+    
+    document.body.appendChild(successDiv);
+    
+    setTimeout(() => {
+        if (successDiv.parentNode) {
+            successDiv.parentNode.removeChild(successDiv);
+        }
+    }, 3000);
 };
 
 SpotifyLyricsPlayer.prototype.showErrorMessage = function(message) {

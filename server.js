@@ -314,7 +314,10 @@ app.get('/api/current-track', async (req, res) => {
                 id: queueTrack.id,
                 name: queueTrack.name,
                 artist: queueTrack.artists.map(a => a.name).join(', '),
-                image: queueTrack.album.images[0]?.url
+                image: queueTrack.album.images[0]?.url,
+                // 👇 關鍵：保留原始 artists 和 album
+                artists: queueTrack.artists,
+                album: queueTrack.album
             })) || [],
             nextTrack: queueResponse?.data?.queue?.[0] ? {
                 id: queueResponse.data.queue[0].id,
@@ -1310,6 +1313,56 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
             error: '伺服器內部錯誤',
             details: error.message
         });
+    }
+});
+
+// 多供應商歌詞搜尋 API（本地開發用）
+app.get('/api/lyrics-search-multi/:artist/:title', async (req, res) => {
+    const { artist, title } = req.params;
+    try {
+        console.log(`🔍 多供應商搜尋（本地）: ${artist} - ${title}`);
+        const providers = ['Musixmatch', 'Lrclib', 'NetEase'];
+        const results = [];
+        const promises = providers.map(async (provider) => {
+            const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
+            try {
+                const response = await axios.get(apiUrl, { timeout: 10000 });
+                let lyrics = [];
+                if (Array.isArray(response.data)) {
+                    const lrcResult = parseLrcFormat(response.data.join('\n'));
+                    lyrics = lrcResult.isLrc ? lrcResult.lyrics : response.data.filter(l => l?.trim());
+                } else if (response.data?.lyrics) {
+                    lyrics = Array.isArray(response.data.lyrics) ? response.data.lyrics : [response.data.lyrics];
+                } else if (typeof response.data === 'string') {
+                    const lrcResult = parseLrcFormat(response.data);
+                    lyrics = lrcResult.isLrc ? lrcResult.lyrics : response.data.split('\n').filter(l => l?.trim());
+                }
+                if (lyrics.length > 0) {
+                    return {
+                        provider,
+                        success: true,
+                        lyrics,
+                        type: lyrics.some(l => l.time) ? 'synced' : 'plain',
+                        artist,
+                        title,
+                        lyricsPreview: lyrics.slice(0, 3).map(l => typeof l === 'string' ? l : l.text || '').join(' / ')
+                    };
+                }
+                return { provider, success: false, error: '未找到歌詞', artist, title };
+            } catch (error) {
+                return { provider, success: false, error: error.message, artist, title };
+            }
+        });
+        const allResults = await Promise.all(promises);
+        res.json({
+            success: true,
+            results: allResults,
+            total: allResults.length,
+            found: allResults.filter(r => r.success).length
+        });
+    } catch (error) {
+        console.error('多供應商搜尋失敗:', error.message);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
