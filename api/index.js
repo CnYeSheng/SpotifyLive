@@ -1256,5 +1256,28 @@ app.get('/api/lyrics-search-multi/:artist/:title', async (req, res) => {
     }
 });
 
+// 靜默刷新 token 端點（Vercel 版）
+app.post('/api/refresh-token', async (req, res) => {
+    try {
+        const session = getUserSession(req);
+        if (!session) {
+            return res.status(401).json({ error: 'No session found' });
+        }
+        const refreshed = await refreshAccessToken(session);
+        if (refreshed) {
+            const sessionId = req.headers['x-session-id'] || req.query.sessionId;
+            res.json({ 
+                success: true, 
+                sessionId: sessionId
+            });
+        } else {
+            res.status(401).json({ error: 'Token refresh failed' });
+        }
+    } catch (err) {
+        console.error('❌ Failed to refresh token:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Export for Vercel
 module.exports = app;
