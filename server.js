@@ -1438,6 +1438,68 @@ async function searchNeteaseLyrics(artist, title) {
 }
 
 // 原有的歌詞端點（保持向後兼容）
+// 从特定供应商搜索歌词 - 用于用户自定义设置
+app.get('/api/lyrics-search-provider/:provider/:artist/:title', async (req, res) => {
+    const { provider, artist, title } = req.params;
+    
+    try {
+        console.log(`🔍 从指定供应商搜索歌词: ${provider} for ${artist} - ${title}`);
+        
+        // 验证供应商名称
+        const validProviders = ['Musixmatch', 'Lrclib', 'NetEase', 'Genius'];
+        if (!validProviders.includes(provider)) {
+            return res.status(400).json({
+                success: false,
+                error: `不支持的歌词供应商: ${provider}`
+            });
+        }
+        
+        const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
+        
+        const response = await fetch(apiUrl, {
+            timeout: 15000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`API 请求失败: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.success && data.lyrics && data.lyrics.length > 0) {
+            console.log(`✅ 从 ${provider} 成功获取歌词: ${data.lyrics.length} 行`);
+            
+            res.json({
+                success: true,
+                provider: provider,
+                artist: artist,
+                title: title,
+                lyrics: data.lyrics,
+                type: data.syncType || 'plain',
+                source: `${provider} (用户指定)`
+            });
+        } else {
+            console.log(`❌ ${provider} 未找到歌词: ${artist} - ${title}`);
+            res.json({
+                success: false,
+                provider: provider,
+                error: `${provider} 未找到歌词`
+            });
+        }
+        
+    } catch (error) {
+        console.error(`❌ 从 ${provider} 搜索歌词失败:`, error.message);
+        res.status(500).json({
+            success: false,
+            provider: provider,
+            error: `从 ${provider} 搜索失败: ${error.message}`
+        });
+    }
+});
+
 app.get('/api/lyrics-legacy/:artist/:title', async (req, res) => {
     const { artist, title } = req.params;
     const providersParam = req.query.p || ''; // e.g. "lrclib,musixmatch,netease"
