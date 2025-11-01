@@ -228,6 +228,24 @@
                             </svg>
                             搜尋
                         </button>
+                        <button id="download-lyrics-btn" class="lyrics-control-btn" title="下載歌詞">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                            </svg>
+                            下載
+                        </button>
+                        <button id="upload-lyrics-btn" class="lyrics-control-btn" title="上傳歌詞">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/>
+                            </svg>
+                            上傳
+                        </button>
+                        <button id="edit-lyrics-btn" class="lyrics-control-btn" title="編輯歌詞">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                            </svg>
+                            編輯
+                        </button>
                         <!-- <button id="auto-scroll-btn" class="control-btn active">自動滾動</button>
                         <button id="font-size-btn" class="control-btn">字體大小</button> -->
                     </div>
@@ -341,10 +359,83 @@
         </div>
     </div>
 
+    <!-- 歌詞上傳模態框 -->
+    <div id="lyrics-upload-modal" class="modal" style="display: none;">
+        <div class="modal-content lyrics-upload-modal">
+            <h3>📤 上傳歌詞</h3>
+            
+            <div class="upload-section">
+                <div class="upload-methods">
+                    <div class="upload-method">
+                        <h4>📄 文件上傳</h4>
+                        <input type="file" id="lyrics-file-input" accept=".lrc,.txt" />
+                        <div class="file-info">
+                            支持 .lrc (同步歌詞) 和 .txt (普通歌詞) 格式
+                        </div>
+                    </div>
+                    
+                    <div class="upload-method">
+                        <h4>📝 文本輸入</h4>
+                        <textarea id="lyrics-text-input" placeholder="請輸入歌詞內容...&#10;&#10;同步歌詞格式：&#10;[00:12.34]第一行歌詞&#10;[00:18.67]第二行歌詞&#10;&#10;或直接輸入普通歌詞文本"></textarea>
+                    </div>
+                </div>
+                
+                <div class="upload-actions">
+                    <button id="apply-uploaded-lyrics" class="apply-btn">套用歌詞</button>
+                    <button id="preview-uploaded-lyrics" class="preview-btn">預覽</button>
+                </div>
+            </div>
+            
+            <div id="upload-preview" class="upload-preview" style="display: none;">
+                <h4>歌詞預覽</h4>
+                <div id="upload-preview-content" class="preview-content"></div>
+            </div>
+            
+            <div class="modal-actions">
+                <button id="close-lyrics-upload-modal" class="close-btn">關閉</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 歌詞編輯模態框 -->
+    <div id="lyrics-edit-modal" class="modal" style="display: none;">
+        <div class="modal-content lyrics-edit-modal">
+            <h3>✏️ 編輯歌詞</h3>
+            
+            <div class="edit-section">
+                <div class="edit-toolbar">
+                    <button id="edit-mode-toggle" class="mode-toggle-btn" data-mode="visual">視覺編輯</button>
+                    <button id="add-timestamp-btn" class="toolbar-btn" title="添加時間戳">⏱️</button>
+                    <button id="sync-with-playback-btn" class="toolbar-btn" title="與播放同步">🎵</button>
+                    <button id="clear-timestamps-btn" class="toolbar-btn" title="清除所有時間戳">🗑️</button>
+                </div>
+                
+                <div id="visual-edit-container" class="edit-container">
+                    <div id="visual-lyrics-editor" class="visual-editor"></div>
+                </div>
+                
+                <div id="text-edit-container" class="edit-container" style="display: none;">
+                    <textarea id="text-lyrics-editor" class="text-editor"></textarea>
+                </div>
+                
+                <div class="edit-actions">
+                    <button id="save-edited-lyrics" class="save-btn">保存並套用</button>
+                    <button id="export-edited-lyrics" class="export-btn">導出</button>
+                    <button id="reset-lyrics-edit" class="reset-btn">重置</button>
+                </div>
+            </div>
+            
+            <div class="modal-actions">
+                <button id="close-lyrics-edit-modal" class="close-btn">關閉</button>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/umd/full.js"></script>
     <script src="opencc.js"></script>
     <script src="script.js"></script>
     <script src="lyrics-search.js"></script>
+    <script src="lyrics-manager.js"></script>
     <!-- 动态背景脚本已移除 -->
     
     <!-- 动态背景相关脚本已完全移除 -->

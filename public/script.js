@@ -20,11 +20,11 @@
         // 添加 API 速率限制控制
         this.isCheckingTrack = false;
         this.lastCheckTime = 0;
-        this.baseCheckInterval = 15000; // 基礎檢查間隔15秒
-        this.currentCheckInterval = 15000; // 當前檢查間隔
+        this.baseCheckInterval = 10000; // 基礎檢查間隔10秒
+        this.currentCheckInterval = 10000; // 當前檢查間隔
         this.retryCount = 0;
         this.maxRetries = 3;
-        this.backoffDelay = 2000;
+        this.backoffDelay = 5000; // 增加退避延遲到5秒
         
         // 速率限制狀態
         this.isRateLimited = false;
@@ -1141,17 +1141,17 @@
     adjustPollingInterval() {
         let newInterval = this.baseCheckInterval;
         
-        // 如果接近歌曲結尾，密集更新（每5秒）
+        // 如果接近歌曲結尾，適度加快（每8秒）
         if (this.isNearTrackEnd) {
-            newInterval = 5000; // 5秒密集更新
+            newInterval = 8000; // 8秒更新
         }
-        // 如果最近有用戶操作，短暫加速
+        // 如果最近有用戶操作，適度加速
         else if (Date.now() - this.lastUserAction < 30000) {
-            newInterval = 10000; // 10秒
+            newInterval = 8000; // 8秒
         }
-        // 如果被限速過，延長間隔
+        // 如果被限速過，大幅延長間隔
         else if (this.rateLimitCount > 0) {
-            newInterval = Math.min(this.baseCheckInterval * (1 + this.rateLimitCount * 0.5), 30000);
+            newInterval = Math.min(this.baseCheckInterval * (1.5 + this.rateLimitCount), 20000); // 最多20秒
         }
         
         if (newInterval !== this.currentCheckInterval) {
