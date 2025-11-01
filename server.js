@@ -1204,7 +1204,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
 
         // ========== 自動模式：無 ?p= ==========
         if (!provider) {
-            const providers = ['musixmatch', 'lrclib', 'netease'];
+            const providers = ['musixmatch', 'lrclib', 'netease', 'kugou'];
             for (const p of providers) {
                 try {
                     const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${p}`;
@@ -1235,12 +1235,12 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
             return res.status(404).json({
                 success: false,
                 error: '未找到歌詞',
-                searched: ['musixmatch', 'lrclib', 'netease']
+                searched: ['musixmatch', 'lrclib', 'netease', 'kugou']
             });
         }
 
         // ========== 指定來源模式：有 ?p= ==========
-        const validProviders = ['musixmatch', 'lrclib', 'netease'];
+        const validProviders = ['musixmatch', 'lrclib', 'netease', 'kugou'];
         if (!validProviders.includes(provider)) {
             return res.status(400).json({
                 success: false,
@@ -1299,7 +1299,7 @@ app.get('/api/lyrics-search-multi/:artist/:title', async (req, res) => {
     const { artist, title } = req.params;
     try {
         console.log(`🔍 多供應商搜尋（本地）: ${artist} - ${title}`);
-        const providers = ['Musixmatch', 'Lrclib', 'NetEase'];
+        const providers = ['Musixmatch', 'Lrclib', 'NetEase', 'Kugou'];
         const results = [];
         const promises = providers.map(async (provider) => {
             const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
@@ -1437,6 +1437,37 @@ async function searchNeteaseLyrics(artist, title) {
     }
 }
 
+// 搜尋 Kugou 歌詞
+async function searchNeteaseLyrics(artist, title) {
+    try {
+        console.log(`🔍 Kugou 搜尋: ${artist} - ${title}`);
+        
+        // 使用統一的API端點格式
+        const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Kougou`;
+        
+        const response = await axios.get(apiUrl, {
+            timeout: 15000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+        
+        if (response.data && response.data.lyrics && response.data.lyrics.length > 0) {
+            return {
+                success: true,
+                lyrics: response.data.lyrics,
+                type: response.data.type || 'plain',
+                source: 'netease'
+            };
+        }
+        
+        return { success: false, error: 'No lyrics found in Kugou' };
+    } catch (error) {
+        console.log(`⚠️ Kugou API 錯誤: ${error.message}`);
+        return { success: false, error: error.message };
+    }
+}
+
 // 原有的歌詞端點（保持向後兼容）
 // 从特定供应商搜索歌词 - 用于用户自定义设置
 app.get('/api/lyrics-search-provider/:provider/:artist/:title', async (req, res) => {
@@ -1446,7 +1477,7 @@ app.get('/api/lyrics-search-provider/:provider/:artist/:title', async (req, res)
         console.log(`🔍 从指定供应商搜索歌词: ${provider} for ${artist} - ${title}`);
         
         // 验证供应商名称
-        const validProviders = ['Musixmatch', 'Lrclib', 'NetEase', 'Genius'];
+        const validProviders = ['Musixmatch', 'Lrclib', 'NetEase', 'Kougou', 'Genius'];
         if (!validProviders.includes(provider)) {
             return res.status(400).json({
                 success: false,
@@ -1594,6 +1625,9 @@ app.get('/api/lyrics-legacy/:artist/:title', async (req, res) => {
                         break;
                     case 'netease':
                         apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=NetEase`;
+                        break;
+                    case 'kugou':
+                        apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Kougou`;
                         break;
                     default:
                         console.log(`⚠️ 不支援的提供商: ${provider}`);

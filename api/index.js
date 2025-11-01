@@ -1024,6 +1024,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                 case 'musixmatch': pParam = 'Musixmatch'; break;
                 case 'lrclib': pParam = 'Lrclib'; break;
                 case 'netease': pParam = 'NetEase'; break;
+                case 'kugou': pParam = 'Kugou'; break;
                 default: continue;
             }
 
@@ -1130,7 +1131,7 @@ app.get('/api/lyrics-search-multi/:artist/:title', async (req, res) => {
     try {
         console.log(`🔍 多供應商搜尋: ${artist} - ${title}`);
         
-        const providers = ['Musixmatch', 'Lrclib', 'NetEase'];
+        const providers = ['Musixmatch', 'Lrclib', 'NetEase', 'Kugou'];
         const results = [];
         
         // 並行請求所有供應商
