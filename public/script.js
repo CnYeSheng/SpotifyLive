@@ -53,6 +53,10 @@
         // 歌詞時間偏移控制
         this.lyricsTimeOffset = 0; // 毫秒，正數代表歌詞提前顯示，負數代表歌詞延後顯示
         
+        // 歌詞緩存控制
+        this.lyricsCache = new Map(); // 內存中的歌詞緩存
+        this.lyricsCacheExpiry = 24 * 60 * 60 * 1000; // 24小時過期時間
+        
         // 手機頁面切換控制
         this.isMobile = window.innerWidth <= 767;
         this.currentMobilePage = 'info'; // 'info' 或 'lyrics'
@@ -138,6 +142,105 @@
         
         // 启动定期的静默session检查（每3分钟，更频繁）
         this.startPeriodicSessionCheck();
+        
+        // 初始化歌詞緩存
+        this.initLyricsCache();
+    }
+
+    // 初始化歌詞緩存
+    initLyricsCache() {
+        try {
+            const cached = localStorage.getItem('lyrics_cache');
+            if (cached) {
+                const cacheData = JSON.parse(cached);
+                // 清理過期的緩存項目
+                const now = Date.now();
+                for (const [key, value] of Object.entries(cacheData)) {
+                    if (now - value.timestamp < this.lyricsCacheExpiry) {
+                        this.lyricsCache.set(key, value);
+                    }
+                }
+                this.log(`📚 已載入 ${this.lyricsCache.size} 個緩存的歌詞`);
+            }
+        } catch (error) {
+            this.log(`❌ 載入歌詞緩存失敗: ${error.message}`);
+            localStorage.removeItem('lyrics_cache');
+        }
+    }
+
+    // 生成歌曲緩存鍵值
+    generateTrackCacheKey(track) {
+        return `${track.id}-${track.name}-${track.artist}`.toLowerCase().replace(/\s+/g, '_');
+    }
+
+    // 從緩存獲取歌詞
+    getCachedLyrics(track) {
+        const cacheKey = this.generateTrackCacheKey(track);
+        const cached = this.lyricsCache.get(cacheKey);
+        
+        if (cached && (Date.now() - cached.timestamp) < this.lyricsCacheExpiry) {
+            this.log(`💾 從緩存載入歌詞: ${track.name} - ${track.artist}`);
+            return cached;
+        }
+        
+        // 清理過期緩存
+        if (cached) {
+            this.lyricsCache.delete(cacheKey);
+            this.saveLyricsCacheToStorage();
+        }
+        
+        return null;
+    }
+
+    // 保存歌詞到緩存
+    cacheLyrics(track, lyrics, lyricsType) {
+        const cacheKey = this.generateTrackCacheKey(track);
+        const cacheData = {
+            lyrics: lyrics,
+            lyricsType: lyricsType,
+            timestamp: Date.now(),
+            trackInfo: {
+                id: track.id,
+                name: track.name,
+                artist: track.artist
+            }
+        };
+        
+        this.lyricsCache.set(cacheKey, cacheData);
+        this.saveLyricsCacheToStorage();
+        this.log(`💾 已緩存歌詞: ${track.name} - ${track.artist}`);
+    }
+
+    // 保存緩存到 localStorage
+    saveLyricsCacheToStorage() {
+        try {
+            const cacheObject = {};
+            for (const [key, value] of this.lyricsCache.entries()) {
+                cacheObject[key] = value;
+            }
+            localStorage.setItem('lyrics_cache', JSON.stringify(cacheObject));
+        } catch (error) {
+            this.log(`❌ 保存歌詞緩存失敗: ${error.message}`);
+            // 如果存儲空間不足，清理部分緩存
+            if (error.name === 'QuotaExceededError') {
+                this.cleanupLyricsCache();
+            }
+        }
+    }
+
+    // 清理歌詞緩存
+    cleanupLyricsCache() {
+        const entries = Array.from(this.lyricsCache.entries());
+        // 按時間戳排序，刪除最舊的一半
+        entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+        const toDelete = entries.slice(0, Math.floor(entries.length / 2));
+        
+        toDelete.forEach(([key]) => {
+            this.lyricsCache.delete(key);
+        });
+        
+        this.saveLyricsCacheToStorage();
+        this.log(`🧹 已清理 ${toDelete.length} 個舊的歌詞緩存`);
     }
 
     handleAuthCallback() {
