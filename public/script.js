@@ -57,6 +57,11 @@
         this.lyricsCache = new Map(); // 內存中的歌詞緩存
         this.lyricsCacheExpiry = 24 * 60 * 60 * 1000; // 24小時過期時間
         
+        // 歌詞時間調整保存控制
+        this.lyricsTimeAdjustments = new Map(); // 保存歌詞時間調整
+        this.savedLyrics = new Map(); // 保存的歌詞 (優先載入)
+        this.initSavedLyricsAndAdjustments(); // 初始化保存的歌詞和時間調整
+        
         // 手機頁面切換控制
         this.isMobile = window.innerWidth <= 767;
         this.currentMobilePage = 'info'; // 'info' 或 'lyrics'
@@ -168,18 +173,81 @@
         }
     }
 
+    // 初始化保存的歌詞和時間調整
+    initSavedLyricsAndAdjustments() {
+        try {
+            // 載入保存的歌詞 (優先載入)
+            const savedLyrics = localStorage.getItem('saved_lyrics');
+            if (savedLyrics) {
+                const savedData = JSON.parse(savedLyrics);
+                for (const [key, value] of Object.entries(savedData)) {
+                    this.savedLyrics.set(key, value);
+                }
+                this.log(`💎 已載入 ${this.savedLyrics.size} 個保存的歌詞`);
+            }
+
+            // 載入歌詞時間調整
+            const timeAdjustments = localStorage.getItem('lyrics_time_adjustments');
+            if (timeAdjustments) {
+                const adjustmentData = JSON.parse(timeAdjustments);
+                for (const [key, value] of Object.entries(adjustmentData)) {
+                    this.lyricsTimeAdjustments.set(key, value);
+                }
+                this.log(`⏰ 已載入 ${this.lyricsTimeAdjustments.size} 個歌詞時間調整`);
+            }
+        } catch (error) {
+            this.log(`❌ 載入保存的歌詞和時間調整失敗: ${error.message}`);
+            localStorage.removeItem('saved_lyrics');
+            localStorage.removeItem('lyrics_time_adjustments');
+        }
+    }
+
     // 生成歌曲緩存鍵值
     generateTrackCacheKey(track) {
         return `${track.id}-${track.name}-${track.artist}`.toLowerCase().replace(/\s+/g, '_');
     }
 
-    // 從緩存獲取歌詞
+    // 從緩存獲取歌詞 (優先順序: 保存的歌詞 > 緩存歌詞)
     getCachedLyrics(track) {
         const cacheKey = this.generateTrackCacheKey(track);
-        const cached = this.lyricsCache.get(cacheKey);
         
+        // 1. 優先檢查保存的歌詞
+        const savedLyrics = this.savedLyrics.get(cacheKey);
+        if (savedLyrics) {
+            this.log(`💎 從保存的歌詞載入: ${track.name} - ${track.artist}`);
+            
+            // 套用時間調整 (如果有的話)
+            const timeAdjustment = this.lyricsTimeAdjustments.get(cacheKey);
+            if (timeAdjustment && savedLyrics.lyrics) {
+                const adjustedLyrics = this.applyTimeAdjustmentToLyrics(savedLyrics.lyrics, timeAdjustment);
+                return {
+                    ...savedLyrics,
+                    lyrics: adjustedLyrics,
+                    hasTimeAdjustment: true,
+                    timeAdjustment: timeAdjustment
+                };
+            }
+            
+            return savedLyrics;
+        }
+        
+        // 2. 檢查一般緩存
+        const cached = this.lyricsCache.get(cacheKey);
         if (cached && (Date.now() - cached.timestamp) < this.lyricsCacheExpiry) {
             this.log(`💾 從緩存載入歌詞: ${track.name} - ${track.artist}`);
+            
+            // 套用時間調整 (如果有的話)
+            const timeAdjustment = this.lyricsTimeAdjustments.get(cacheKey);
+            if (timeAdjustment && cached.lyrics) {
+                const adjustedLyrics = this.applyTimeAdjustmentToLyrics(cached.lyrics, timeAdjustment);
+                return {
+                    ...cached,
+                    lyrics: adjustedLyrics,
+                    hasTimeAdjustment: true,
+                    timeAdjustment: timeAdjustment
+                };
+            }
+            
             return cached;
         }
         
@@ -211,6 +279,65 @@
         this.log(`💾 已緩存歌詞: ${track.name} - ${track.artist}`);
     }
 
+    // 保存歌詞 (永久保存，播放時優先載入)
+    saveLyrics(track, lyrics, lyricsType, source = 'manual') {
+        const cacheKey = this.generateTrackCacheKey(track);
+        const savedData = {
+            lyrics: lyrics,
+            lyricsType: lyricsType,
+            timestamp: Date.now(),
+            source: source,
+            trackInfo: {
+                id: track.id,
+                name: track.name,
+                artist: track.artist
+            }
+        };
+        
+        this.savedLyrics.set(cacheKey, savedData);
+        this.saveSavedLyricsToStorage();
+        this.log(`💎 已保存歌詞: ${track.name} - ${track.artist}`);
+        
+        // 也緩存到一般緩存
+        this.cacheLyrics(track, lyrics, lyricsType);
+    }
+
+    // 保存歌詞時間調整
+    saveLyricsTimeAdjustment(track, timeOffset) {
+        const cacheKey = this.generateTrackCacheKey(track);
+        const adjustmentData = {
+            timeOffset: timeOffset,
+            timestamp: Date.now(),
+            trackInfo: {
+                id: track.id,
+                name: track.name,
+                artist: track.artist
+            }
+        };
+        
+        this.lyricsTimeAdjustments.set(cacheKey, adjustmentData);
+        this.saveTimeAdjustmentsToStorage();
+        this.log(`⏰ 已保存歌詞時間調整: ${track.name} - ${track.artist}, 偏移: ${timeOffset}ms`);
+    }
+
+    // 套用時間調整到歌詞
+    applyTimeAdjustmentToLyrics(lyrics, timeAdjustment) {
+        if (!timeAdjustment || !timeAdjustment.timeOffset || timeAdjustment.timeOffset === 0) {
+            return lyrics;
+        }
+        
+        const offset = timeAdjustment.timeOffset;
+        return lyrics.map(line => {
+            if (line.time !== undefined) {
+                return {
+                    ...line,
+                    time: Math.max(0, line.time + offset) // 確保時間不會是負數
+                };
+            }
+            return line;
+        });
+    }
+
     // 保存緩存到 localStorage
     saveLyricsCacheToStorage() {
         try {
@@ -228,6 +355,38 @@
         }
     }
 
+    // 保存保存的歌詞到 localStorage
+    saveSavedLyricsToStorage() {
+        try {
+            const savedObject = {};
+            for (const [key, value] of this.savedLyrics.entries()) {
+                savedObject[key] = value;
+            }
+            localStorage.setItem('saved_lyrics', JSON.stringify(savedObject));
+        } catch (error) {
+            this.log(`❌ 保存永久歌詞失敗: ${error.message}`);
+            if (error.name === 'QuotaExceededError') {
+                this.cleanupSavedLyrics();
+            }
+        }
+    }
+
+    // 保存時間調整到 localStorage
+    saveTimeAdjustmentsToStorage() {
+        try {
+            const adjustmentObject = {};
+            for (const [key, value] of this.lyricsTimeAdjustments.entries()) {
+                adjustmentObject[key] = value;
+            }
+            localStorage.setItem('lyrics_time_adjustments', JSON.stringify(adjustmentObject));
+        } catch (error) {
+            this.log(`❌ 保存歌詞時間調整失敗: ${error.message}`);
+            if (error.name === 'QuotaExceededError') {
+                this.cleanupTimeAdjustments();
+            }
+        }
+    }
+
     // 清理歌詞緩存
     cleanupLyricsCache() {
         const entries = Array.from(this.lyricsCache.entries());
@@ -241,6 +400,36 @@
         
         this.saveLyricsCacheToStorage();
         this.log(`🧹 已清理 ${toDelete.length} 個舊的歌詞緩存`);
+    }
+
+    // 清理保存的歌詞
+    cleanupSavedLyrics() {
+        const entries = Array.from(this.savedLyrics.entries());
+        // 按時間戳排序，刪除最舊的一半
+        entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+        const toDelete = entries.slice(0, Math.floor(entries.length / 2));
+        
+        toDelete.forEach(([key]) => {
+            this.savedLyrics.delete(key);
+        });
+        
+        this.saveSavedLyricsToStorage();
+        this.log(`🧹 已清理 ${toDelete.length} 個舊的保存歌詞`);
+    }
+
+    // 清理時間調整
+    cleanupTimeAdjustments() {
+        const entries = Array.from(this.lyricsTimeAdjustments.entries());
+        // 按時間戳排序，刪除最舊的一半
+        entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+        const toDelete = entries.slice(0, Math.floor(entries.length / 2));
+        
+        toDelete.forEach(([key]) => {
+            this.lyricsTimeAdjustments.delete(key);
+        });
+        
+        this.saveTimeAdjustmentsToStorage();
+        this.log(`🧹 已清理 ${toDelete.length} 個舊的時間調整`);
     }
 
     handleAuthCallback() {
