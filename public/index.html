@@ -562,13 +562,17 @@
             const originalHandleAuthError = window.player.handleAuthError;
             if (originalHandleAuthError) {
                 window.player.handleAuthError = async function(error, context = '') {
+                    this.log(`🔑 處理認證錯誤 (增強版) (${context}): ${error.message}`);
+                    
                     const now = Date.now();
-                    if (this.isRefreshing || (now - this.lastRefreshTime < 10000)) {
+                    
+                    // 防止重複刷新，但不影響自動登入流程
+                    if (this.isRefreshing || (now - this.lastRefreshTime < 5000)) {
                         this.log('🔄 頁面刷新操作進行中，跳過重複處理');
                         return;
                     }
                     
-                    // 嘗試靜默恢復而不是刷新頁面
+                    // 首先嘗試靜默恢復
                     try {
                         const silentRefreshResponse = await fetch('/api/refresh-token', {
                             method: 'POST',
@@ -579,7 +583,8 @@
                         if (silentRefreshResponse.ok) {
                             const refreshData = await silentRefreshResponse.json();
                             if (refreshData.success) {
-                                this.log('✅ 靜默恢復成功 (無需刷新頁面)');
+                                this.log('✅ 靜默 token 恢復成功 (無需刷新頁面)');
+                                this.consecutiveAuthErrors = 0; // 重置錯誤計數
                                 setTimeout(() => this.checkCurrentTrackWithRateLimit(), 1000);
                                 return;
                             }
@@ -588,8 +593,27 @@
                         this.log(`❌ 靜默恢復失敗: ${e.message}`);
                     }
                     
-                    // 回退到原始方法
-                    return originalHandleAuthError.call(this, error, context);
+                    // 如果靜默恢復失敗，但仍保留自動登入功能，只是減少刷新頻率
+                    this.log('🔄 靜默恢復失敗，嘗試智能自動登入...');
+                    
+                    // 確保自動登入仍然可以正常運作
+                    if (this.autoLoginEnabled && (!this.lastAutoLoginAttempt || (now - this.lastAutoLoginAttempt > 15000))) {
+                        this.lastAutoLoginAttempt = now;
+                        this.log('🔄 觸發自動登入流程...');
+                        
+                        // 延遲執行自動登入，避免與其他操作衝突
+                        setTimeout(() => {
+                            if (this.scheduleAutoLogin) {
+                                this.scheduleAutoLogin();
+                            }
+                        }, 2000);
+                        return;
+                    }
+                    
+                    // 最後回退到原始方法，但增加延遲避免頻繁操作
+                    setTimeout(() => {
+                        return originalHandleAuthError.call(this, error, context);
+                    }, 3000);
                 };
             }
         }
