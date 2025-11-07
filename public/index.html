@@ -445,6 +445,190 @@
     <script src="user-lyrics-manager.js"></script>
     <!-- 动态背景脚本已移除 -->
     
+    <!-- 增強功能模組 -->
+    <script>
+    // 增強功能模組 - 實現所有要求的改進
+    (function() {
+        'use strict';
+        
+        // 等待主腳本載入完成
+        function waitForPlayer() {
+            if (typeof SpotifyLyricsPlayer !== 'undefined' && window.player) {
+                initEnhancedFeatures();
+            } else {
+                setTimeout(waitForPlayer, 100);
+            }
+        }
+        
+        function initEnhancedFeatures() {
+            console.log('🚀 初始化增強功能模組');
+            
+            // 1. 增強歌詞時間調整功能 - 自動保存時間調整
+            enhanceLyricsTimeAdjustment();
+            
+            // 2. 增強歌詞載入功能 - 自動保存歌詞和供應商
+            enhanceLyricsLoading();
+            
+            // 3. 防止重複刷新頁面
+            enhanceSessionManagement();
+            
+            // 4. 歌名繁體中文轉換
+            enhanceTraditionalDisplay();
+            
+            console.log('✅ 增強功能模組初始化完成');
+        }
+        
+        // 1. 增強歌詞時間調整功能
+        function enhanceLyricsTimeAdjustment() {
+            const originalAdjustLyricsOffset = window.player.adjustLyricsOffset;
+            window.player.adjustLyricsOffset = function(offset) {
+                this.lyricsTimeOffset += offset;
+                this.log(`⏰ 歌詞時間調整: ${this.lyricsTimeOffset > 0 ? '+' : ''}${this.lyricsTimeOffset}ms`);
+                
+                // 保存歌詞時間調整到永久存儲
+                if (this.currentTrack) {
+                    this.saveLyricsTimeAdjustment(this.currentTrack, this.lyricsTimeOffset);
+                }
+                
+                this.updateLyricsDisplay();
+                this.showLyricsOffsetMessage(offset);
+            };
+            
+            const originalResetLyricsOffset = window.player.resetLyricsOffset;
+            window.player.resetLyricsOffset = function() {
+                this.lyricsTimeOffset = 0;
+                this.log('⏰ 歌詞時間偏移已重置');
+                
+                if (this.currentTrack) {
+                    const cacheKey = this.generateTrackCacheKey(this.currentTrack);
+                    this.lyricsTimeAdjustments.delete(cacheKey);
+                    this.saveTimeAdjustmentsToStorage();
+                }
+                
+                this.updateLyricsDisplay();
+                this.showLyricsOffsetMessage(0, true);
+            };
+            
+            // 添加顯示歌詞時間調整提示的方法
+            window.player.showLyricsOffsetMessage = function(offset, isReset = false) {
+                const message = isReset ? 
+                    '⏰ 歌詞時間已重置' : 
+                    `⏰ 歌詞時間${offset > 0 ? '延後' : '提前'} ${Math.abs(offset)}ms`;
+                
+                const messageDiv = document.createElement('div');
+                messageDiv.style.cssText = `
+                    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                    background: rgba(0, 0, 0, 0.8); color: white; padding: 12px 20px;
+                    border-radius: 8px; z-index: 2000; font-size: 14px; font-weight: 500;
+                `;
+                messageDiv.textContent = message;
+                document.body.appendChild(messageDiv);
+                
+                setTimeout(() => {
+                    if (messageDiv.parentNode) {
+                        messageDiv.parentNode.removeChild(messageDiv);
+                    }
+                }, 1500);
+            };
+        }
+        
+        // 2. 增強歌詞載入功能
+        function enhanceLyricsLoading() {
+            const originalOverrideLyrics = window.player.overrideLyrics;
+            if (originalOverrideLyrics) {
+                window.player.overrideLyrics = function(lyrics, lyricsType, source) {
+                    originalOverrideLyrics.call(this, lyrics, lyricsType, source);
+                    
+                    // 自動保存用戶修改的歌詞
+                    if (this.currentTrack && source && source.source !== 'auto_applied') {
+                        this.saveLyrics(this.currentTrack, lyrics, lyricsType, {
+                            ...source,
+                            appliedAt: Date.now(),
+                            appliedBy: 'manual_override'
+                        });
+                        console.log(`💾 已自動保存修改的歌詞: ${this.currentTrack.name} - ${this.currentTrack.artist}`);
+                    }
+                };
+            }
+        }
+        
+        // 3. 防止重複刷新頁面
+        function enhanceSessionManagement() {
+            if (!window.player.hasOwnProperty('isRefreshing')) {
+                window.player.isRefreshing = false;
+                window.player.lastRefreshTime = 0;
+            }
+            
+            const originalHandleAuthError = window.player.handleAuthError;
+            if (originalHandleAuthError) {
+                window.player.handleAuthError = async function(error, context = '') {
+                    const now = Date.now();
+                    if (this.isRefreshing || (now - this.lastRefreshTime < 10000)) {
+                        this.log('🔄 頁面刷新操作進行中，跳過重複處理');
+                        return;
+                    }
+                    
+                    // 嘗試靜默恢復而不是刷新頁面
+                    try {
+                        const silentRefreshResponse = await fetch('/api/refresh-token', {
+                            method: 'POST',
+                            headers: this.sessionId ? { 'X-Session-Id': this.sessionId } : {},
+                            credentials: 'same-origin'
+                        });
+                        
+                        if (silentRefreshResponse.ok) {
+                            const refreshData = await silentRefreshResponse.json();
+                            if (refreshData.success) {
+                                this.log('✅ 靜默恢復成功 (無需刷新頁面)');
+                                setTimeout(() => this.checkCurrentTrackWithRateLimit(), 1000);
+                                return;
+                            }
+                        }
+                    } catch (e) {
+                        this.log(`❌ 靜默恢復失敗: ${e.message}`);
+                    }
+                    
+                    // 回退到原始方法
+                    return originalHandleAuthError.call(this, error, context);
+                };
+            }
+        }
+        
+        // 4. 歌名繁體中文轉換
+        function enhanceTraditionalDisplay() {
+            const originalUpdateTrackInfo = window.player.updateTrackInfo;
+            if (originalUpdateTrackInfo) {
+                window.player.updateTrackInfo = function(track) {
+                    // 調用原始方法
+                    const result = originalUpdateTrackInfo.call(this, track);
+                    
+                    // 轉換繁體中文顯示
+                    if (typeof convertToTraditional === 'function') {
+                        if (this.trackName) {
+                            this.trackName.textContent = convertToTraditional(this.trackName.textContent);
+                        }
+                        if (this.artistName && !this.artistName.textContent.startsWith('🎙️')) {
+                            this.artistName.textContent = convertToTraditional(this.artistName.textContent);
+                        }
+                        if (this.albumName && !this.albumName.textContent.startsWith('Podcast:')) {
+                            this.albumName.textContent = convertToTraditional(this.albumName.textContent);
+                        }
+                    }
+                    
+                    return result;
+                };
+            }
+        }
+        
+        // 啟動增強功能
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', waitForPlayer);
+        } else {
+            waitForPlayer();
+        }
+    })();
+    </script>
+    
     <!-- 动态背景相关脚本已完全移除 -->
 </body>
 </html>

@@ -399,7 +399,7 @@ app.get('/api/current-track', async (req, res) => {
     }
 });
 
-// 静默刷新token端点
+// 靜默刷新token端點
 // ===============================
 // 🔄 Refresh Spotify Access Token
 // ===============================
@@ -891,7 +891,7 @@ app.get('/api/player/queue', async (req, res) => {
         }
         
         const rawQueue = response.data.queue.slice(0, 20);
-        console.log(`🎵 原始Queue数据 (${rawQueue.length}首):`, rawQueue.slice(0, 2).map(track => ({
+        console.log(`🎵 原始Queue數據 (${rawQueue.length}首):`, rawQueue.slice(0, 2).map(track => ({
             id: track.id,
             name: track.name, 
             hasArtists: !!track.artists,
@@ -902,7 +902,7 @@ app.get('/api/player/queue', async (req, res) => {
         })));
         
         const queue = rawQueue.map((track, index) => {
-            // 修复：确保正确处理艺术家和封面信息
+            // 修復：確保正確處理藝術家和封面信息
             const artists = track.artists || [];
             const artistNames = artists.map(artist => artist.name).join(', ') || '未知歌手';
             
@@ -916,14 +916,14 @@ app.get('/api/player/queue', async (req, res) => {
                 artist: artistNames,
                 image: imageUrl,
                 duration: track.duration_ms,
-                // 添加更多详细信息
+                // 添加更多詳細信息
                 artists: artists,
                 album: album
             };
             
-            // 调试：记录前几首歌的处理结果
+            // 調試：記錄前幾首歌的處理結果
             if (index < 3) {
-                console.log(`🎯 处理后的Track ${index + 1}:`, {
+                console.log(`🎯 處理後的Track ${index + 1}:`, {
                     name: trackData.name,
                     artist: trackData.artist,
                     hasImage: !!trackData.image,
@@ -934,15 +934,15 @@ app.get('/api/player/queue', async (req, res) => {
             return trackData;
         });
         
-        // 🚨 最终数据验证：确保发送给前端的数据完整
-        console.log('🎯 即将发送到前端的Queue数据验证:', {
-            队列长度: queue.length,
-            前3首详情: queue.slice(0, 3).map((track, i) => ({
-                序号: i + 1,
+        // 🚨 最終數據驗證：確保發送給前端的數據完整
+        console.log('🎯 即將發送到前端的Queue數據驗證:', {
+            隊列長度: queue.length,
+            前3首詳情: queue.slice(0, 3).map((track, i) => ({
+                序號: i + 1,
                 歌曲名: track.name,
                 歌手: track.artist,
-                有图片: !!track.image,
-                图片预览: track.image ? track.image.substring(0, 50) + '...' : 'NO_IMAGE'
+                有圖片: !!track.image,
+                圖片預覽: track.image ? track.image.substring(0, 50) + '...' : 'NO_IMAGE'
             }))
         });
         
@@ -1469,19 +1469,19 @@ async function searchNeteaseLyrics(artist, title) {
 }
 
 // 原有的歌詞端點（保持向後兼容）
-// 从特定供应商搜索歌词 - 用于用户自定义设置
+// 從特定供應商搜索歌詞 - 用於用戶自定義設置
 app.get('/api/lyrics-search-provider/:provider/:artist/:title', async (req, res) => {
     const { provider, artist, title } = req.params;
     
     try {
-        console.log(`🔍 从指定供应商搜索歌词: ${provider} for ${artist} - ${title}`);
+        console.log(`🔍 從指定供應商搜索歌詞: ${provider} for ${artist} - ${title}`);
         
-        // 验证供应商名称
+        // 驗證供應商名稱
         const validProviders = ['Musixmatch', 'Lrclib', 'NetEase', 'Kougou', 'Genius'];
         if (!validProviders.includes(provider)) {
             return res.status(400).json({
                 success: false,
-                error: `不支持的歌词供应商: ${provider}`
+                error: `不支持的歌詞供應商: ${provider}`
             });
         }
         
@@ -1495,13 +1495,13 @@ app.get('/api/lyrics-search-provider/:provider/:artist/:title', async (req, res)
         });
         
         if (!response.ok) {
-            throw new Error(`API 请求失败: ${response.status}`);
+            throw new Error(`API 請求失敗: ${response.status}`);
         }
         
         const data = await response.json();
         
         if (data.success && data.lyrics && data.lyrics.length > 0) {
-            console.log(`✅ 从 ${provider} 成功获取歌词: ${data.lyrics.length} 行`);
+            console.log(`✅ 從 ${provider} 成功獲取歌詞: ${data.lyrics.length} 行`);
             
             res.json({
                 success: true,
@@ -1510,23 +1510,23 @@ app.get('/api/lyrics-search-provider/:provider/:artist/:title', async (req, res)
                 title: title,
                 lyrics: data.lyrics,
                 type: data.syncType || 'plain',
-                source: `${provider} (用户指定)`
+                source: `${provider} (用戶指定)`
             });
         } else {
-            console.log(`❌ ${provider} 未找到歌词: ${artist} - ${title}`);
+            console.log(`❌ ${provider} 未找到歌詞: ${artist} - ${title}`);
             res.json({
                 success: false,
                 provider: provider,
-                error: `${provider} 未找到歌词`
+                error: `${provider} 未找到歌詞`
             });
         }
         
     } catch (error) {
-        console.error(`❌ 从 ${provider} 搜索歌词失败:`, error.message);
+        console.error(`❌ 從 ${provider} 搜索歌詞失敗:`, error.message);
         res.status(500).json({
             success: false,
             provider: provider,
-            error: `从 ${provider} 搜索失败: ${error.message}`
+            error: `從 ${provider} 搜索失敗: ${error.message}`
         });
     }
 });

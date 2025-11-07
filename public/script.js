@@ -42,6 +42,8 @@
         this.tokenExpiryTime = null; // Token 過期時間
         this.consecutiveAuthErrors = 0; // 連續認證錯誤次數
         this.maxConsecutiveAuthErrors = 3; // 最大連續認證錯誤次數
+        this.isRefreshing = false; // 防止重複刷新頁面
+        this.lastRefreshTime = 0; // 上次刷新時間
         
         // 自動登入控制
         this.autoLoginInterval = null;
@@ -952,12 +954,15 @@
         this.log(`📝 更新下一首预览内容: ${name} - ${artist || (artists ? artists[0]?.name : 'Unknown')}`);
         
         if (this.nextSongTitle) {
-            this.nextSongTitle.textContent = name || '未知歌曲';
+            const songName = name || '未知歌曲';
+            this.nextSongTitle.textContent = typeof convertToTraditional === 'function' ? 
+                convertToTraditional(songName) : songName;
         }
         
         if (this.nextSongArtist) {
             const artistNames = artist || (artists ? artists.map(a => a.name).join(', ') : '未知藝人');
-            this.nextSongArtist.textContent = artistNames;
+            this.nextSongArtist.textContent = typeof convertToTraditional === 'function' ? 
+                convertToTraditional(artistNames) : artistNames;
         }
         
         // 添加歌詞預覽顯示
@@ -2680,14 +2685,22 @@
         // 根據內容類型調整顯示
         if (this.currentTrack.contentType === 'podcast') {
             this.albumImage.alt = `${this.currentTrack.album} Podcast 封面`;
-            this.trackName.textContent = this.currentTrack.name;
-            this.artistName.textContent = `🎙️ ${this.currentTrack.artist}`;
-            this.albumName.textContent = `Podcast: ${this.currentTrack.album}`;
+            // 使用 OpenCC 轉換為繁體中文
+            this.trackName.textContent = typeof convertToTraditional === 'function' ? 
+                convertToTraditional(this.currentTrack.name) : this.currentTrack.name;
+            this.artistName.textContent = `🎙️ ${typeof convertToTraditional === 'function' ? 
+                convertToTraditional(this.currentTrack.artist) : this.currentTrack.artist}`;
+            this.albumName.textContent = `Podcast: ${typeof convertToTraditional === 'function' ? 
+                convertToTraditional(this.currentTrack.album) : this.currentTrack.album}`;
         } else {
             this.albumImage.alt = `${this.currentTrack.album} 專輯封面`;
-            this.trackName.textContent = this.currentTrack.name;
-            this.artistName.textContent = this.currentTrack.artist;
-            this.albumName.textContent = this.currentTrack.album;
+            // 使用 OpenCC 轉換為繁體中文
+            this.trackName.textContent = typeof convertToTraditional === 'function' ? 
+                convertToTraditional(this.currentTrack.name) : this.currentTrack.name;
+            this.artistName.textContent = typeof convertToTraditional === 'function' ? 
+                convertToTraditional(this.currentTrack.artist) : this.currentTrack.artist;
+            this.albumName.textContent = typeof convertToTraditional === 'function' ? 
+                convertToTraditional(this.currentTrack.album) : this.currentTrack.album;
         }
         
         this.log(`✅ UI 元素已更新 - 歌名: ${this.trackName.textContent}`);

@@ -1,7 +1,7 @@
-// 用户自定义歌词管理系统
+// 用戶自定義歌詞管理系統
 // User Custom Lyrics Management System
 
-// 等待主脚本载入完成
+// 等待主腳本載入完成
 document.addEventListener('DOMContentLoaded', function() {
     if (typeof SpotifyLyricsPlayer !== 'undefined') {
         initUserLyricsManager();
@@ -15,25 +15,25 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function initUserLyricsManager() {
-    console.log('🔧 初始化用户自定义歌词管理系统');
+    console.log('🔧 初始化用戶自定義歌詞管理系統');
 
     // =================
-    // 用户歌词存储管理
+    // 用戶歌詞存儲管理
     // =================
     
-    // 生成歌曲唯一标识符
+    // 生成歌曲唯一標識符
     SpotifyLyricsPlayer.prototype.generateTrackKey = function(trackInfo) {
         const artist = trackInfo.artist || trackInfo.artists?.[0]?.name || '';
         const name = trackInfo.name || trackInfo.title || '';
         const id = trackInfo.id || '';
         
-        // 使用多种标识符确保唯一性
+        // 使用多種標識符確保唯一性
         return `${id}-${artist}-${name}`.toLowerCase()
             .replace(/\s+/g, '_')
             .replace(/[^\w\-_]/g, '');
     };
 
-    // 保存用户自定义歌词
+    // 保存用戶自定義歌詞
     SpotifyLyricsPlayer.prototype.saveUserCustomLyrics = function(trackInfo, lyrics, lyricsType, source) {
         const trackKey = this.generateTrackKey(trackInfo);
         
@@ -53,24 +53,24 @@ function initUserLyricsManager() {
         };
 
         try {
-            // 获取现有的自定义歌词数据
+            // 獲取現有的自定義歌詞數據
             const existingData = JSON.parse(localStorage.getItem('user_custom_lyrics') || '{}');
             
-            // 保存新的歌词数据
+            // 保存新的歌詞數據
             existingData[trackKey] = customLyricsData;
             
             localStorage.setItem('user_custom_lyrics', JSON.stringify(existingData));
             
-            this.log(`💾 已保存用户自定义歌词: ${trackInfo.artist} - ${trackInfo.name}`);
+            this.log(`💾 已保存用戶自定義歌詞: ${trackInfo.artist} - ${trackInfo.name}`);
             
             return true;
         } catch (error) {
-            this.log(`❌ 保存用户自定义歌词失败: ${error.message}`);
+            this.log(`❌ 保存用戶自定義歌詞失敗: ${error.message}`);
             return false;
         }
     };
 
-    // 获取用户自定义歌词
+    // 獲取用戶自定義歌詞
     SpotifyLyricsPlayer.prototype.getUserCustomLyrics = function(trackInfo) {
         const trackKey = this.generateTrackKey(trackInfo);
         
@@ -79,23 +79,23 @@ function initUserLyricsManager() {
             const userData = customLyricsData[trackKey];
             
             if (userData) {
-                // 更新最后使用时间
+                // 更新最後使用時間
                 userData.lastUsed = Date.now();
                 customLyricsData[trackKey] = userData;
                 localStorage.setItem('user_custom_lyrics', JSON.stringify(customLyricsData));
                 
-                this.log(`🎯 找到用户自定义歌词: ${trackInfo.artist} - ${trackInfo.name}`);
+                this.log(`🎯 找到用戶自定義歌詞: ${trackInfo.artist} - ${trackInfo.name}`);
                 return userData;
             }
             
             return null;
         } catch (error) {
-            this.log(`❌ 获取用户自定义歌词失败: ${error.message}`);
+            this.log(`❌ 獲取用戶自定義歌詞失敗: ${error.message}`);
             return null;
         }
     };
 
-    // 保存用户指定的歌词供应商
+    // 保存用戶指定的歌詞供應商
     SpotifyLyricsPlayer.prototype.saveUserLyricsProvider = function(trackInfo, provider) {
         const trackKey = this.generateTrackKey(trackInfo);
         
@@ -116,15 +116,15 @@ function initUserLyricsManager() {
             existingData[trackKey] = providerData;
             localStorage.setItem('user_lyrics_providers', JSON.stringify(existingData));
             
-            this.log(`🔒 已保存用户指定供应商: ${provider} for ${trackInfo.artist} - ${trackInfo.name}`);
+            this.log(`🔒 已保存用戶指定供應商: ${provider} for ${trackInfo.artist} - ${trackInfo.name}`);
             return true;
         } catch (error) {
-            this.log(`❌ 保存用户指定供应商失败: ${error.message}`);
+            this.log(`❌ 保存用戶指定供應商失敗: ${error.message}`);
             return false;
         }
     };
 
-    // 获取用户指定的歌词供应商
+    // 獲取用戶指定的歌詞供應商
     SpotifyLyricsPlayer.prototype.getUserLyricsProvider = function(trackInfo) {
         const trackKey = this.generateTrackKey(trackInfo);
         
@@ -133,33 +133,33 @@ function initUserLyricsManager() {
             const userData = providerData[trackKey];
             
             if (userData) {
-                // 更新最后使用时间
+                // 更新最後使用時間
                 userData.lastUsed = Date.now();
                 providerData[trackKey] = userData;
                 localStorage.setItem('user_lyrics_providers', JSON.stringify(providerData));
                 
-                this.log(`🎯 找到用户指定供应商: ${userData.provider} for ${trackInfo.artist} - ${trackInfo.name}`);
+                this.log(`🎯 找到用戶指定供應商: ${userData.provider} for ${trackInfo.artist} - ${trackInfo.name}`);
                 return userData.provider;
             }
             
             return null;
         } catch (error) {
-            this.log(`❌ 获取用户指定供应商失败: ${error.message}`);
+            this.log(`❌ 獲取用戶指定供應商失敗: ${error.message}`);
             return null;
         }
     };
 
     // =================
-    // 自动应用用户设置
+    // 自動應用用戶設置
     // =================
     
-    // 重写 overrideLyrics 方法，添加自动保存功能
+    // 重寫 overrideLyrics 方法，添加自動保存功能
     const originalOverrideLyrics = SpotifyLyricsPlayer.prototype.overrideLyrics;
     SpotifyLyricsPlayer.prototype.overrideLyrics = function(lyrics, lyricsType, source) {
-        // 调用原始方法
+        // 調用原始方法
         originalOverrideLyrics.call(this, lyrics, lyricsType, source);
         
-        // 如果有当前歌曲信息，保存为用户自定义歌词
+        // 如果有當前歌曲信息，保存為用戶自定義歌詞
         if (this.currentTrack && source && source.source !== 'auto_applied') {
             this.saveUserCustomLyrics(this.currentTrack, lyrics, lyricsType, {
                 ...source,
@@ -169,62 +169,62 @@ function initUserLyricsManager() {
         }
     };
 
-    // 自动应用用户自定义设置的主要方法
+    // 自動應用用戶自定義設置的主要方法
     SpotifyLyricsPlayer.prototype.autoApplyUserLyricsSettings = async function(trackInfo) {
         if (!trackInfo) {
             return false;
         }
 
-        this.log(`🔍 检查用户自定义设置: ${trackInfo.artist} - ${trackInfo.name}`);
+        this.log(`🔍 檢查用戶自定義設置: ${trackInfo.artist} - ${trackInfo.name}`);
 
-        // 1. 首先检查是否有用户自定义歌词
+        // 1. 首先檢查是否有用戶自定義歌詞
         const customLyrics = this.getUserCustomLyrics(trackInfo);
         if (customLyrics && customLyrics.lyrics && customLyrics.lyrics.length > 0) {
-            this.log(`🎯 应用用户自定义歌词: ${trackInfo.artist} - ${trackInfo.name}`);
+            this.log(`🎯 應用用戶自定義歌詞: ${trackInfo.artist} - ${trackInfo.name}`);
             
-            // 应用自定义歌词
+            // 應用自定義歌詞
             this.overrideLyrics(
                 customLyrics.lyrics, 
                 customLyrics.lyricsType, 
                 {
                     ...customLyrics.source,
                     source: 'auto_applied',
-                    title: `${trackInfo.artist} - ${trackInfo.name} (用户自定义)`,
+                    title: `${trackInfo.artist} - ${trackInfo.name} (用戶自定義)`,
                     appliedAt: Date.now()
                 }
             );
             
-            this.showSuccessMessage(`✅ 已自动应用用户自定义歌词`);
+            this.showSuccessMessage(`✅ 已自動應用用戶自定義歌詞`);
             return true;
         }
 
-        // 2. 检查是否有用户指定的歌词供应商
+        // 2. 檢查是否有用戶指定的歌詞供應商
         const preferredProvider = this.getUserLyricsProvider(trackInfo);
         if (preferredProvider) {
-            this.log(`🎯 使用用户指定供应商搜索: ${preferredProvider} for ${trackInfo.artist} - ${trackInfo.name}`);
+            this.log(`🎯 使用用戶指定供應商搜索: ${preferredProvider} for ${trackInfo.artist} - ${trackInfo.name}`);
             
             try {
-                // 使用指定供应商搜索歌词
+                // 使用指定供應商搜索歌詞
                 const success = await this.loadLyricsFromSpecificProvider(trackInfo, preferredProvider);
                 if (success) {
-                    this.showSuccessMessage(`✅ 已使用指定供应商 ${preferredProvider} 加载歌词`);
+                    this.showSuccessMessage(`✅ 已使用指定供應商 ${preferredProvider} 加載歌詞`);
                     return true;
                 }
             } catch (error) {
-                this.log(`❌ 使用指定供应商失败: ${error.message}`);
+                this.log(`❌ 使用指定供應商失敗: ${error.message}`);
             }
         }
 
         return false;
     };
 
-    // 从指定供应商加载歌词
+    // 從指定供應商加載歌詞
     SpotifyLyricsPlayer.prototype.loadLyricsFromSpecificProvider = async function(trackInfo, provider) {
         try {
             const artist = encodeURIComponent(trackInfo.artist || '');
             const title = encodeURIComponent(trackInfo.name || '');
             
-            // 使用后端API搜索指定供应商的歌词
+            // 使用後端API搜索指定供應商的歌詞
             const response = await fetch(
                 `${this.apiBase}/api/lyrics-search-provider/${provider}/${artist}/${title}`
             );
@@ -252,44 +252,44 @@ function initUserLyricsManager() {
             
             return false;
         } catch (error) {
-            this.log(`❌ 从供应商 ${provider} 加载歌词失败: ${error.message}`);
+            this.log(`❌ 從供應商 ${provider} 加載歌詞失敗: ${error.message}`);
             return false;
         }
     };
 
     // =================
-    // 集成到现有的歌词加载流程
+    // 集成到現有的歌詞加載流程
     // =================
     
-    // 重写 loadLyrics 方法，添加自动应用用户设置
+    // 重寫 loadLyrics 方法，添加自動應用用戶設置
     const originalLoadLyrics = SpotifyLyricsPlayer.prototype.loadLyrics;
     SpotifyLyricsPlayer.prototype.loadLyrics = async function() {
-        // 首先尝试自动应用用户设置
+        // 首先嚐試自動應用用戶設置
         if (this.currentTrack) {
             const userSettingsApplied = await this.autoApplyUserLyricsSettings(this.currentTrack);
             if (userSettingsApplied) {
-                // 用户设置已应用，不需要继续默认的歌词加载流程
+                // 用戶設置已應用，不需要繼續默認的歌詞加載流程
                 return;
             }
         }
         
-        // 如果没有用户设置，继续原始的歌词加载流程
+        // 如果沒有用戶設置，繼續原始的歌詞加載流程
         return originalLoadLyrics.call(this);
     };
 
     // =================
-    // 用户界面增强
+    // 用戶界面增強
     // =================
     
-    // 添加保存当前歌词为自定义的功能
+    // 添加保存當前歌詞為自定義的功能
     SpotifyLyricsPlayer.prototype.saveCurrentLyricsAsCustom = function() {
         if (!this.currentTrack) {
-            this.showErrorMessage('没有当前播放的歌曲');
+            this.showErrorMessage('沒有當前播放的歌曲');
             return;
         }
         
         if (!this.lyrics || this.lyrics.length === 0) {
-            this.showErrorMessage('没有可保存的歌词');
+            this.showErrorMessage('沒有可保存的歌詞');
             return;
         }
         
@@ -306,59 +306,59 @@ function initUserLyricsManager() {
         );
         
         if (success) {
-            this.showSuccessMessage('✅ 当前歌词已保存为自定义歌词');
+            this.showSuccessMessage('✅ 當前歌詞已保存為自定義歌詞');
         } else {
-            this.showErrorMessage('保存失败，请稍后重试');
+            this.showErrorMessage('保存失敗，請稍後重試');
         }
     };
 
-    // 清除特定歌曲的用户设置
+    // 清除特定歌曲的用戶設置
     SpotifyLyricsPlayer.prototype.clearUserSettingsForTrack = function(trackInfo) {
         if (!trackInfo) {
             trackInfo = this.currentTrack;
         }
         
         if (!trackInfo) {
-            this.showErrorMessage('没有指定的歌曲');
+            this.showErrorMessage('沒有指定的歌曲');
             return;
         }
         
         const trackKey = this.generateTrackKey(trackInfo);
         
         try {
-            // 清除自定义歌词
+            // 清除自定義歌詞
             const customLyrics = JSON.parse(localStorage.getItem('user_custom_lyrics') || '{}');
             if (customLyrics[trackKey]) {
                 delete customLyrics[trackKey];
                 localStorage.setItem('user_custom_lyrics', JSON.stringify(customLyrics));
             }
             
-            // 清除指定供应商
+            // 清除指定供應商
             const providers = JSON.parse(localStorage.getItem('user_lyrics_providers') || '{}');
             if (providers[trackKey]) {
                 delete providers[trackKey];
                 localStorage.setItem('user_lyrics_providers', JSON.stringify(providers));
             }
             
-            this.showSuccessMessage('✅ 已清除该歌曲的用户设置');
-            this.log(`🧹 已清除用户设置: ${trackInfo.artist} - ${trackInfo.name}`);
+            this.showSuccessMessage('✅ 已清除該歌曲的用戶設置');
+            this.log(`🧹 已清除用戶設置: ${trackInfo.artist} - ${trackInfo.name}`);
         } catch (error) {
-            this.log(`❌ 清除用户设置失败: ${error.message}`);
-            this.showErrorMessage('清除失败，请稍后重试');
+            this.log(`❌ 清除用戶設置失敗: ${error.message}`);
+            this.showErrorMessage('清除失敗，請稍後重試');
         }
     };
 
     // =================
-    // 扩展歌词搜索功能，添加保存供应商选择
+    // 擴展歌詞搜索功能，添加保存供應商選擇
     // =================
     
-    // 重写 selectLyricsResult 方法，添加保存供应商选择
+    // 重寫 selectLyricsResult 方法，添加保存供應商選擇
     const originalSelectLyricsResult = SpotifyLyricsPlayer.prototype.selectLyricsResult;
     SpotifyLyricsPlayer.prototype.selectLyricsResult = async function(result) {
-        // 调用原始方法
+        // 調用原始方法
         await originalSelectLyricsResult.call(this, result);
         
-        // 如果有provider信息且当前有歌曲，保存供应商选择
+        // 如果有provider信息且當前有歌曲，保存供應商選擇
         if (result.provider && this.currentTrack) {
             this.saveUserLyricsProvider(this.currentTrack, result.provider);
         }
@@ -368,9 +368,9 @@ function initUserLyricsManager() {
     // 管理界面
     // =================
     
-    // 显示用户自定义歌词管理界面
+    // 顯示用戶自定義歌詞管理界面
     SpotifyLyricsPlayer.prototype.showUserLyricsManager = function() {
-        // 创建管理界面的模态框
+        // 創建管理界面的模態框
         let modal = document.getElementById('user-lyrics-manager-modal');
         if (!modal) {
             modal = this.createUserLyricsManagerModal();
@@ -380,7 +380,7 @@ function initUserLyricsManager() {
         modal.style.display = 'flex';
     };
 
-    // 创建用户歌词管理模态框
+    // 創建用戶歌詞管理模態框
     SpotifyLyricsPlayer.prototype.createUserLyricsManagerModal = function() {
         const modal = document.createElement('div');
         modal.id = 'user-lyrics-manager-modal';
@@ -417,7 +417,7 @@ function initUserLyricsManager() {
                     border-bottom: 1px solid var(--border-color, #333);
                     padding-bottom: 10px;
                 ">
-                    <h2>用户自定义歌词管理</h2>
+                    <h2>用戶自定義歌詞管理</h2>
                     <span class="close" id="close-user-lyrics-manager" style="
                         font-size: 28px;
                         font-weight: bold;
@@ -426,14 +426,14 @@ function initUserLyricsManager() {
                     ">&times;</span>
                 </div>
                 <div id="user-lyrics-manager-content">
-                    <!-- 内容将由 JS 填充 -->
+                    <!-- 內容將由 JS 填充 -->
                 </div>
             </div>
         `;
         
         document.body.appendChild(modal);
         
-        // 绑定关闭事件
+        // 綁定關閉事件
         modal.querySelector('#close-user-lyrics-manager').addEventListener('click', () => {
             modal.style.display = 'none';
         });
@@ -447,7 +447,7 @@ function initUserLyricsManager() {
         return modal;
     };
 
-    // 填充用户歌词管理内容
+    // 填充用戶歌詞管理內容
     SpotifyLyricsPlayer.prototype.populateUserLyricsManagerContent = function() {
         const content = document.getElementById('user-lyrics-manager-content');
         if (!content) return;
@@ -458,8 +458,8 @@ function initUserLyricsManager() {
             
             let html = '';
             
-            // 自定义歌词部分
-            html += '<h3 style="color: var(--accent-color, #1db954); margin-bottom: 15px;">🎵 自定义歌词</h3>';
+            // 自定義歌詞部分
+            html += '<h3 style="color: var(--accent-color, #1db954); margin-bottom: 15px;">🎵 自定義歌詞</h3>';
             
             const customEntries = Object.values(customLyrics);
             if (customEntries.length > 0) {
@@ -479,9 +479,9 @@ function initUserLyricsManager() {
                                         <strong>${this.escapeHtml(entry.trackInfo.artist)} - ${this.escapeHtml(entry.trackInfo.name)}</strong>
                                         <br>
                                         <small style="color: #888;">
-                                            ${entry.lyricsType === 'synced' ? '同步歌词' : '普通歌词'} • 
+                                            ${entry.lyricsType === 'synced' ? '同步歌詞' : '普通歌詞'} • 
                                             ${entry.lyrics.length} 行 • 
-                                            最后使用: ${new Date(entry.lastUsed).toLocaleDateString()}
+                                            最後使用: ${new Date(entry.lastUsed).toLocaleDateString()}
                                         </small>
                                     </div>
                                     <button onclick="window.player.deleteUserCustomLyrics('${entry.trackKey}')" style="
@@ -491,17 +491,17 @@ function initUserLyricsManager() {
                                         padding: 8px 12px;
                                         border-radius: 4px;
                                         cursor: pointer;
-                                    ">删除</button>
+                                    ">刪除</button>
                                 </div>
                             </div>
                         `;
                     });
             } else {
-                html += '<p style="color: #888; text-align: center; padding: 20px;">暂无自定义歌词</p>';
+                html += '<p style="color: #888; text-align: center; padding: 20px;">暫無自定義歌詞</p>';
             }
             
-            // 指定供应商部分
-            html += '<h3 style="color: var(--accent-color, #1db954); margin: 30px 0 15px 0;">🔒 指定供应商</h3>';
+            // 指定供應商部分
+            html += '<h3 style="color: var(--accent-color, #1db954); margin: 30px 0 15px 0;">🔒 指定供應商</h3>';
             
             const providerEntries = Object.values(providers);
             if (providerEntries.length > 0) {
@@ -521,8 +521,8 @@ function initUserLyricsManager() {
                                         <strong>${this.escapeHtml(entry.trackInfo.artist)} - ${this.escapeHtml(entry.trackInfo.name)}</strong>
                                         <br>
                                         <small style="color: #888;">
-                                            供应商: ${this.escapeHtml(entry.provider)} • 
-                                            最后使用: ${new Date(entry.lastUsed).toLocaleDateString()}
+                                            供應商: ${this.escapeHtml(entry.provider)} • 
+                                            最後使用: ${new Date(entry.lastUsed).toLocaleDateString()}
                                         </small>
                                     </div>
                                     <button onclick="window.player.deleteUserLyricsProvider('${entry.trackKey}')" style="
@@ -532,13 +532,13 @@ function initUserLyricsManager() {
                                         padding: 8px 12px;
                                         border-radius: 4px;
                                         cursor: pointer;
-                                    ">删除</button>
+                                    ">刪除</button>
                                 </div>
                             </div>
                         `;
                     });
             } else {
-                html += '<p style="color: #888; text-align: center; padding: 20px;">暂无指定供应商</p>';
+                html += '<p style="color: #888; text-align: center; padding: 20px;">暫無指定供應商</p>';
             }
             
             // 管理操作
@@ -553,7 +553,7 @@ function initUserLyricsManager() {
                             padding: 10px 15px;
                             border-radius: 6px;
                             cursor: pointer;
-                        ">保存当前歌词</button>
+                        ">保存當前歌詞</button>
                         <button onclick="window.player.clearUserSettingsForTrack()" style="
                             background: #ffc107;
                             color: #000;
@@ -561,7 +561,7 @@ function initUserLyricsManager() {
                             padding: 10px 15px;
                             border-radius: 6px;
                             cursor: pointer;
-                        ">清除当前歌曲设置</button>
+                        ">清除當前歌曲設置</button>
                         <button onclick="window.player.clearAllUserLyricsSettings()" style="
                             background: #dc3545;
                             color: white;
@@ -569,7 +569,7 @@ function initUserLyricsManager() {
                             padding: 10px 15px;
                             border-radius: 6px;
                             cursor: pointer;
-                        ">清除所有设置</button>
+                        ">清除所有設置</button>
                     </div>
                 </div>
             `;
@@ -577,65 +577,65 @@ function initUserLyricsManager() {
             content.innerHTML = html;
             
         } catch (error) {
-            content.innerHTML = `<p style="color: #dc3545;">加载数据失败: ${error.message}</p>`;
+            content.innerHTML = `<p style="color: #dc3545;">加載數據失敗: ${error.message}</p>`;
         }
     };
 
-    // 删除特定的用户自定义歌词
+    // 刪除特定的用戶自定義歌詞
     SpotifyLyricsPlayer.prototype.deleteUserCustomLyrics = function(trackKey) {
         try {
             const customLyrics = JSON.parse(localStorage.getItem('user_custom_lyrics') || '{}');
             if (customLyrics[trackKey]) {
                 delete customLyrics[trackKey];
                 localStorage.setItem('user_custom_lyrics', JSON.stringify(customLyrics));
-                this.populateUserLyricsManagerContent(); // 重新加载内容
-                this.showSuccessMessage('✅ 自定义歌词已删除');
+                this.populateUserLyricsManagerContent(); // 重新加載內容
+                this.showSuccessMessage('✅ 自定義歌詞已刪除');
             }
         } catch (error) {
-            this.showErrorMessage('删除失败: ' + error.message);
+            this.showErrorMessage('刪除失敗: ' + error.message);
         }
     };
 
-    // 删除特定的用户指定供应商
+    // 刪除特定的用戶指定供應商
     SpotifyLyricsPlayer.prototype.deleteUserLyricsProvider = function(trackKey) {
         try {
             const providers = JSON.parse(localStorage.getItem('user_lyrics_providers') || '{}');
             if (providers[trackKey]) {
                 delete providers[trackKey];
                 localStorage.setItem('user_lyrics_providers', JSON.stringify(providers));
-                this.populateUserLyricsManagerContent(); // 重新加载内容
-                this.showSuccessMessage('✅ 指定供应商已删除');
+                this.populateUserLyricsManagerContent(); // 重新加載內容
+                this.showSuccessMessage('✅ 指定供應商已刪除');
             }
         } catch (error) {
-            this.showErrorMessage('删除失败: ' + error.message);
+            this.showErrorMessage('刪除失敗: ' + error.message);
         }
     };
 
-    // 清除所有用户歌词设置
+    // 清除所有用戶歌詞設置
     SpotifyLyricsPlayer.prototype.clearAllUserLyricsSettings = function() {
-        if (confirm('确定要清除所有用户自定义歌词和供应商设置吗？此操作不可恢复。')) {
+        if (confirm('確定要清除所有用戶自定義歌詞和供應商設置嗎？此操作不可恢復。')) {
             try {
                 localStorage.removeItem('user_custom_lyrics');
                 localStorage.removeItem('user_lyrics_providers');
-                this.populateUserLyricsManagerContent(); // 重新加载内容
-                this.showSuccessMessage('✅ 所有用户设置已清除');
-                this.log('🧹 所有用户歌词设置已清除');
+                this.populateUserLyricsManagerContent(); // 重新加載內容
+                this.showSuccessMessage('✅ 所有用戶設置已清除');
+                this.log('🧹 所有用戶歌詞設置已清除');
             } catch (error) {
-                this.showErrorMessage('清除失败: ' + error.message);
+                this.showErrorMessage('清除失敗: ' + error.message);
             }
         }
     };
 
     // =================
-    // 绑定事件
+    // 綁定事件
     // =================
     
-    // 绑定用户歌词管理按钮事件
+    // 綁定用戶歌詞管理按鈕事件
     document.getElementById('user-lyrics-manager-btn')?.addEventListener('click', () => {
         if (window.player) {
             window.player.showUserLyricsManager();
         }
     });
 
-    console.log('✅ 用户自定义歌词管理系统已加载完成');
+    console.log('✅ 用戶自定義歌詞管理系統已加載完成');
 }
