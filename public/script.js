@@ -185,7 +185,7 @@
                 for (const [key, value] of Object.entries(savedData)) {
                     this.savedLyrics.set(key, value);
                 }
-                this.log(`💎 已載入 ${this.savedLyrics.size} 個保存的歌詞`);
+                console.log(`💎 已載入 ${this.savedLyrics.size} 個保存的歌詞`);
             }
 
             // 載入歌詞時間調整
@@ -195,10 +195,10 @@
                 for (const [key, value] of Object.entries(adjustmentData)) {
                     this.lyricsTimeAdjustments.set(key, value);
                 }
-                this.log(`⏰ 已載入 ${this.lyricsTimeAdjustments.size} 個歌詞時間調整`);
+                console.log(`⏰ 已載入 ${this.lyricsTimeAdjustments.size} 個歌詞時間調整`);
             }
         } catch (error) {
-            this.log(`❌ 載入保存的歌詞和時間調整失敗: ${error.message}`);
+            console.error(`❌ 載入保存的歌詞和時間調整失敗: ${error.message}`);
             localStorage.removeItem('saved_lyrics');
             localStorage.removeItem('lyrics_time_adjustments');
         }
@@ -5025,15 +5025,15 @@ window.addEventListener('beforeunload', () => {
 // 页面完全加载后再次检查是否需要自动登录
 window.addEventListener('load', () => {
     setTimeout(() => {
-        if (player) {
+        if (window.player) {
             // 不仅检查sessionId，还要检查页面状态
-            const needsLogin = !player.sessionId || 
+            const needsLogin = !window.player.sessionId || 
                               document.querySelector('#login-btn, .login-btn, [href*="auth"]') ||
-                              (player.authSection && getComputedStyle(player.authSection).display !== 'none');
+                              (window.player.authSection && getComputedStyle(window.player.authSection).display !== 'none');
                               
             if (needsLogin) {
                 console.log('🔄 页面加载完成，检查是否需要自动登录...');
-                player.scheduleAutoLogin();
+                window.player.scheduleAutoLogin();
             }
         }
     }, 2000);
@@ -5041,16 +5041,16 @@ window.addEventListener('load', () => {
 
 // 页面变为可见时检查认证状态
 document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && player) {
+    if (!document.hidden && window.player) {
         // 增强的可见性检查
-        const needsLogin = !player.sessionId || 
+        const needsLogin = !window.player.sessionId || 
                           document.querySelector('#login-btn, .login-btn, [href*="auth"]') ||
-                          (player.authSection && getComputedStyle(player.authSection).display !== 'none');
+                          (window.player.authSection && getComputedStyle(window.player.authSection).display !== 'none');
                           
         if (needsLogin) {
             console.log('🔄 页面变为可见，检查认证状态...');
             setTimeout(() => {
-                player.scheduleAutoLogin();
+                window.player.scheduleAutoLogin();
             }, 1000);
         }
     }
@@ -5063,9 +5063,9 @@ new MutationObserver(() => {
     if (url !== lastUrl) {
         lastUrl = url;
         setTimeout(() => {
-            if (player && (!player.sessionId || document.querySelector('#login-btn, .login-btn, [href*="auth"]'))) {
+            if (window.player && (!window.player.sessionId || document.querySelector('#login-btn, .login-btn, [href*="auth"]'))) {
                 console.log('🔄 URL变化，检查是否需要自动登录...');
-                player.scheduleAutoLogin();
+                window.player.scheduleAutoLogin();
             }
         }, 1000);
     }
