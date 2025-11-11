@@ -78,11 +78,26 @@ Spotify Lyrics Player - 自動錯誤日誌
 
 ## 🔧 觸發條件
 
-### 自動觸發條件
-當 console 輸出包含以下任一關鍵字時會觸發自動下載：
-- 中文：`錯誤`、`失敗`、`異常`
-- 英文：`error`、`fail`、`exception`、`timeout`
-- 表情符號：`❌`、`⚠️`
+### 智能錯誤檢測機制
+
+系統採用多層級檢測機制，避免誤報：
+
+#### **嚴重錯誤觸發條件**
+- 連線錯誤：`連線錯誤`、`connection error`、`network error`
+- API失敗：`請求失敗`、`載入失敗`、`api error`、`server error`
+- 認證問題：`認證失敗`、`auth failed`、`token invalid`
+- 系統異常：`exception`、`crash`、`fatal error`
+- HTTP錯誤：`500`、`502`、`503`、`504`
+
+#### **智能排除機制**
+以下情況不會觸發自動下載（視為正常警告）：
+- 狀態檢查：`checkAuthStatus`、`沒有找到 sessionId`
+- 數據缺失：`無下一首數據`、`隊列為空`、`no data`
+- 正常跳過：`跳過請求`、`skip`
+
+#### **重複檢測防護**
+- 5分鐘內相同錯誤不會重複觸發
+- 錯誤嚴重程度自動分級：一般/重要/嚴重
 
 ### 觸發示例
 ```javascript
@@ -148,10 +163,43 @@ this.errorKeywords = [         // 錯誤關鍵字列表
 3. **存儲限制**：僅保存最近 1000 條日誌，舊日誌會自動清除
 4. **相容性**：支援所有現代瀏覽器，包括行動裝置
 
+## 🔐 Session錯誤處理
+
+### 特殊功能：跨頁面重載的錯誤捕捉
+系統現在能夠處理session失效導致的頁面重載問題：
+
+#### **實時監控機制**
+- **網路請求監控**：自動攔截所有fetch和XMLHttpRequest，檢測401/403錯誤
+- **URL變化監控**：監控認證相關的URL重定向
+- **Session存儲監控**：實時監控localStorage中的session狀態變化
+
+#### **頁面重載前保存**
+- 監聽`beforeunload`、`pagehide`、`visibilitychange`事件
+- 在頁面卸載前立即保存所有日誌到localStorage
+- 設置錯誤標記，確保重載後能恢復錯誤狀態
+
+#### **重載後恢復**
+- 頁面重新載入時自動檢查是否有未處理的錯誤
+- 如有錯誤標記，立即觸發日誌下載
+- 自動恢復重載前的日誌記錄
+
+### Session錯誤識別模式
+```javascript
+// 自動識別的session錯誤模式：
+/session.*失效/i
+/session.*過期/i  
+/token.*expired/i
+/401|403/
+/unauthorized|forbidden/i
+/認證過期|登入失效/
+```
+
 ## 🛠️ 開發者說明
 
 ### 整合方式
-系統透過攔截原生 console 方法實現：
+系統透過多層攔截實現全面監控：
+
+#### Console方法攔截
 ```javascript
 // 保存原始方法
 this.originalConsole = {
@@ -168,9 +216,29 @@ console.log = function(...args) {
 };
 ```
 
+#### 網路請求攔截
+```javascript
+// 攔截fetch請求
+const originalFetch = window.fetch;
+window.fetch = async function(...args) {
+    const response = await originalFetch.apply(window, args);
+    if (response.status === 401 || response.status === 403) {
+        window.autoErrorLogger.addLog('ERROR', [
+            `認證失敗: ${response.status} - ${args[0]}`
+        ]);
+    }
+    return response;
+};
+```
+
+### 持久化存儲
+系統使用localStorage實現跨頁面的錯誤追蹤：
+- `auto_error_logger_persistent`：存儲日誌和錯誤狀態
+- `auto_error_logger_has_errors`：標記是否有未處理的錯誤
+
 ### 清理和銷毀
 ```javascript
-// 停用系統並恢復原始 console 方法
+// 停用系統並恢復原始方法
 window.autoErrorLogger.destroy();
 ```
 
