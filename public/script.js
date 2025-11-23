@@ -1,5 +1,25 @@
 ﻿class SpotifyLyricsPlayer {
     constructor() {
+        // 日誌輔助函數 - 必須放在最前面
+        this.log = (message, type = 'info') => {
+            const now = new Date();
+
+            // 轉換到台北時區
+            const taipeiTime = new Date(
+                now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' })
+            );
+
+            const year   = taipeiTime.getFullYear();
+            const month  = String(taipeiTime.getMonth() + 1).padStart(2, '0');
+            const day    = String(taipeiTime.getDate()).padStart(2, '0');
+            const hour   = String(taipeiTime.getHours()).padStart(2, '0');
+            const minute = String(taipeiTime.getMinutes()).padStart(2, '0');
+            const second = String(taipeiTime.getSeconds()).padStart(2, '0');
+
+            const timestamp = `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+            console.log(`[${timestamp}] ${message}`);
+        };
+
         this.currentTrack = null;
         this.lyrics = [];
         this.lyricsType = 'plain';
@@ -78,25 +98,6 @@
         this.nextSongPreviewMode = localStorage.getItem('nextSongPreviewMode') || '10'; // '10', '20', '30', 'always', 'never'
         this.nextSongData = null; // 下一首歌曲數據
 
-        // 日誌輔助函數
-    this.log = (message, type = 'info') => {
-        const now = new Date();
-
-        // 轉換到台北時區
-        const taipeiTime = new Date(
-            now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' })
-        );
-
-        const year   = taipeiTime.getFullYear();
-        const month  = String(taipeiTime.getMonth() + 1).padStart(2, '0');
-        const day    = String(taipeiTime.getDate()).padStart(2, '0');
-        const hour   = String(taipeiTime.getHours()).padStart(2, '0');
-        const minute = String(taipeiTime.getMinutes()).padStart(2, '0');
-        const second = String(taipeiTime.getSeconds()).padStart(2, '0');
-
-        const timestamp = `${year}-${month}-${day} ${hour}:${minute}:${second}`;
-        console.log(`[${timestamp}] ${message}`);
-    };
 
         
         // 检测运行环境

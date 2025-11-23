@@ -50,7 +50,6 @@ class AutoErrorLogger {
         this.restorePersistentLogs();
         
         this.interceptConsoleMethods();
-        this.setupErrorDetection();
         this.addDownloadButton();
         this.setupBeforeUnloadHandler();
         
