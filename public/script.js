@@ -1223,6 +1223,19 @@
         }
     }
 
+    // 確保播放器區域在有歌曲時保持可見（即使暫停播放）
+    ensurePlayerSectionVisible() {
+        if (this.currentTrack) {
+            // 只要有當前歌曲，就顯示播放器區域
+            if (this.playerSection.style.display === 'none') {
+                this.playerSection.style.display = 'grid';
+                this.authSection.style.display = 'none';
+                this.noMusicSection.style.display = 'none';
+                this.log('🎵 強制顯示播放器區域 - 有當前歌曲');
+            }
+        }
+    }
+
     async checkAuthStatus() {
         try {
             // 確保有 sessionId 才進行檢查
@@ -1408,6 +1421,7 @@
         this.log('🎪 顯示播放器界面');
         this.authSection.style.display = 'none';
         this.playerSection.style.display = 'grid';
+        this.log('🎵 播放器區域已顯示');
         this.noMusicSection.style.display = 'none';
         
         // 檢查播放器界面是否正確顯示
@@ -1422,6 +1436,7 @@
 
     showNoMusicSection(message = null) {
         this.authSection.style.display = 'none';
+        this.log('🚫 隱藏播放器區域 - 顯示無音樂狀態');
         this.playerSection.style.display = 'none';
         this.noMusicSection.style.display = 'flex';
         
@@ -3783,8 +3798,9 @@
         this.updatePlayButtonState(newPlayingState);
         this.log(`🎮 本地播放狀態已更新: ${newPlayingState ? '播放' : '暫停'}`);
         
-        // 確保專輯背景容器保持可見
+        // 確保專輯背景容器和播放器區域保持可見
         this.ensureAlbumBackgroundVisible();
+        this.ensurePlayerSectionVisible();
 
         // 發送API請求
         try {
