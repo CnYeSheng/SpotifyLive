@@ -3766,23 +3766,54 @@
     }
 
     // 添加防抖處理的控制方法
-    handlePlayPause() {
+    async handlePlayPause() {
         this.log('🎮 播放/暫停按鈕被點擊');
         
-        if (!this.currentTrack) {
-            this.log('⚠️ 沒有當前歌曲，無法執行播放/暫停操作');
+        if (!this.currentTrack || !this.sessionId) {
+            this.log('⚠️ 沒有當前歌曲或會話，無法執行播放/暫停操作');
             return;
         }
         
-        // 立即更新按鈕狀態，不等API回應
-        const newPlayingState = !this.currentTrack.isPlaying;
+        // 立即更新按鈕狀態和UI，不等API回應
+        const currentIsPlaying = this.currentTrack.isPlaying;
+        const newPlayingState = !currentIsPlaying;
+        
+        // 立即更新本地狀態和UI
+        this.currentTrack.isPlaying = newPlayingState;
         this.updatePlayButtonState(newPlayingState);
-        this.log(`🎮 更新播放狀態: ${newPlayingState ? '播放' : '暫停'}`);
+        this.log(`🎮 本地播放狀態已更新: ${newPlayingState ? '播放' : '暫停'}`);
         
-        // 保持專輯背景顯示，只更新按鈕
+        // 確保專輯背景容器保持可見
         this.ensureAlbumBackgroundVisible();
+
+        // 發送API請求
+        try {
+            const endpoint = currentIsPlaying ? '/api/player/pause' : '/api/player/play';
+            const response = await fetch(`${this.apiBase}${endpoint}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Session-Id': this.sessionId
+                }
+            });
+
+            if (!response.ok) {
+                // 如果API調用失敗，還原本地狀態
+                this.currentTrack.isPlaying = currentIsPlaying;
+                this.updatePlayButtonState(currentIsPlaying);
+                this.log(`❌ 播放/暫停API調用失敗，狀態已還原`);
+            } else {
+                this.log(`✅ 播放/暫停API調用成功`);
+            }
+        } catch (error) {
+            // 如果發生錯誤，還原本地狀態
+            this.currentTrack.isPlaying = currentIsPlaying;
+            this.updatePlayButtonState(currentIsPlaying);
+            this.log(`❌ 播放/暫停操作失敗: ${error.message}，狀態已還原`);
+        }
         
-        if (!this.currentTrack || !this.sessionId) return;
+        // 不要立即檢查當前歌曲，避免過度調用API
+        // this.checkCurrentTrackWithRateLimit();
         
         // 防抖處理
         if (this.playPauseDebounce) {
@@ -4351,6 +4382,10 @@
             }
             
             bgContainer.style.backgroundImage = `url(${this.currentTrack.image})`;
+            // 確保背景容器在設置背景後保持可見
+            bgContainer.style.display = 'block';
+            bgContainer.style.visibility = 'visible';
+            this.log(`🖼️ 已設置專輯背景圖片: ${this.currentTrack.image}`);
             bgContainer.style.backgroundSize = 'cover';
             bgContainer.style.backgroundPosition = 'center';
             bgContainer.style.backgroundRepeat = 'no-repeat';
