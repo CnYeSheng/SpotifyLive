@@ -464,7 +464,7 @@
         }
         
         function initEnhancedFeatures() {
-            console.log('🚀 初始化增強功能模組');
+            window.player.log('🚀 初始化增強功能模組');
             
             // 1. 增強歌詞時間調整功能 - 自動保存時間調整
             enhanceLyricsTimeAdjustment();
@@ -478,7 +478,7 @@
             // 4. 歌名繁體中文轉換
             enhanceTraditionalDisplay();
             
-            console.log('✅ 增強功能模組初始化完成');
+            window.player.log('✅ 增強功能模組初始化完成');
         }
         
         // 1. 增強歌詞時間調整功能
@@ -493,7 +493,7 @@
                     this.saveLyricsTimeAdjustment(this.currentTrack, this.lyricsTimeOffset);
                 }
                 
-                this.updateLyricsDisplay();
+                this.updateLyricsHighlight();
                 this.showLyricsOffsetMessage(offset);
             };
             
@@ -508,7 +508,7 @@
                     this.saveTimeAdjustmentsToStorage();
                 }
                 
-                this.updateLyricsDisplay();
+                this.updateLyricsHighlight();
                 this.showLyricsOffsetMessage(0, true);
             };
             
@@ -549,7 +549,7 @@
                             appliedAt: Date.now(),
                             appliedBy: 'manual_override'
                         });
-                        console.log(`💾 已自動保存修改的歌詞: ${this.currentTrack.name} - ${this.currentTrack.artist}`);
+                        this.log(`💾 已自動保存修改的歌詞: ${this.currentTrack.name} - ${this.currentTrack.artist}`);
                     }
                 };
             }

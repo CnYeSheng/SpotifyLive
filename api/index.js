@@ -118,7 +118,7 @@ function checkSessionValidity(req, res, next) {
 // Refresh access token
 async function refreshAccessToken(session) {
     if (!session.refreshToken) {
-        console.log('❌ 沒有 refresh token，無法刷新');
+        console.log('ℹ️ 沒有 refresh token，無法刷新');
         return false;
     }
     
@@ -170,7 +170,7 @@ app.get('/api/current-track', checkSessionValidity, async (req, res) => {
         console.log(`[${new Date().toLocaleTimeString()}] 🔄 Current-track - Token 即將過期，主動刷新...`);
         const refreshed = await refreshAccessToken(session);
         if (!refreshed) {
-            console.log(`[${new Date().toLocaleTimeString()}] ❌ Current-track - Token 刷新失敗，要求重新認證`);
+            console.log(`[${new Date().toLocaleTimeString()}] ⚠️ Current-track - Token 刷新失敗，要求重新認證`);
             return res.status(401).json({ error: 'Token expired, please re-authenticate' });
         }
     }
@@ -808,7 +808,7 @@ app.get('/api/search-lyrics/:query', async (req, res) => {
         
         // 檢查回應是否為HTML而不是JSON
         if (response.headers['content-type'] && response.headers['content-type'].includes('text/html')) {
-            console.log('❌ API 返回 HTML 而非 JSON');
+            console.log('⚠️ API 返回 HTML 而非 JSON');
             return res.json({
                 success: false,
                 total: 0,
@@ -878,7 +878,7 @@ app.get('/api/search-lyrics/:query', async (req, res) => {
                     }]
                 });
             } else {
-                console.log('❌ 沒有找到歌詞內容');
+                console.log('ℹ️ 沒有找到歌詞內容');
                 res.json({
                     success: false,
                     total: 0,
@@ -887,7 +887,7 @@ app.get('/api/search-lyrics/:query', async (req, res) => {
                 });
             }
         } else {
-            console.log('❌ API 返回空數據');
+            console.log('ℹ️ API 返回空數據');
             res.json({
                 success: false,
                 total: 0,
@@ -1086,7 +1086,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                         source: provider.toLowerCase()
                     });
                 } else {
-                    console.log(`❌ ${provider} 未找到歌詞`);
+                    console.log(`ℹ️ ${provider} 未找到歌詞`);
                 }
             } catch (error) {
                 console.error(`❌ ${provider} 搜尋失敗:`, error.message);
@@ -1197,7 +1197,7 @@ app.get('/api/lyrics-search-multi/:artist/:title', async (req, res) => {
                         ).join(' / ')
                     };
                 } else {
-                    console.log(`❌ ${provider} 無歌詞`);
+                    console.log(`ℹ️ ${provider} 無歌詞`);
                     return {
                         provider: provider,
                         success: false,

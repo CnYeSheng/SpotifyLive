@@ -117,7 +117,7 @@
         }
         
         // 调试信息
-        console.log('🌐 环境检测:', {
+        this.log('🌐 环境检测: ' + JSON.stringify({
             hostname: window.location.hostname,
             isLocal: this.isLocal,
             isVercel: this.isVercel,
@@ -125,7 +125,7 @@
             apiBase: this.apiBase,
             fullApiUrl: window.location.origin + this.apiBase,
             playEndpoint: window.location.origin + this.apiBase + '/api/play'
-        });
+        }));
         
         this.initializeElements();
         this.bindEvents();
@@ -185,7 +185,7 @@
                 for (const [key, value] of Object.entries(savedData)) {
                     this.savedLyrics.set(key, value);
                 }
-                console.log(`💎 已載入 ${this.savedLyrics.size} 個保存的歌詞`);
+                this.log(`💎 已載入 ${this.savedLyrics.size} 個保存的歌詞`);
             }
 
             // 載入歌詞時間調整
@@ -195,10 +195,10 @@
                 for (const [key, value] of Object.entries(adjustmentData)) {
                     this.lyricsTimeAdjustments.set(key, value);
                 }
-                console.log(`⏰ 已載入 ${this.lyricsTimeAdjustments.size} 個歌詞時間調整`);
+                this.log(`⏰ 已載入 ${this.lyricsTimeAdjustments.size} 個歌詞時間調整`);
             }
         } catch (error) {
-            console.error(`❌ 載入保存的歌詞和時間調整失敗: ${error.message}`);
+            this.log(`❌ 載入保存的歌詞和時間調整失敗: ${error.message}`);
             localStorage.removeItem('saved_lyrics');
             localStorage.removeItem('lyrics_time_adjustments');
         }
@@ -451,7 +451,7 @@
                 this.sessionId = storedSessionId;
                 this.log(`🔄 從 localStorage 恢復 sessionId: ${this.sessionId.substring(0, 8)}...`);
             } else {
-                this.log('❌ 沒有找到保存的 sessionId');
+                this.log('ℹ️ 沒有找到保存的 sessionId');
             }
         }
     }
@@ -1195,6 +1195,33 @@
         this.log('🧪 隱藏測試預覽');
     }
 
+    // 更新播放按鈕狀態（不影響專輯背景）
+    updatePlayButtonState(isPlaying) {
+        if (this.playPauseBtn && this.playIcon && this.pauseIcon) {
+            if (isPlaying) {
+                this.playIcon.style.display = 'none';
+                this.pauseIcon.style.display = 'block';
+                this.playPauseBtn.classList.add('playing');
+            } else {
+                this.playIcon.style.display = 'block';
+                this.pauseIcon.style.display = 'none';
+                this.playPauseBtn.classList.remove('playing');
+            }
+            this.log(`🎮 播放按鈕狀態已更新: ${isPlaying ? '暫停按鈕' : '播放按鈕'}`);
+        }
+    }
+
+    // 確保專輯背景容器保持可見
+    ensureAlbumBackgroundVisible() {
+        const bgContainer = document.getElementById('album-bg-container');
+        if (bgContainer) {
+            // 確保背景容器不會因為播放狀態改變而消失
+            bgContainer.style.display = 'block';
+            bgContainer.style.visibility = 'visible';
+            this.log('🖼️ 確保專輯背景容器保持可見');
+        }
+    }
+
     async checkAuthStatus() {
         try {
             // 確保有 sessionId 才進行檢查
@@ -1204,7 +1231,7 @@
                     this.sessionId = storedSessionId;
                     this.log(`🔄 checkAuthStatus 恢復 sessionId: ${this.sessionId.substring(0, 8)}...`);
                 } else {
-                    this.log('❌ checkAuthStatus 沒有 sessionId，顯示登入頁面');
+                    this.log('ℹ️ checkAuthStatus 沒有 sessionId，顯示登入頁面');
                     this.showAuthSection();
                     return;
                 }
@@ -1220,6 +1247,9 @@
             const data = await response.json();
             
             if (data.authenticated) {
+                // 重置錯誤計數器
+                this.consecutiveAuthErrors = 0;
+                
                 if (data.sessionId && !this.sessionId) {
                     this.sessionId = data.sessionId;
                     localStorage.setItem('spotify_session_id', this.sessionId);
@@ -1264,7 +1294,7 @@
                     this.sessionId = storedSessionId;
                     this.log(`🔄 從 localStorage 恢復 sessionId: ${this.sessionId.substring(0, 8)}...`);
                 } else {
-                    this.log('❌ 沒有 sessionId，需要重新登入');
+                    this.log('ℹ️ 沒有 sessionId，需要重新登入');
                     this.showAuthSection();
                     localStorage.removeItem('spotify_session_id');
                     return false;
@@ -1943,8 +1973,9 @@
         this.log('🔑 檢測到401認證過期，立即觸發自動登入');
         
         // 清理无效session
-        this.sessionId = null;
-        localStorage.removeItem('spotify_session_id');
+        // 不立即清除sessionId，給予重試機會
+        this.log('⚠️ 認證失敗，但保留sessionId供重試使用');
+        this.consecutiveAuthErrors++;
         
         // 立即跳转到认证页面
         window.location.href = '/api/auth';
@@ -2831,7 +2862,7 @@
 
     async loadLyrics() {
         if (!this.currentTrack) {
-            console.log('❌ 沒有當前歌曲，跳過歌詞載入');
+            console.log('ℹ️ 沒有當前歌曲，跳過歌詞載入');
             return;
         }
 
@@ -2923,12 +2954,12 @@
                         console.log('⚠️ 歌曲已切換，忽略此歌詞響應');
                     }
                 } else {
-                    console.log(`❌ 歌詞內容無效或為亂碼`);
+                    console.log(`⚠️ 歌詞內容無效或為亂碼`);
                     this.showLyricsError('歌詞內容格式錯誤');
                 }
             } else {
                 const errorMsg = data.error || '找不到歌詞';
-                console.log(`❌ 歌詞載入失敗: ${errorMsg}`);
+                console.log(`⚠️ 歌詞載入失敗: ${errorMsg}`);
                 this.showLyricsError(errorMsg);
             }
         } catch (error) {
@@ -3003,8 +3034,8 @@
 
         if (currentTime !== undefined) {
             if (this.lyricsType === 'synced') {
-                // 增強的同步歌詞邏輯，添加1.5秒延遲
-                const delayedTime = currentTime - 1000; // 延遲1秒
+                // 增強的同步歌詞邏輯，添加0秒延遲
+                const delayedTime = currentTime - 0; // 延遲1秒
                 let bestMatch = -1;
                 let minDistance = Infinity;
                 
@@ -3735,6 +3766,21 @@
 
     // 添加防抖處理的控制方法
     handlePlayPause() {
+        this.log('🎮 播放/暫停按鈕被點擊');
+        
+        if (!this.currentTrack) {
+            this.log('⚠️ 沒有當前歌曲，無法執行播放/暫停操作');
+            return;
+        }
+        
+        // 立即更新按鈕狀態，不等API回應
+        const newPlayingState = !this.currentTrack.isPlaying;
+        this.updatePlayButtonState(newPlayingState);
+        this.log(`🎮 更新播放狀態: ${newPlayingState ? '播放' : '暫停'}`);
+        
+        // 保持專輯背景顯示，只更新按鈕
+        this.ensureAlbumBackgroundVisible();
+        
         if (!this.currentTrack || !this.sessionId) return;
         
         // 防抖處理

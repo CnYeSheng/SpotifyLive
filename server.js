@@ -139,7 +139,7 @@ function trackSongChange(sessionId, trackId) {
                     if (refreshed) {
                         console.log(`✅ Token refreshed successfully after song change`);
                     } else {
-                        console.log(`❌ Token refresh failed after song change`);
+                        console.log(`⚠️ Token refresh failed after song change`);
                     }
                 });
             }
@@ -248,7 +248,7 @@ app.get('/api/current-track', async (req, res) => {
         console.log('🔄 Token expires soon, attempting refresh...');
         const refreshed = await refreshAccessToken(session);
         if (!refreshed) {
-            console.log('❌ Token refresh failed, but allowing current request to proceed');
+            console.log('⚠️ Token refresh failed, but allowing current request to proceed');
             // Don't immediately return 401, let the request proceed and handle errors gracefully
         }
     }
@@ -352,7 +352,7 @@ app.get('/api/current-track', async (req, res) => {
             console.log('🔑 Authentication error detected, attempting token refresh...');
             const refreshed = await refreshAccessToken(session);
             if (!refreshed) {
-                console.log('❌ Token refresh failed, returning 401');
+                console.log('⚠️ Token refresh failed, returning 401');
                 return res.status(401).json({ 
                     error: 'Token expired, please re-authenticate',
                     needsAuth: true 
@@ -459,7 +459,7 @@ function authenticateSpotify(req, res, next) {
 // Enhanced refresh access token with better logging
 async function refreshAccessToken(session) {
     if (!session.refreshToken) {
-        console.log('❌ No refresh token available');
+        console.log('ℹ️ No refresh token available');
         return false;
     }
     try {
@@ -505,7 +505,7 @@ app.get('/api/auth-status', async (req, res) => {
         const refreshed = await refreshAccessToken(session);
         if (!refreshed) {
             // Token refresh failed, but still return current status
-            console.log('❌ Token refresh failed in auth-status check');
+            console.log('⚠️ Token refresh failed in auth-status check');
             return res.json({ 
                 authenticated: false,
                 sessionId: sessionId,
@@ -1231,7 +1231,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
             }
 
             // 所有來源都失敗
-            console.log('❌ 自動模式：所有來源均未找到歌詞');
+            console.log('ℹ️ 自動模式：所有來源均未找到歌詞');
             return res.status(404).json({
                 success: false,
                 error: '未找到歌詞',
@@ -1267,7 +1267,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                     provider: provider
                 });
             } else {
-                console.log(`❌ 指定來源 ${provider} 未找到歌詞`);
+                console.log(`ℹ️ 指定來源 ${provider} 未找到歌詞`);
                 return res.status(404).json({
                     success: false,
                     error: `${provider} 未找到歌詞`,
@@ -1513,7 +1513,7 @@ app.get('/api/lyrics-search-provider/:provider/:artist/:title', async (req, res)
                 source: `${provider} (用戶指定)`
             });
         } else {
-            console.log(`❌ ${provider} 未找到歌詞: ${artist} - ${title}`);
+            console.log(`ℹ️ ${provider} 未找到歌詞: ${artist} - ${title}`);
             res.json({
                 success: false,
                 provider: provider,
@@ -1588,7 +1588,7 @@ app.get('/api/lyrics-legacy/:artist/:title', async (req, res) => {
                     }
                 }
 
-                console.log(`❌ 自動載入歌詞失敗或內容為空`);
+                console.log(`ℹ️ 自動載入歌詞失敗或內容為空`);
                 return res.json({
                     success: false,
                     error: '查不到歌詞',
@@ -1672,10 +1672,10 @@ app.get('/api/lyrics-legacy/:artist/:title', async (req, res) => {
                         });
                         console.log(`✅ ${provider} 找到歌詞 (${lyrics.length} 行)`);
                     } else {
-                        console.log(`❌ ${provider} 沒有內容`);
+                        console.log(`ℹ️ ${provider} 沒有內容`);
                     }
                 } else {
-                    console.log(`❌ ${provider} 響應無歌詞資料`);
+                    console.log(`ℹ️ ${provider} 響應無歌詞資料`);
                 }
             } catch (error) {
                 console.error(`❌ ${provider} 搜尋失敗:`, error.message);
@@ -1691,7 +1691,7 @@ app.get('/api/lyrics-legacy/:artist/:title', async (req, res) => {
                 message: `找到 ${results.length} 個可用歌詞來源`
             });
         } else {
-            console.log(`❌ 所有來源均無歌詞`);
+            console.log(`ℹ️ 所有來源均無歌詞`);
             return res.json({
                 success: false,
                 results: [],
