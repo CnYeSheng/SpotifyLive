@@ -441,6 +441,7 @@
             this.sessionId = urlParams.get('session');
             if (this.sessionId) {
                 localStorage.setItem('spotify_session_id', this.sessionId);
+                this.protectSession(); // 啟動 Session 保護
                 this.log(`✅ 新 sessionId 已保存: ${this.sessionId.substring(0, 8)}...`);
             }
             window.history.replaceState({}, document.title, window.location.pathname);
@@ -450,6 +451,7 @@
             const storedSessionId = localStorage.getItem('spotify_session_id');
             if (storedSessionId) {
                 this.sessionId = storedSessionId;
+                this.protectSession(); // 保護已恢復的 Session
                 this.log(`🔄 從 localStorage 恢復 sessionId: ${this.sessionId.substring(0, 8)}...`);
             } else {
                 this.log('ℹ️ 沒有找到保存的 sessionId');
@@ -1234,6 +1236,51 @@
                 this.log('🎵 強制顯示播放器區域 - 有當前歌曲');
             }
         }
+    }
+
+    // 強化版 Session 保護機制
+    protectSession() {
+        if (!this.sessionId) return;
+        
+        // 定期備份 Session ID 到多個位置
+        try {
+            localStorage.setItem('spotify_session_backup', this.sessionId);
+            sessionStorage.setItem('spotify_session_backup', this.sessionId);
+            
+            // 在內存中也保持引用
+            this._sessionIdBackup = this.sessionId;
+        } catch (error) {
+            this.log(`⚠️ Session 備份失敗: ${error.message}`);
+        }
+    }
+
+    // Session 恢復機制
+    recoverSession() {
+        if (this.sessionId) return true;
+        
+        // 嘗試從多個位置恢復
+        const sources = [
+            () => localStorage.getItem('spotify_session_id'),
+            () => localStorage.getItem('spotify_session_backup'),
+            () => sessionStorage.getItem('spotify_session_backup'),
+            () => this._sessionIdBackup
+        ];
+        
+        for (const getSession of sources) {
+            try {
+                const recoveredSession = getSession();
+                if (recoveredSession) {
+                    this.sessionId = recoveredSession;
+                    this.log(`✅ Session 已從備份恢復: ${this.sessionId.substring(0, 8)}...`);
+                    this.protectSession();
+                    return true;
+                }
+            } catch (error) {
+                this.log(`⚠️ Session 恢復嘗試失敗: ${error.message}`);
+            }
+        }
+        
+        return false;
     }
 
     async checkAuthStatus() {
@@ -2177,6 +2224,16 @@
         const now = Date.now();
         this.log(`🔍 檢查當前播放狀態 (lastCheckTime: ${this.lastCheckTime}, interval: ${this.currentCheckInterval})`);
         
+        // 在每次 API 調用前嘗試恢復 Session
+        if (!this.sessionId) {
+            this.log('⚠️ Session ID 丟失，嘗試恢復...');
+            if (!this.recoverSession()) {
+                this.log('❌ Session 恢復失敗，需要重新登入');
+                this.showAuthSection();
+                return;
+            }
+        }
+        
         // 檢查是否在速率限制期間
         if (this.isRateLimited && now < this.retryAfterUntil) {
             const waitSec = Math.ceil((this.retryAfterUntil - now) / 1000);
@@ -2554,9 +2611,9 @@
         this.retryCount = 0;
         this.consecutiveAuthErrors = 0;
         
-        // 處理無音樂播放的情況
-        if (!data.name || data.name === null || !data.isPlaying) {
-            this.log('🔍 沒有檢測到正在播放的音樂');
+        // 處理無音樂播放的情況 - 修改邏輯，不要因為暫停就隱藏播放器
+        if (!data.name || data.name === null) {
+            this.log('🔍 沒有檢測到歌曲資訊');
             let message = '請在 Spotify 中開始播放音樂';
             if (data.message) {
                 this.log(`📝 服務端消息: ${data.message}`);
@@ -2564,6 +2621,12 @@
             }
             this.showNoMusicSection(message);
             return;
+        }
+        
+        // 如果歌曲存在但暫停播放，保持顯示播放器而不是隱藏
+        if (!data.isPlaying && data.name) {
+            this.log('⏸️ 歌曲已暫停，但保持顯示播放器');
+            // 繼續處理，不要返回到 no-music 狀態
         }
 
         this.log('✅ 檢測到正在播放的音樂，繼續處理...');
@@ -2632,6 +2695,9 @@
         this.updatePlayerControls();
         this.updateProgress();
         this.updateStatus('spotify', true);
+        
+        // 強制確保播放器始終可見（無論播放或暫停）
+        this.ensurePlayerSectionVisible();
         
         // 檢查是否接近歌曲結尾
         const remainingTime = this.currentTrack.duration - this.currentTrack.progress;
