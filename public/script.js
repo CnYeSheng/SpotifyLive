@@ -184,9 +184,11 @@
             if (savedLyrics) {
                 const savedData = JSON.parse(savedLyrics);
                 for (const [key, value] of Object.entries(savedData)) {
-                    this.savedLyrics.set(key, value);
+                    // **修改點：確保載入的鍵也經過相同的處理**
+                    const normalizedKey = key.toLowerCase().replace(/\s+/g, '_');
+                    this.savedLyrics.set(normalizedKey, value);
                 }
-                this.log(`💎 已載入 ${this.savedLyrics.size} 個保存的歌詞`);
+                this.log(`💎 已載入 ${this.savedLyrics.size} 個保存的歌詞 (已標準化鍵值)`);
             }
 
             // 載入歌詞時間調整
@@ -194,12 +196,15 @@
             if (timeAdjustments) {
                 const adjustmentData = JSON.parse(timeAdjustments);
                 for (const [key, value] of Object.entries(adjustmentData)) {
-                    this.lyricsTimeAdjustments.set(key, value);
+                    // **修改點：確保載入的時間調整鍵也經過相同的處理**
+                    const normalizedKey = key.toLowerCase().replace(/\s+/g, '_');
+                    this.lyricsTimeAdjustments.set(normalizedKey, value);
                 }
-                this.log(`⏰ 已載入 ${this.lyricsTimeAdjustments.size} 個歌詞時間調整`);
+                this.log(`⏰ 已載入 ${this.lyricsTimeAdjustments.size} 個歌詞時間調整 (已標準化鍵值)`);
             }
         } catch (error) {
             this.log(`❌ 載入保存的歌詞和時間調整失敗: ${error.message}`);
+            // 如果載入失敗，清空 localStorage 以防止持續錯誤
             localStorage.removeItem('saved_lyrics');
             localStorage.removeItem('lyrics_time_adjustments');
         }
@@ -212,54 +217,47 @@
 
     // 從緩存獲取歌詞 (優先順序: 保存的歌詞 > 緩存歌詞)
     getCachedLyrics(track) {
-        const cacheKey = this.generateTrackCacheKey(track);
-        
+        const cacheKey = this.generateTrackCacheKey(track); // 確保這裡生成的 key 是標準化的
+        this.log(`🔍 檢查緩存歌詞，鍵值: ${cacheKey}`); // 加入日誌方便除錯
+
         // 1. 優先檢查保存的歌詞
-        const savedLyrics = this.savedLyrics.get(cacheKey);
+        const savedLyrics = this.savedLyrics.get(cacheKey); // 使用標準化的 key 查找
         if (savedLyrics) {
             this.log(`💎 從保存的歌詞載入: ${track.name} - ${track.artist}`);
-            
             // 套用時間調整 (如果有的話)
-            const timeAdjustment = this.lyricsTimeAdjustments.get(cacheKey);
+            const timeAdjustment = this.lyricsTimeAdjustments.get(cacheKey); // 使用標準化的 key 查找
             if (timeAdjustment && savedLyrics.lyrics) {
-                const adjustedLyrics = this.applyTimeAdjustmentToLyrics(savedLyrics.lyrics, timeAdjustment);
+                this.log(`⏰ 為 ${track.name} 應用已保存的時間調整: ${timeAdjustment.timeOffset}ms`); // 注意：現在 timeAdjustment 是物件
                 return {
                     ...savedLyrics,
-                    lyrics: adjustedLyrics,
-                    hasTimeAdjustment: true,
-                    timeAdjustment: timeAdjustment
+                    lyrics: this.applyTimeAdjustmentToLyrics(savedLyrics.lyrics, timeAdjustment) // 傳入完整物件
                 };
             }
-            
             return savedLyrics;
         }
-        
+
         // 2. 檢查一般緩存
-        const cached = this.lyricsCache.get(cacheKey);
+        const cached = this.lyricsCache.get(cacheKey); // 使用標準化的 key 查找
         if (cached && (Date.now() - cached.timestamp) < this.lyricsCacheExpiry) {
-            this.log(`💾 從緩存載入歌詞: ${track.name} - ${track.artist}`);
-            
+            this.log(`💾 從一般緩存載入: ${track.name} - ${track.artist}`);
             // 套用時間調整 (如果有的話)
-            const timeAdjustment = this.lyricsTimeAdjustments.get(cacheKey);
+            const timeAdjustment = this.lyricsTimeAdjustments.get(cacheKey); // 使用標準化的 key 查找
             if (timeAdjustment && cached.lyrics) {
-                const adjustedLyrics = this.applyTimeAdjustmentToLyrics(cached.lyrics, timeAdjustment);
+                this.log(`⏰ 為 ${track.name} 應用時間調整 (從緩存): ${timeAdjustment.timeOffset}ms`); // 注意：現在 timeAdjustment 是物件
                 return {
                     ...cached,
-                    lyrics: adjustedLyrics,
-                    hasTimeAdjustment: true,
-                    timeAdjustment: timeAdjustment
+                    lyrics: this.applyTimeAdjustmentToLyrics(cached.lyrics, timeAdjustment) // 傳入完整物件
                 };
             }
-            
             return cached;
         }
-        
+
         // 清理過期緩存
         if (cached) {
             this.lyricsCache.delete(cacheKey);
             this.saveLyricsCacheToStorage();
         }
-        
+
         return null;
     }
 
@@ -284,7 +282,12 @@
 
     // 保存歌詞 (永久保存，播放時優先載入)
     saveLyrics(track, lyrics, lyricsType, source = 'manual') {
-        const cacheKey = this.generateTrackCacheKey(track);
+        if (!track || !lyrics || !Array.isArray(lyrics) || lyrics.length === 0) {
+            this.log('⚠️ 無法保存無效的歌詞數據');
+            return;
+        }
+
+        const cacheKey = this.generateTrackCacheKey(track); // 確保這裡生成的 key 是標準化的
         const savedData = {
             lyrics: lyrics,
             lyricsType: lyricsType,
@@ -296,40 +299,54 @@
                 artist: track.artist
             }
         };
-        
-        this.savedLyrics.set(cacheKey, savedData);
-        this.saveSavedLyricsToStorage();
-        this.log(`💎 已保存歌詞: ${track.name} - ${track.artist}`);
-        
-        // 也緩存到一般緩存
+
+        this.savedLyrics.set(cacheKey, savedData); // 使用標準化的 key 保存
+        this.saveSavedLyricsToStorage(); // 觸發保存到 localStorage
+
+        // 也緩存到一般緩存 (可選，但通常會這樣做)
         this.cacheLyrics(track, lyrics, lyricsType);
+
+        this.log(`💾 歌詞已保存至本地: ${track.name} - ${track.artist} (鍵值: ${cacheKey})`);
     }
 
     // 保存歌詞時間調整
     saveLyricsTimeAdjustment(track, timeOffset) {
-        const cacheKey = this.generateTrackCacheKey(track);
-        const adjustmentData = {
-            timeOffset: timeOffset,
-            timestamp: Date.now(),
-            trackInfo: {
-                id: track.id,
-                name: track.name,
-                artist: track.artist
-            }
-        };
-        
-        this.lyricsTimeAdjustments.set(cacheKey, adjustmentData);
-        this.saveTimeAdjustmentsToStorage();
-        this.log(`⏰ 已保存歌詞時間調整: ${track.name} - ${track.artist}, 偏移: ${timeOffset}ms`);
+        if (!track) {
+            this.log('⚠️ 無法保存時間調整，缺少 track 資訊');
+            return;
+        }
+
+        const cacheKey = this.generateTrackCacheKey(track); // 確保這裡生成的 key 是標準化的
+        if (timeOffset === 0 || timeOffset === null || timeOffset === undefined) {
+            // 如果時間偏移為 0 或無效值，移除該鍵值對，避免儲存不必要的資料
+            this.lyricsTimeAdjustments.delete(cacheKey);
+            this.log(`🧹 已移除 ${track.name} 的時間調整 (歸零或無效)`);
+        } else {
+            // 儲存包含 timeOffset 和 timestamp 的物件
+            const adjustmentData = {
+                timeOffset: timeOffset,
+                timestamp: Date.now(),
+                trackInfo: {
+                    id: track.id,
+                    name: track.name,
+                    artist: track.artist
+                }
+            };
+            this.lyricsTimeAdjustments.set(cacheKey, adjustmentData); // 使用標準化的 key 保存
+            this.log(`⏰ 歌詞時間調整已保存 (${timeOffset}ms) for ${track.name} (鍵值: ${cacheKey})`);
+        }
+
+        this.saveTimeAdjustmentsToStorage(); // 觸發保存到 localStorage
     }
 
     // 套用時間調整到歌詞
     applyTimeAdjustmentToLyrics(lyrics, timeAdjustment) {
-        if (!timeAdjustment || !timeAdjustment.timeOffset || timeAdjustment.timeOffset === 0) {
+        // **修改點：檢查 timeAdjustment 物件及其 timeOffset 屬性**
+        if (!timeAdjustment || typeof timeAdjustment !== 'object' || timeAdjustment.timeOffset === undefined || timeAdjustment.timeOffset === 0) {
             return lyrics;
         }
-        
-        const offset = timeAdjustment.timeOffset;
+
+        const offset = timeAdjustment.timeOffset; // 從物件中取出數值
         return lyrics.map(line => {
             if (line.time !== undefined) {
                 return {
@@ -337,7 +354,7 @@
                     time: Math.max(0, line.time + offset) // 確保時間不會是負數
                 };
             }
-            return line;
+            return line; // 如果行沒有 time 屬性，直接返回
         });
     }
 
