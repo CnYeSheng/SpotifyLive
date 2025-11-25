@@ -21,6 +21,9 @@ class AutoErrorLogger {
             '500 ', '502 ', '503 ', '504 ', 'internal server error'
         ];
         
+        // 新增：用戶可控制的自動下載設定
+        this.autoDownloadEnabled = localStorage.getItem('auto_error_download_enabled') !== 'false'; // 預設為開啟
+        
         // 不應觸發下載的關鍵字（警告級別）
         this.warningKeywords = [
             '無下一首數據', '獲取失敗', '隊列為空', '沒有找到', '跳過',
@@ -479,7 +482,12 @@ class AutoErrorLogger {
         console.log(`🚨 偵測到${severity}錯誤！(近期錯誤數: ${errorCount}) 將在 ${this.downloadDelay / 1000} 秒後自動下載日誌檔`);
         
         this.downloadTimeout = setTimeout(() => {
-            this.downloadLogs('auto', severity);
+            if (this.autoDownloadEnabled) {
+                this.downloadLogs('auto', severity);
+            } else {
+                console.log('🔒 自動下載已停用，跳過日誌下載');
+                this.showDownloadPrompt(severity);
+            }
             this.isErrorDetected = false; // 重置錯誤狀態
         }, this.downloadDelay);
     }

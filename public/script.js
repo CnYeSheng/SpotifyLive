@@ -3172,7 +3172,7 @@
     showOffsetMessage() {
         const message = this.lyricsTimeOffset === 0 
             ? '歌詞時間已重置' 
-            : `歌詞${this.lyricsTimeOffset > 0 ? '延後' : '提前'} ${Math.abs(this.lyricsTimeOffset/1000)} 秒`;
+            : `歌詞${this.lyricsTimeOffset > 0 ? '提前' : '延後'} ${Math.abs(this.lyricsTimeOffset/1000)} 秒`;
         
         this.showSuccessMessage(message);
     }

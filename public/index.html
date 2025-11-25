@@ -209,7 +209,7 @@
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/>
                             </svg>
-                            +0.5s
+                            -0.5s
                         </button>
                         <button id="lyrics-reset-btn" class="lyrics-control-btn" title="重置歌詞時間">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -220,7 +220,7 @@
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/>
                             </svg>
-                            -0.5s
+                            +0.5s
                         </button>
                         <button id="search-lyrics-btn" class="lyrics-control-btn" title="搜尋歌詞">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -438,6 +438,11 @@
     </div>
 
     <!-- 自動錯誤日誌系統 - 必須在其他腳本之前載入 -->
+    <!-- 增強版組件 - 解決問題的核心文件 -->
+    <script src="enhanced-auto-error-logger.js"></script>
+    <script src="enhanced-mobile-lyrics-controls.js"></script>
+    
+    <!-- 原始錯誤日誌系統（備用） -->
     <script src="auto-error-logger.js"></script>
     
     <script src="https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/umd/full.js"></script>
