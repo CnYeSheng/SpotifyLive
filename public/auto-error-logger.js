@@ -482,11 +482,14 @@ class AutoErrorLogger {
         console.log(`🚨 偵測到${severity}錯誤！(近期錯誤數: ${errorCount}) 將在 ${this.downloadDelay / 1000} 秒後自動下載日誌檔`);
         
         this.downloadTimeout = setTimeout(() => {
-            if (this.autoDownloadEnabled) {
+            // 檢查用戶設定是否停用自動下載
+            const autoDownloadSetting = localStorage.getItem('auto_error_download_enabled');
+            const shouldAutoDownload = autoDownloadSetting !== 'false';
+            
+            if (shouldAutoDownload) {
                 this.downloadLogs('auto', severity);
             } else {
                 console.log('🔒 自動下載已停用，跳過日誌下載');
-                this.showDownloadPrompt(severity);
             }
             this.isErrorDetected = false; // 重置錯誤狀態
         }, this.downloadDelay);
@@ -769,7 +772,49 @@ class AutoErrorLogger {
                 this.downloadLogs('manual');
             });
             
+            // 添加切換自動下載的按鈕
+            const toggleButton = document.createElement('button');
+            toggleButton.id = 'toggle-auto-download-btn';
+            const autoDownloadSetting = localStorage.getItem('auto_error_download_enabled');
+            const isAutoEnabled = autoDownloadSetting !== 'false';
+            toggleButton.innerHTML = isAutoEnabled ? '🔒 停用自動下載' : '🔓 啟用自動下載';
+            toggleButton.title = '切換自動下載日誌設定';
+            toggleButton.style.cssText = `
+                position: fixed;
+                bottom: 80px;
+                right: 20px;
+                z-index: 9999;
+                padding: 12px 20px;
+                background: ${isAutoEnabled ? 
+                    'linear-gradient(135deg, #ff6b35, #f7931e)' : 
+                    'linear-gradient(135deg, #1db954, #1ed760)'};
+                color: white;
+                border: none;
+                border-radius: 25px;
+                font-weight: 600;
+                font-size: 14px;
+                cursor: pointer;
+                box-shadow: 0 4px 15px rgba(29, 185, 84, 0.3);
+                transition: all 0.3s ease;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            `;
+            
+            toggleButton.addEventListener('click', () => {
+                const currentSetting = localStorage.getItem('auto_error_download_enabled');
+                const newSetting = currentSetting === 'false' ? 'true' : 'false';
+                localStorage.setItem('auto_error_download_enabled', newSetting);
+                
+                const isEnabled = newSetting === 'true';
+                toggleButton.innerHTML = isEnabled ? '🔒 停用自動下載' : '🔓 啟用自動下載';
+                toggleButton.style.background = isEnabled ? 
+                    'linear-gradient(135deg, #ff6b35, #f7931e)' : 
+                    'linear-gradient(135deg, #1db954, #1ed760)';
+                    
+                console.log(`🔄 自動下載已${isEnabled ? '啟用' : '停用'}`);
+            });
+            
             document.body.appendChild(button);
+            document.body.appendChild(toggleButton);
         };
         
         if (document.readyState === 'loading') {
