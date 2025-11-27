@@ -33,57 +33,29 @@ function initUserLyricsManager() {
             .replace(/[^\w\-_]/g, '');
     };
 
-    // 保存用戶自定義歌詞
-    SpotifyLyricsPlayer.prototype.saveUserCustomLyrics = function(trackInfo, lyrics, lyricsType, source) {
-        const trackKey = this.generateTrackKey(trackInfo);
-        
-        const customLyricsData = {
-            trackKey: trackKey,
-            trackInfo: {
-                id: trackInfo.id,
-                name: trackInfo.name,
-                artist: trackInfo.artist,
-                album: trackInfo.album
-            },
-            lyrics: lyrics,
-            lyricsType: lyricsType || 'plain',
-            source: source || 'user_custom',
-            timestamp: Date.now(),
-            lastUsed: Date.now()
-        };
-
+    // 保存用戶自定義歌詞 (使用 KV 存儲)
+    SpotifyLyricsPlayer.prototype.saveUserCustomLyrics = async function(trackInfo, lyrics, lyricsType, source) {
         try {
-            // 獲取現有的自定義歌詞數據
-            const existingData = JSON.parse(localStorage.getItem('user_custom_lyrics') || '{}');
+            const success = await window.kvStorageManager.saveUserCustomLyrics(trackInfo, lyrics, lyricsType, source);
             
-            // 保存新的歌詞數據
-            existingData[trackKey] = customLyricsData;
-            
-            localStorage.setItem('user_custom_lyrics', JSON.stringify(existingData));
-            
-            this.log(`💾 已保存用戶自定義歌詞: ${trackInfo.artist} - ${trackInfo.name}`);
-            
-            return true;
+            if (success) {
+                this.log(`💾 已保存用戶自定義歌詞: ${trackInfo.artist} - ${trackInfo.name}`);
+                return true;
+            } else {
+                throw new Error('保存失敗');
+            }
         } catch (error) {
             this.log(`❌ 保存用戶自定義歌詞失敗: ${error.message}`);
             return false;
         }
     };
 
-    // 獲取用戶自定義歌詞
-    SpotifyLyricsPlayer.prototype.getUserCustomLyrics = function(trackInfo) {
-        const trackKey = this.generateTrackKey(trackInfo);
-        
+    // 獲取用戶自定義歌詞 (使用 KV 存儲)
+    SpotifyLyricsPlayer.prototype.getUserCustomLyrics = async function(trackInfo) {
         try {
-            const customLyricsData = JSON.parse(localStorage.getItem('user_custom_lyrics') || '{}');
-            const userData = customLyricsData[trackKey];
+            const userData = await window.kvStorageManager.getUserCustomLyrics(trackInfo);
             
             if (userData) {
-                // 更新最後使用時間
-                userData.lastUsed = Date.now();
-                customLyricsData[trackKey] = userData;
-                localStorage.setItem('user_custom_lyrics', JSON.stringify(customLyricsData));
-                
                 this.log(`🎯 找到用戶自定義歌詞: ${trackInfo.artist} - ${trackInfo.name}`);
                 return userData;
             }
@@ -95,51 +67,31 @@ function initUserLyricsManager() {
         }
     };
 
-    // 保存用戶指定的歌詞供應商
-    SpotifyLyricsPlayer.prototype.saveUserLyricsProvider = function(trackInfo, provider) {
-        const trackKey = this.generateTrackKey(trackInfo);
-        
-        const providerData = {
-            trackKey: trackKey,
-            trackInfo: {
-                id: trackInfo.id,
-                name: trackInfo.name,
-                artist: trackInfo.artist
-            },
-            provider: provider,
-            timestamp: Date.now(),
-            lastUsed: Date.now()
-        };
-
+    // 保存用戶指定的歌詞供應商 (使用 KV 存儲)
+    SpotifyLyricsPlayer.prototype.saveUserLyricsProvider = async function(trackInfo, provider) {
         try {
-            const existingData = JSON.parse(localStorage.getItem('user_lyrics_providers') || '{}');
-            existingData[trackKey] = providerData;
-            localStorage.setItem('user_lyrics_providers', JSON.stringify(existingData));
+            const success = await window.kvStorageManager.saveUserLyricsProvider(trackInfo, provider);
             
-            this.log(`🔒 已保存用戶指定供應商: ${provider} for ${trackInfo.artist} - ${trackInfo.name}`);
-            return true;
+            if (success) {
+                this.log(`🔒 已保存用戶指定供應商: ${provider} for ${trackInfo.artist} - ${trackInfo.name}`);
+                return true;
+            } else {
+                throw new Error('保存失敗');
+            }
         } catch (error) {
             this.log(`❌ 保存用戶指定供應商失敗: ${error.message}`);
             return false;
         }
     };
 
-    // 獲取用戶指定的歌詞供應商
-    SpotifyLyricsPlayer.prototype.getUserLyricsProvider = function(trackInfo) {
-        const trackKey = this.generateTrackKey(trackInfo);
-        
+    // 獲取用戶指定的歌詞供應商 (使用 KV 存儲)
+    SpotifyLyricsPlayer.prototype.getUserLyricsProvider = async function(trackInfo) {
         try {
-            const providerData = JSON.parse(localStorage.getItem('user_lyrics_providers') || '{}');
-            const userData = providerData[trackKey];
+            const provider = await window.kvStorageManager.getUserLyricsProvider(trackInfo);
             
-            if (userData) {
-                // 更新最後使用時間
-                userData.lastUsed = Date.now();
-                providerData[trackKey] = userData;
-                localStorage.setItem('user_lyrics_providers', JSON.stringify(providerData));
-                
-                this.log(`🎯 找到用戶指定供應商: ${userData.provider} for ${trackInfo.artist} - ${trackInfo.name}`);
-                return userData.provider;
+            if (provider) {
+                this.log(`🎯 找到用戶指定供應商: ${provider} for ${trackInfo.artist} - ${trackInfo.name}`);
+                return provider;
             }
             
             return null;

@@ -2,8 +2,10 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const KVStorageManager = require('./kv-storage');
 
 const app = express();
+const kvStorage = new KVStorageManager();
 
 // Middleware
 app.use(cors({
@@ -1281,4 +1283,271 @@ app.post('/api/refresh-token', async (req, res) => {
 });
 
 // Export for Vercel
+// =================
+// KV 存儲 API 端點
+// =================
+
+// 保存用戶自定義歌詞
+app.post('/api/kv/user-lyrics', async (req, res) => {
+    try {
+        const { trackInfo, lyrics, lyricsType, source } = req.body;
+        
+        if (!trackInfo || !lyrics) {
+            return res.status(400).json({
+                success: false,
+                error: '缺少必要參數：trackInfo 和 lyrics'
+            });
+        }
+
+        const success = await kvStorage.saveUserCustomLyrics(req, trackInfo, lyrics, lyricsType, source);
+        
+        res.json({
+            success: true,
+            message: '用戶自定義歌詞已保存',
+            data: { trackKey: kvStorage.generateTrackKey(trackInfo) }
+        });
+    } catch (error) {
+        console.error('保存用戶自定義歌詞失敗:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 獲取用戶自定義歌詞
+app.get('/api/kv/user-lyrics/:artist/:title', async (req, res) => {
+    try {
+        const { artist, title } = req.params;
+        const { id } = req.query;
+        
+        const trackInfo = {
+            id: id || '',
+            artist: decodeURIComponent(artist),
+            name: decodeURIComponent(title)
+        };
+
+        const userData = await kvStorage.getUserCustomLyrics(req, trackInfo);
+        
+        if (userData) {
+            res.json({
+                success: true,
+                data: userData
+            });
+        } else {
+            res.json({
+                success: false,
+                message: '未找到用戶自定義歌詞'
+            });
+        }
+    } catch (error) {
+        console.error('獲取用戶自定義歌詞失敗:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 保存用戶歌詞供應商偏好
+app.post('/api/kv/user-provider', async (req, res) => {
+    try {
+        const { trackInfo, provider } = req.body;
+        
+        if (!trackInfo || !provider) {
+            return res.status(400).json({
+                success: false,
+                error: '缺少必要參數：trackInfo 和 provider'
+            });
+        }
+
+        const success = await kvStorage.saveUserLyricsProvider(req, trackInfo, provider);
+        
+        res.json({
+            success: true,
+            message: '用戶供應商偏好已保存',
+            data: { trackKey: kvStorage.generateTrackKey(trackInfo), provider }
+        });
+    } catch (error) {
+        console.error('保存用戶供應商偏好失敗:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 獲取用戶歌詞供應商偏好
+app.get('/api/kv/user-provider/:artist/:title', async (req, res) => {
+    try {
+        const { artist, title } = req.params;
+        const { id } = req.query;
+        
+        const trackInfo = {
+            id: id || '',
+            artist: decodeURIComponent(artist),
+            name: decodeURIComponent(title)
+        };
+
+        const provider = await kvStorage.getUserLyricsProvider(req, trackInfo);
+        
+        if (provider) {
+            res.json({
+                success: true,
+                data: { provider }
+            });
+        } else {
+            res.json({
+                success: false,
+                message: '未找到用戶供應商偏好'
+            });
+        }
+    } catch (error) {
+        console.error('獲取用戶供應商偏好失敗:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 獲取用戶所有自定義歌詞
+app.get('/api/kv/user-lyrics', async (req, res) => {
+    try {
+        const customLyrics = await kvStorage.getAllUserCustomLyrics(req);
+        
+        res.json({
+            success: true,
+            data: customLyrics
+        });
+    } catch (error) {
+        console.error('獲取用戶所有自定義歌詞失敗:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 獲取用戶所有供應商偏好
+app.get('/api/kv/user-providers', async (req, res) => {
+    try {
+        const providerPrefs = await kvStorage.getAllUserProviderPrefs(req);
+        
+        res.json({
+            success: true,
+            data: providerPrefs
+        });
+    } catch (error) {
+        console.error('獲取用戶所有供應商偏好失敗:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 刪除特定的用戶自定義歌詞
+app.delete('/api/kv/user-lyrics/:trackKey', async (req, res) => {
+    try {
+        const { trackKey } = req.params;
+        
+        const success = await kvStorage.deleteUserCustomLyrics(req, trackKey);
+        
+        res.json({
+            success: true,
+            message: '用戶自定義歌詞已刪除'
+        });
+    } catch (error) {
+        console.error('刪除用戶自定義歌詞失敗:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 刪除特定的用戶供應商偏好
+app.delete('/api/kv/user-provider/:trackKey', async (req, res) => {
+    try {
+        const { trackKey } = req.params;
+        
+        const success = await kvStorage.deleteUserLyricsProvider(req, trackKey);
+        
+        res.json({
+            success: true,
+            message: '用戶供應商偏好已刪除'
+        });
+    } catch (error) {
+        console.error('刪除用戶供應商偏好失敗:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 清除用戶所有數據
+app.delete('/api/kv/user-data', async (req, res) => {
+    try {
+        const success = await kvStorage.clearAllUserData(req);
+        
+        res.json({
+            success: true,
+            message: '用戶所有數據已清除'
+        });
+    } catch (error) {
+        console.error('清除用戶所有數據失敗:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 數據遷移：從 localStorage 到 KV
+app.post('/api/kv/migrate', async (req, res) => {
+    try {
+        const { localStorageData } = req.body;
+        
+        if (!localStorageData) {
+            return res.status(400).json({
+                success: false,
+                error: '缺少 localStorageData 參數'
+            });
+        }
+
+        const result = await kvStorage.migrateFromLocalStorage(req, localStorageData);
+        
+        res.json({
+            success: true,
+            message: '數據遷移完成',
+            data: result
+        });
+    } catch (error) {
+        console.error('數據遷移失敗:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 檢查 KV 存儲狀態
+app.get('/api/kv/status', async (req, res) => {
+    try {
+        res.json({
+            success: true,
+            kvAvailable: kvStorage.isKVAvailable,
+            userKey: kvStorage.generateUserKey(req)
+        });
+    } catch (error) {
+        console.error('檢查 KV 狀態失敗:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 module.exports = app;
