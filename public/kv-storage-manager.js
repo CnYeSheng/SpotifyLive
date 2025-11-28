@@ -23,16 +23,33 @@ class KVStorageManager {
                 this.userKey = data.userKey;
                 console.log(`✅ KV Status: ${this.kvAvailable ? 'Available' : 'Not Available'}, User: ${this.userKey}`);
                 
-                // 如果 KV 可用且有 localStorage 數據，自動遷移
-                if (this.kvAvailable && this.hasLocalStorageData()) {
+                // 检查迁移状态
+                const migrationCompleted = localStorage.getItem('kv_migration_completed') === 'true';
+                const migrationSkipped = localStorage.getItem('kv_migration_skip') === 'true';
+                
+                // 如果 KV 可用且有 localStorage 数据且还未迁移过
+                if (this.kvAvailable && 
+                    this.hasLocalStorageData() && 
+                    !migrationCompleted && 
+                    !migrationSkipped) {
+                    
+                    console.log('🔄 发现未迁移的数据，提示用户迁移');
                     this.promptForMigration();
+                } else if (migrationCompleted) {
+                    console.log('✅ 已记录迁移完成，不再提示');
                 }
             } else {
-                console.warn('無法檢查 KV 狀態:', data.error);
+                console.warn('无法检查 KV 状态:', data.error);
             }
         } catch (error) {
-            console.error('檢查 KV 狀態失敗:', error);
+            console.error('检查 KV 状态失败:', error);
         }
+    }
+
+    // 新增：检查用户是否选择永久跳过迁移
+    skipMigrationPermanently() {
+        localStorage.setItem('kv_migration_skip', 'true');
+        console.log('⏭️ 用户选择永久跳过 KV 迁移');
     }
 
     // 檢查是否有 localStorage 數據
@@ -48,8 +65,20 @@ class KVStorageManager {
 
     // 提示用戶遷移數據
     promptForMigration() {
-        if (confirm('檢測到本地存儲的用戶數據，是否要遷移到雲端存儲？這樣可以在不同設備間同步您的設置。')) {
+    // 检查是否已经迁移过（使用标记）
+        const migrationFlag = localStorage.getItem('kv_migration_completed');
+        
+        if (migrationFlag === 'true') {
+            console.log('✅ 已完成 KV 迁移，跳过提示');
+            return;
+        }
+        
+        if (confirm('检测到本地存储的用户数据，是否要迁移到云端存储？这样可以在不同设备间同步您的设置。')) {
             this.migrateToKV();
+        } else {
+            // 用户选择不迁移，也设置标记避免重复提示
+            localStorage.setItem('kv_migration_skip', 'true');
+            console.log('ℹ️ 用户选择不迁移数据');
         }
     }
 
@@ -332,19 +361,24 @@ class KVStorageManager {
 
             const data = await response.json();
             if (data.success) {
-                console.log(`✅ 數據遷移完成，共遷移 ${data.data.migratedCount} 條記錄`);
+                console.log(`✅ 数据迁移完成，共迁移 ${data.data.migratedCount} 条记录`);
                 
-                if (confirm('數據遷移完成！是否清除本地存儲的數據？（雲端數據已保存）')) {
-                    localStorage.removeItem('user_custom_lyrics');
-                    localStorage.removeItem('user_lyrics_providers');
-                }
+                // ✨ 关键修改：设置迁移完成标记
+                localStorage.setItem('kv_migration_completed', 'true');
+                
+                // 立即清空本地存储的数据（而不是询问用户）
+                localStorage.removeItem('user_custom_lyrics');
+                localStorage.removeItem('user_lyrics_providers');
+                localStorage.removeItem('kv_migration_skip');
+                
+                console.log('🧹 已清空本地存储数据');
                 
                 return data.data;
             } else {
-                throw new Error(data.error || '遷移失敗');
+                throw new Error(data.error || '迁移失败');
             }
         } catch (error) {
-            console.error('數據遷移失敗:', error);
+            console.error('数据迁移失败:', error);
             throw error;
         }
     }
