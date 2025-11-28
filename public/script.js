@@ -1958,19 +1958,26 @@ class SpotifyLyricsPlayer {
             
             // 如果检测到在登录页面，立即触发登录
             if (authSectionVisible || playerSectionHidden || hasLoginButton) {
-                this.log('🚀 检测到登录页面，立即触发自动登录');
-                
-                // 延迟1秒后自动点击登录按钮
-                setTimeout(() => {
-                    if (loginButton && getComputedStyle(loginButton).display !== 'none') {
-                        this.log('🖱️ 自动点击登录按钮');
-                        loginButton.click();
-                    } else {
-                        // 直接跳转到认证页面
-                        this.log('🔗 直接跳转到认证页面');
-                        window.location.href = '/api/auth';
-                    }
-                }, 1000);
+                const k = 'auth_redirect_cooldown_until';
+                const now = Date.now();
+                const until = parseInt(localStorage.getItem(k) || '0', 10);
+                const inAuthFlow = window.location.pathname.indexOf('/api/auth') !== -1 || window.location.pathname.indexOf('/callback') !== -1;
+                if (!inAuthFlow && (!until || now >= until)) {
+                    this.log('🚀 检测到登录页面，立即触发自动登录');
+                    setTimeout(() => {
+                        if (loginButton && getComputedStyle(loginButton).display !== 'none') {
+                            localStorage.setItem(k, String(Date.now() + 60 * 1000));
+                            this.log('🖱️ 自动点击登录按钮');
+                            loginButton.click();
+                        } else {
+                            localStorage.setItem(k, String(Date.now() + 60 * 1000));
+                            this.log('🔗 直接跳转到认证页面');
+                            window.location.href = '/api/auth';
+                        }
+                    }, 1000);
+                } else {
+                    this.log('⏳ 跳过自动登录（正在认证流程或冷却中）');
+                }
             } else {
                 this.log('ℹ️ 播放器已运行或状态未知，尝试checkAuthStatus');
                 this.checkAuthStatus();
