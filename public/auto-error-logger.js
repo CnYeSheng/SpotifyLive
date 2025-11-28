@@ -105,17 +105,8 @@ class AutoErrorLogger {
             const errorFlag = localStorage.getItem('auto_error_logger_has_errors');
             if (errorFlag === 'true') {
                 console.log('🚨 檢測到頁面重載前有錯誤');
-                
-                // 檢查用戶設定是否停用自動下載
-                const shouldAutoDownload = this.isAutoDownloadEnabled();
-                
-                if (shouldAutoDownload) {
-                    console.log('立即觸發下載');
-                    this.downloadLogs('reload_recovery', '重要');
-                } else {
-                    console.log('🔒 自動下載已停用，跳過重載錯誤日誌下載');
-                }
-                
+                // 重載恢復時不自動下載，僅清除標記
+                console.log('ℹ️ 重載恢復模式：不觸發下載');
                 localStorage.removeItem('auto_error_logger_has_errors');
             }
         } catch (error) {

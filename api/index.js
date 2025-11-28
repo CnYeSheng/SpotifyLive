@@ -11,7 +11,7 @@ const kvStorage = new KVStorageManager();
 app.use(cors({
     origin: true,
     credentials: true,
-    allowedHeaders: ['Content-Type', 'X-Session-Id']
+    allowedHeaders: ['Content-Type', 'X-Session-Id', 'X-Spotify-User-Id']
 }));
 app.use(express.json());
 

@@ -13,6 +13,7 @@ class EnhancedTokenManager {
         this.retryQueue = [];
         this.maxRetries = 3;
         this.baseRetryDelay = 1000;
+        this.channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('spotify_auth') : null;
         
         // 事件監聽器
         this.onTokenRefreshed = null;
@@ -32,6 +33,7 @@ class EnhancedTokenManager {
         this.setupAutoRefresh();
         this.setupHeartbeat();
         this.setupVisibilityHandling();
+        this.setupTabSync();
     }
     
     // 從 localStorage 載入已存儲的會話
@@ -78,6 +80,7 @@ class EnhancedTokenManager {
             
             // 設置自動刷新
             this.setupAutoRefresh();
+            this.broadcastSession();
             
         } catch (error) {
             this.log(`❌ 保存會話失敗: ${error.message}`);
@@ -260,6 +263,7 @@ class EnhancedTokenManager {
                 
                 localStorage.setItem('spotify_session_data', JSON.stringify(sessionData));
                 this.log('✅ 會話信息已更新');
+                this.broadcastSession();
             } catch (error) {
                 this.log(`❌ 更新會話信息失敗: ${error.message}`);
             }
@@ -394,6 +398,32 @@ class EnhancedTokenManager {
     destroy() {
         this.clearTimers();
         this.log('🗑️ Token 管理器已銷毀');
+    }
+
+    setupTabSync() {
+        try {
+            if (!this.channel) return;
+            this.channel.onmessage = (ev) => {
+                const data = ev.data || {};
+                if (data.type === 'session-update' && data.payload && data.payload.sessionId) {
+                    const { sessionId, expiresAt } = data.payload;
+                    if (sessionId && sessionId !== this.sessionId) {
+                        this.log(`🔄 接收其他分頁的會話更新: ${sessionId.substring(0,8)}...`);
+                        this.saveSession(sessionId, expiresAt || (Date.now() + 60 * 60 * 1000), this.refreshToken);
+                    }
+                }
+            };
+        } catch (e) {}
+    }
+
+    broadcastSession() {
+        try {
+            if (!this.channel || !this.sessionId) return;
+            this.channel.postMessage({
+                type: 'session-update',
+                payload: { sessionId: this.sessionId, expiresAt: this.tokenExpiresAt }
+            });
+        } catch (e) {}
     }
 }
 
