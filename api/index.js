@@ -29,8 +29,18 @@ function generateSessionId() {
 
 // Get user session from request
 function getUserSession(req) {
-    const sessionId = req.headers['x-session-id'] || req.query.sessionId;
-    return sessionId ? userSessions.get(sessionId) : null;
+    const headerId = req.headers['x-session-id'] || req.query.sessionId;
+    if (headerId) {
+        return userSessions.get(headerId) || null;
+    }
+    const cookieHeader = req.headers.cookie || '';
+    const cookies = Object.fromEntries(cookieHeader.split(';').map(v => {
+        const idx = v.indexOf('=');
+        if (idx === -1) return [v.trim(), ''];
+        return [v.slice(0, idx).trim(), decodeURIComponent(v.slice(idx + 1))];
+    }));
+    const cookieId = cookies['spotify_session'];
+    return cookieId ? userSessions.get(cookieId) || null : null;
 }
 
 // Spotify authorization URL with enhanced scopes
@@ -154,12 +164,20 @@ async function refreshAccessToken(session) {
 }
 
 // Check authentication status
-app.get('/api/auth-status', (req, res) => {
+app.get('/api/auth-status', async (req, res) => {
     const session = getUserSession(req);
-    res.json({ 
-        authenticated: !!session,
-        sessionId: session ? req.headers['x-session-id'] || req.query.sessionId : null
-    });
+    const sessionId = req.headers['x-session-id'] || req.query.sessionId;
+    if (!session) {
+        return res.json({ authenticated: false, sessionId: null });
+    }
+    const fiveMinutesFromNow = Date.now() + (5 * 60 * 1000);
+    if (session.expiresAt <= fiveMinutesFromNow) {
+        const refreshed = await refreshAccessToken(session);
+        if (!refreshed) {
+            return res.json({ authenticated: false, sessionId: sessionId, error: 'Token refresh failed' });
+        }
+    }
+    res.json({ authenticated: true, sessionId: sessionId });
 });
 
 // Get currently playing track with enhanced information

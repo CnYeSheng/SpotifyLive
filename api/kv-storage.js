@@ -1,4 +1,4 @@
-// api/kv-storage-manager.js
+// api/kv-storage.js
 class KVStorageManager {
     constructor() {
         // 檢查 KV 可用性

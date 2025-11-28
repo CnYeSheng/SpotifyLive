@@ -171,8 +171,18 @@ function generateSessionId() {
 
 // Get user session from request
 function getUserSession(req) {
-    const sessionId = req.headers['x-session-id'] || req.query.sessionId;
-    return sessionId ? userSessions.get(sessionId) : null;
+    const headerId = req.headers['x-session-id'] || req.query.sessionId;
+    if (headerId) {
+        return userSessions.get(headerId) || null;
+    }
+    const cookieHeader = req.headers.cookie || '';
+    const cookies = Object.fromEntries(cookieHeader.split(';').map(v => {
+        const idx = v.indexOf('=');
+        if (idx === -1) return [v.trim(), ''];
+        return [v.slice(0, idx).trim(), decodeURIComponent(v.slice(idx + 1))];
+    }));
+    const cookieId = cookies['spotify_session'];
+    return cookieId ? userSessions.get(cookieId) || null : null;
 }
 
 // Spotify authorization URL with enhanced scopes
@@ -225,6 +235,11 @@ app.get('/callback', async (req, res) => {
             accessToken: response.data.access_token,
             refreshToken: response.data.refresh_token,
             expiresAt: Date.now() + (response.data.expires_in * 1000)
+        });
+        res.cookie('spotify_session', sessionId, {
+            maxAge: 30 * 60 * 1000,
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production'
         });
         
         res.redirect(`/?auth=success&session=${sessionId}`);
