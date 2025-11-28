@@ -17,6 +17,10 @@ class KVStorageManager {
     
     // 生成用戶專屬 key
     generateUserKey(req) {
+        const userHeaderId = req.headers['x-spotify-user-id'];
+        if (userHeaderId) {
+            return `user:${userHeaderId}`;
+        }
         const headerId = req.headers['x-session-id'];
         if (headerId) {
             return `user:${headerId}`;

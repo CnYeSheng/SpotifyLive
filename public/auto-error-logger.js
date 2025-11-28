@@ -48,6 +48,16 @@ class AutoErrorLogger {
         this.init();
     }
 
+    isAutoDownloadEnabled() {
+        try {
+            const raw = (localStorage.getItem('auto_error_download_enabled') || '').toLowerCase();
+            if (!raw) return false; // 默認關閉
+            return !(['false', '0', 'no', 'off', 'disabled'].includes(raw));
+        } catch (e) {
+            return false;
+        }
+    }
+
     init() {
         // 首先恢復之前的日誌
         this.restorePersistentLogs();
@@ -97,8 +107,7 @@ class AutoErrorLogger {
                 console.log('🚨 檢測到頁面重載前有錯誤');
                 
                 // 檢查用戶設定是否停用自動下載
-                const autoDownloadSetting = localStorage.getItem('auto_error_download_enabled');
-                const shouldAutoDownload = autoDownloadSetting !== 'false';
+                const shouldAutoDownload = this.isAutoDownloadEnabled();
                 
                 if (shouldAutoDownload) {
                     console.log('立即觸發下載');
@@ -463,8 +472,7 @@ class AutoErrorLogger {
         console.warn('⚡ Session錯誤 - 檢查自動下載設定');
         this.downloadTimeout = setTimeout(() => {
             // 檢查用戶設定是否停用自動下載
-            const autoDownloadSetting = localStorage.getItem('auto_error_download_enabled');
-            const shouldAutoDownload = autoDownloadSetting !== 'false';
+            const shouldAutoDownload = this.isAutoDownloadEnabled();
             
             if (shouldAutoDownload) {
                 console.warn('立即觸發session錯誤日誌下載');
@@ -517,8 +525,7 @@ class AutoErrorLogger {
         
         this.downloadTimeout = setTimeout(() => {
             // 檢查用戶設定是否停用自動下載
-            const autoDownloadSetting = localStorage.getItem('auto_error_download_enabled');
-            const shouldAutoDownload = autoDownloadSetting !== 'false';
+            const shouldAutoDownload = this.isAutoDownloadEnabled();
             
             if (shouldAutoDownload) {
                 this.downloadLogs('auto', severity);

@@ -228,6 +228,7 @@ app.get('/api/current-track', checkSessionValidity, async (req, res) => {
             repeat_state: data.repeat_state,
             smart_shuffle: data.smart_shuffle || false,
             is_premium: user.product === 'premium',
+            user_id: user.id,
             device: device ? {
                 id: device.id,
                 name: device.name,

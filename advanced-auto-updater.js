@@ -377,6 +377,7 @@ class AdvancedAutoUpdater {
                 if (data.is_premium !== undefined) {
                     const profile = {
                         isPremium: data.is_premium,
+                        userId: data.user_id,
                         lastUpdated: Date.now()
                     };
                     

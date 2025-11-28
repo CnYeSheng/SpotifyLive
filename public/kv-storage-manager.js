@@ -100,8 +100,10 @@ class KVStorageManager {
         if (this.kvAvailable) {
             try {
                 const s = JSON.parse(localStorage.getItem('spotify_session_data') || '{}');
+                const profile = JSON.parse(localStorage.getItem('spotify_user_profile') || '{}');
                 const headers = { 'Content-Type': 'application/json' };
                 if (s && s.sessionId) headers['X-Session-Id'] = s.sessionId;
+                if (profile && profile.userId) headers['X-Spotify-User-Id'] = profile.userId;
                 const response = await fetch(`${this.apiBase}/api/kv/user-lyrics`, {
                     method: 'POST',
                     headers,
@@ -205,8 +207,10 @@ class KVStorageManager {
         if (this.kvAvailable) {
             try {
                 const s = JSON.parse(localStorage.getItem('spotify_session_data') || '{}');
+                const profile = JSON.parse(localStorage.getItem('spotify_user_profile') || '{}');
                 const headers = { 'Content-Type': 'application/json' };
                 if (s && s.sessionId) headers['X-Session-Id'] = s.sessionId;
+                if (profile && profile.userId) headers['X-Spotify-User-Id'] = profile.userId;
                 const response = await fetch(`${this.apiBase}/api/kv/user-provider`, {
                     method: 'POST',
                     headers,
@@ -403,8 +407,10 @@ class KVStorageManager {
                 const endpoint = storageType === 'user_custom_lyrics' ? 
                     '/api/kv/user-lyrics' : '/api/kv/user-provider';
                 const s = JSON.parse(localStorage.getItem('spotify_session_data') || '{}');
+                const profile = JSON.parse(localStorage.getItem('spotify_user_profile') || '{}');
                 const headers = { 'Content-Type': 'application/json' };
                 if (s && s.sessionId) headers['X-Session-Id'] = s.sessionId;
+                if (profile && profile.userId) headers['X-Spotify-User-Id'] = profile.userId;
                 const body = storageType === 'user_custom_lyrics'
                     ? JSON.stringify({ trackInfo, lyrics: data.lyrics, lyricsType: data.lyricsType, source: data.source })
                     : JSON.stringify({ trackInfo, provider: data.provider });
