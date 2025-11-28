@@ -94,8 +94,19 @@ class AutoErrorLogger {
         try {
             const errorFlag = localStorage.getItem('auto_error_logger_has_errors');
             if (errorFlag === 'true') {
-                console.log('🚨 檢測到頁面重載前有錯誤，立即觸發下載');
-                this.downloadLogs('reload_recovery', '重要');
+                console.log('🚨 檢測到頁面重載前有錯誤');
+                
+                // 檢查用戶設定是否停用自動下載
+                const autoDownloadSetting = localStorage.getItem('auto_error_download_enabled');
+                const shouldAutoDownload = autoDownloadSetting !== 'false';
+                
+                if (shouldAutoDownload) {
+                    console.log('立即觸發下載');
+                    this.downloadLogs('reload_recovery', '重要');
+                } else {
+                    console.log('🔒 自動下載已停用，跳過重載錯誤日誌下載');
+                }
+                
                 localStorage.removeItem('auto_error_logger_has_errors');
             }
         } catch (error) {
@@ -449,9 +460,18 @@ class AutoErrorLogger {
             clearTimeout(this.downloadTimeout);
         }
         
-        console.warn('⚡ Session錯誤 - 立即觸發日誌下載');
+        console.warn('⚡ Session錯誤 - 檢查自動下載設定');
         this.downloadTimeout = setTimeout(() => {
-            this.downloadLogs('session_error', '嚴重');
+            // 檢查用戶設定是否停用自動下載
+            const autoDownloadSetting = localStorage.getItem('auto_error_download_enabled');
+            const shouldAutoDownload = autoDownloadSetting !== 'false';
+            
+            if (shouldAutoDownload) {
+                console.warn('立即觸發session錯誤日誌下載');
+                this.downloadLogs('session_error', '嚴重');
+            } else {
+                console.log('🔒 自動下載已停用，跳過session錯誤日誌下載');
+            }
             this.isErrorDetected = false;
         }, 500); // 極短延遲，確保在頁面重載前執行
     }
