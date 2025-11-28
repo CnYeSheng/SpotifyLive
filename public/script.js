@@ -1,4 +1,5 @@
-﻿class SpotifyLyricsPlayer {
+﻿// public/script.js
+class SpotifyLyricsPlayer {
     constructor() {
         // 日誌輔助函數 - 必須放在最前面
         this.log = (message, type = 'info') => {

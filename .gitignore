@@ -88,6 +88,7 @@ logs
 
 # Temporary files
 tmp_rovodev_*
+text檔案/
 
 # SSL certificates
 certs/
