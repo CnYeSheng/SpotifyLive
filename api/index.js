@@ -574,7 +574,18 @@ app.get('/api/library/check/:trackId', async (req, res) => {
             if (!refreshed) {
                 return res.status(401).json({ error: 'Token expired, please re-authenticate' });
             }
-            return res.redirect(307, req.originalUrl);
+            try {
+                const retry = await axios.get(`https://api.spotify.com/v1/me/tracks/contains?ids=${trackId}`, {
+                    headers: { 'Authorization': `Bearer ${session.accessToken}` }
+                });
+                const isLiked = retry.data && retry.data[0] === true;
+                return res.json({ isLiked });
+            } catch (e) {
+                return res.status(e.response?.status || 500).json({ 
+                    error: 'Failed to check track status',
+                    details: e.response?.data?.error?.message || e.message
+                });
+            }
         }
         
         console.error('Error checking if track is liked:', error.response?.data || error.message);
@@ -655,7 +666,31 @@ app.get('/api/player/queue', async (req, res) => {
             if (!refreshed) {
                 return res.status(401).json({ error: 'Token expired, please re-authenticate' });
             }
-            return res.redirect(307, req.originalUrl);
+            try {
+                const retry = await axios.get('https://api.spotify.com/v1/me/player/queue', {
+                    headers: { 'Authorization': `Bearer ${session.accessToken}` }
+                });
+                if (retry.data && retry.data.queue) {
+                    const queue = retry.data.queue.map(track => ({
+                        id: track.id,
+                        name: track.name,
+                        artists: track.artists || [],
+                        artist: track.artists?.map(a => a.name).join(', ') || '未知歌手',
+                        album: track.album || {},
+                        image: track.album?.images?.[0]?.url || null,
+                        duration_ms: track.duration_ms || 0
+                    }));
+                    const nextTrack = queue[0] || null;
+                    return res.json({ queue, nextTrack });
+                } else {
+                    return res.json({ queue: [], nextTrack: null });
+                }
+            } catch (e) {
+                return res.status(e.response?.status || 500).json({ 
+                    error: 'Failed to get queue',
+                    details: e.response?.data?.error?.message || e.message
+                });
+            }
         }
         
         console.error('Error getting queue:', error.response?.data || error.message);
