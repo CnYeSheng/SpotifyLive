@@ -470,6 +470,9 @@ class SpotifyLyricsPlayer {
             this.sessionId = urlParams.get('session');
             if (this.sessionId) {
                 localStorage.setItem('spotify_session_id', this.sessionId);
+                try {
+                    localStorage.setItem('spotify_session_data', JSON.stringify({ sessionId: this.sessionId, savedAt: Date.now() }));
+                } catch (e) {}
                 this.protectSession();
                 this.log(`✅ 新 sessionId 已保存: ${this.sessionId.substring(0, 8)}...`);
                 if (this.authChannel) {
@@ -483,6 +486,9 @@ class SpotifyLyricsPlayer {
             const storedSessionId = localStorage.getItem('spotify_session_id');
             if (storedSessionId) {
                 this.sessionId = storedSessionId;
+                try {
+                    localStorage.setItem('spotify_session_data', JSON.stringify({ sessionId: this.sessionId, savedAt: Date.now() }));
+                } catch (e) {}
                 this.protectSession();
                 this.log(`🔄 從 localStorage 恢復 sessionId: ${this.sessionId.substring(0, 8)}...`);
                 if (this.authChannel) {
@@ -1349,6 +1355,9 @@ class SpotifyLyricsPlayer {
                 if (data.sessionId && !this.sessionId) {
                     this.sessionId = data.sessionId;
                     localStorage.setItem('spotify_session_id', this.sessionId);
+                    try {
+                        localStorage.setItem('spotify_session_data', JSON.stringify({ sessionId: this.sessionId, savedAt: Date.now() }));
+                    } catch (e) {}
                     this.log(`✅ 從服務端獲得新 sessionId: ${this.sessionId.substring(0, 8)}...`);
                 }
                 this.log('✅ 認證狀態有效，啟動播放器');
@@ -1697,6 +1706,9 @@ class SpotifyLyricsPlayer {
                 if (authData.sessionId && authData.sessionId !== this.sessionId) {
                     this.sessionId = authData.sessionId;
                     localStorage.setItem('spotify_session_id', this.sessionId);
+                    try {
+                        localStorage.setItem('spotify_session_data', JSON.stringify({ sessionId: this.sessionId, savedAt: Date.now() }));
+                    } catch (e) {}
                     this.log(`🔄 Session ID 已更新: ${this.sessionId.substring(0, 8)}...`);
                     if (this.authChannel) {
                         this.authChannel.postMessage({ type: 'session-update', sessionId: this.sessionId });
@@ -2124,6 +2136,9 @@ class SpotifyLyricsPlayer {
                         this.log('✅ 静默token刷新成功');
                         this.sessionId = refreshData.sessionId;
                         localStorage.setItem('spotify_session_id', this.sessionId);
+                        try {
+                            localStorage.setItem('spotify_session_data', JSON.stringify({ sessionId: this.sessionId, savedAt: Date.now() }));
+                        } catch (e) {}
                         this.consecutiveAuthErrors = 0;
                         return true;
                     }
@@ -2149,6 +2164,9 @@ class SpotifyLyricsPlayer {
                     this.log('✅ cookie认证成功，获得新session');
                     this.sessionId = newSessionHeader;
                     localStorage.setItem('spotify_session_id', this.sessionId);
+                    try {
+                        localStorage.setItem('spotify_session_data', JSON.stringify({ sessionId: this.sessionId, savedAt: Date.now() }));
+                    } catch (e) {}
                     this.consecutiveAuthErrors = 0;
                     if (this.authChannel) {
                         this.authChannel.postMessage({ type: 'session-update', sessionId: this.sessionId });
@@ -2452,6 +2470,9 @@ class SpotifyLyricsPlayer {
                     if (refreshData.sessionId && refreshData.sessionId !== this.sessionId) {
                         this.sessionId = refreshData.sessionId;
                         localStorage.setItem('spotify_session_id', this.sessionId);
+                        try {
+                            localStorage.setItem('spotify_session_data', JSON.stringify({ sessionId: this.sessionId, savedAt: Date.now() }));
+                        } catch (e) {}
                         this.log(`🔄 Session ID 已更新: ${this.sessionId.substring(0, 8)}...`);
                     }
                     
@@ -2541,6 +2562,9 @@ class SpotifyLyricsPlayer {
             if (storedSessionId && storedSessionId !== this.sessionId) {
                 this.sessionId = storedSessionId;
                 this.log(`🔄 從 localStorage 恢復不同 session: ${this.sessionId.substring(0, 8)}...`);
+                try {
+                    localStorage.setItem('spotify_session_data', JSON.stringify({ sessionId: this.sessionId, savedAt: Date.now() }));
+                } catch (e) {}
                 
                 const finalTestResponse = await fetch(`${this.apiBase}/api/current-track`, {
                     headers: { 'X-Session-Id': this.sessionId }
@@ -2630,6 +2654,17 @@ class SpotifyLyricsPlayer {
         // 更新 currentTrack
         this.currentTrack = data;
         this.log(`🎵 歌曲數據已更新: ${data.name || 'Unknown'} - ${data.artist || 'Unknown Artist'}`);
+
+        try {
+            if (data.user_id !== undefined || data.is_premium !== undefined) {
+                const profile = {
+                    userId: data.user_id,
+                    isPremium: !!data.is_premium,
+                    lastUpdated: Date.now()
+                };
+                localStorage.setItem('spotify_user_profile', JSON.stringify(profile));
+            }
+        } catch (e) {}
 
         // 触发歌曲切换动画
         if (isNewTrack) {
