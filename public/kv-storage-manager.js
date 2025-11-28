@@ -99,9 +99,12 @@ class KVStorageManager {
         // 1. 先嘗試保存到 KV (如果可用)
         if (this.kvAvailable) {
             try {
+                const s = JSON.parse(localStorage.getItem('spotify_session_data') || '{}');
+                const headers = { 'Content-Type': 'application/json' };
+                if (s && s.sessionId) headers['X-Session-Id'] = s.sessionId;
                 const response = await fetch(`${this.apiBase}/api/kv/user-lyrics`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers,
                     body: JSON.stringify(data)
                 });
 
@@ -201,9 +204,12 @@ class KVStorageManager {
         // 1. 先嘗試保存到 KV (如果可用)
         if (this.kvAvailable) {
             try {
+                const s = JSON.parse(localStorage.getItem('spotify_session_data') || '{}');
+                const headers = { 'Content-Type': 'application/json' };
+                if (s && s.sessionId) headers['X-Session-Id'] = s.sessionId;
                 const response = await fetch(`${this.apiBase}/api/kv/user-provider`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers,
                     body: JSON.stringify(data)
                 });
 
@@ -396,11 +402,16 @@ class KVStorageManager {
             try {
                 const endpoint = storageType === 'user_custom_lyrics' ? 
                     '/api/kv/user-lyrics' : '/api/kv/user-provider';
-
+                const s = JSON.parse(localStorage.getItem('spotify_session_data') || '{}');
+                const headers = { 'Content-Type': 'application/json' };
+                if (s && s.sessionId) headers['X-Session-Id'] = s.sessionId;
+                const body = storageType === 'user_custom_lyrics'
+                    ? JSON.stringify({ trackInfo, lyrics: data.lyrics, lyricsType: data.lyricsType, source: data.source })
+                    : JSON.stringify({ trackInfo, provider: data.provider });
                 const response = await fetch(`${this.apiBase}${endpoint}`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
+                    headers,
+                    body
                 });
 
                 if (response.ok) {

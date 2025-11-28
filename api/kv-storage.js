@@ -17,9 +17,19 @@ class KVStorageManager {
     
     // 生成用戶專屬 key
     generateUserKey(req) {
-        const sessionId = req.headers['x-session-id'] || req.cookies?.spotify_session;
-        if (!sessionId) throw new Error('缺少 sessionId');
-        return `user:${sessionId}`;
+        const headerId = req.headers['x-session-id'];
+        if (headerId) {
+            return `user:${headerId}`;
+        }
+        const cookieHeader = req.headers.cookie || '';
+        const cookies = Object.fromEntries(cookieHeader.split(';').map(v => {
+            const idx = v.indexOf('=');
+            if (idx === -1) return [v.trim(), ''];
+            return [v.slice(0, idx).trim(), decodeURIComponent(v.slice(idx + 1))];
+        }));
+        const cookieId = cookies['spotify_session'];
+        if (!cookieId) throw new Error('缺少 sessionId');
+        return `user:${cookieId}`;
     }
     
     // 生成 track 專屬 key
