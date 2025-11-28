@@ -1361,10 +1361,10 @@ class SpotifyLyricsPlayer {
                 this.startTracking();
                 this.startTokenRefreshTimer();
             } else {
-                this.log('❌ 認證狀態無效，清除 sessionId');
+                this.log('❌ 認證狀態無效');
                 this.showAuthSection();
-                localStorage.removeItem('spotify_session_id');
-                this.sessionId = null;
+                this.showSessionExpiredMessage();
+                this.scheduleAutoLogin();
             }
         } catch (error) {
             this.log(`❌ 檢查認證狀態失敗: ${error.message}`);
