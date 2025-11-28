@@ -1345,27 +1345,231 @@ app.post('/api/refresh-token', async (req, res) => {
 // 保存用戶自定義歌詞
 app.post('/api/kv/user-lyrics', async (req, res) => {
     try {
-        const { trackInfo, lyrics, lyricsType, source } = req.body;
+        const { trackKey, trackInfo, lyrics, lyricsType, source } = req.body;
         
         if (!trackInfo || !lyrics) {
-            return res.status(400).json({
-                success: false,
-                error: '缺少必要參數：trackInfo 和 lyrics'
+            return res.status(400).json({ 
+                success: false, 
+                error: '缺少必要参数' 
             });
         }
 
-        const success = await kvStorage.saveUserCustomLyrics(req, trackInfo, lyrics, lyricsType, source);
+        const key = `lyrics:${trackInfo.id}:${trackInfo.name}:${trackInfo.artist}`;
         
-        res.json({
-            success: true,
-            message: '用戶自定義歌詞已保存',
-            data: { trackKey: kvStorage.generateTrackKey(trackInfo) }
+        const data = {
+            trackInfo,
+            lyrics,
+            lyricsType,
+            source,
+            timestamp: Date.now(),
+            lastModified: Date.now(),
+            version: 2
+        };
+
+        // ✨ 关键：设置 30 天的过期时间
+        // EXAT = 时间戳（秒），所以 30天 = 30 * 24 * 60 * 60 秒
+        const expiresIn = 30 * 24 * 60 * 60; // 秒
+
+        await redis.setex(key, expiresIn, JSON.stringify(data));
+
+        res.json({ 
+            success: true, 
+            message: '歌词已保存（30天不过期）',
+            data: { key, expiresIn }
         });
+
     } catch (error) {
-        console.error('保存用戶自定義歌詞失敗:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
+        console.error('保存歌词失败:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+app.get('/api/kv/user-lyrics/:trackKey', async (req, res) => {
+    try {
+        const { trackKey } = req.params;
+        const trackInfo = req.headers['x-track-info'] ? 
+            JSON.parse(req.headers['x-track-info']) : null;
+
+        if (!trackInfo) {
+            return res.status(400).json({ 
+                success: false, 
+                error: '缺少歌曲信息' 
+            });
+        }
+
+        const key = `lyrics:${trackInfo.id}:${trackInfo.name}:${trackInfo.artist}`;
+        const data = await redis.get(key);
+
+        if (data) {
+            // ✨ 自动刷新过期时间（每次读取都延长 30 天）
+            const expiresIn = 30 * 24 * 60 * 60;
+            await redis.expire(key, expiresIn);
+
+            res.json({ 
+                success: true, 
+                data: JSON.parse(data),
+                refreshed: true
+            });
+        } else {
+            res.json({ 
+                success: false, 
+                message: '未找到歌词' 
+            });
+        }
+
+    } catch (error) {
+        console.error('获取歌词失败:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+// 获取歌词时间偏移
+app.get('/api/kv/get-time-offset/:trackKey', async (req, res) => {
+    try {
+        const { trackKey } = req.params;
+        const trackInfo = req.headers['x-track-info'] ? 
+            JSON.parse(req.headers['x-track-info']) : null;
+
+        if (!trackInfo) {
+            return res.json({ timeOffset: 0 });
+        }
+
+        const key = `offset:${trackInfo.id}:${trackInfo.name}:${trackInfo.artist}`;
+        const data = await redis.get(key);
+
+        if (data) {
+            const parsed = JSON.parse(data);
+            
+            // ✨ 自动刷新过期时间
+            const expiresIn = 30 * 24 * 60 * 60;
+            await redis.expire(key, expiresIn);
+
+            res.json({ 
+                success: true, 
+                timeOffset: parsed.timeOffset 
+            });
+        } else {
+            res.json({ 
+                success: true, 
+                timeOffset: 0 
+            });
+        }
+
+    } catch (error) {
+        console.error('获取时间偏移失败:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message,
+            timeOffset: 0
+        });
+    }
+});
+
+// 刷新歌词过期时间
+app.post('/api/kv/refresh-expiry/:trackKey', async (req, res) => {
+    try {
+        const { trackKey } = req.params;
+        const trackInfo = req.headers['x-track-info'] ? 
+            JSON.parse(req.headers['x-track-info']) : null;
+
+        if (!trackInfo) {
+            return res.status(400).json({ 
+                success: false, 
+                error: '缺少歌曲信息' 
+            });
+        }
+
+        const key = `lyrics:${trackInfo.id}:${trackInfo.name}:${trackInfo.artist}`;
+        
+        // ✨ 刷新 30 天过期时间
+        const expiresIn = 30 * 24 * 60 * 60;
+        const refreshed = await redis.expire(key, expiresIn);
+
+        if (refreshed) {
+            res.json({ 
+                success: true, 
+                message: '过期时间已刷新'
+            });
+        } else {
+            res.json({ 
+                success: false, 
+                message: '歌词不存在' 
+            });
+        }
+
+    } catch (error) {
+        console.error('刷新过期时间失败:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+// 清理过期歌词
+app.post('/api/kv/cleanup-expired', async (req, res) => {
+    try {
+        // Redis 会自动清理过期数据，但你可以手动触发
+        res.json({ 
+            success: true, 
+            message: '过期歌词自动清理已触发',
+            deleted: 0 // Redis 自动处理
+        });
+
+    } catch (error) {
+        console.error('清理过期歌词失败:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+// 导出所有歌词（备份用）
+app.get('/api/kv/export-all-lyrics', async (req, res) => {
+    try {
+        // 注意：这个操作可能比较耗时
+        const allLyrics = [];
+        
+        // 扫描所有 lyrics: 开头的 key
+        let cursor = '0';
+        const pattern = 'lyrics:*';
+
+        do {
+            const result = await redis.scan(cursor, { 
+                match: pattern, 
+                count: 100 
+            });
+            
+            cursor = result[0];
+            const keys = result[1];
+
+            for (const key of keys) {
+                const data = await redis.get(key);
+                if (data) {
+                    allLyrics.push(JSON.parse(data));
+                }
+            }
+        } while (cursor !== '0');
+
+        res.json({ 
+            success: true, 
+            totalLyrics: allLyrics.length,
+            lyrics: allLyrics,
+            exportedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('导出歌词失败:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
         });
     }
 });

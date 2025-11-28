@@ -775,6 +775,323 @@ class KVStorageManager {
     }
 }
 
+// 🔧 修复脚本：解决歌词保存失效和时间同步问题
+// 添加到 kv-storage-manager.js
+
+class LyricsStorageManager {
+    constructor() {
+        this.apiBase = window.location.origin;
+        this.customLyricsCache = new Map();    // 内存缓存
+        this.lyricsTimeOffsets = new Map();    // 时间偏移保存
+        this.initStorage();
+    }
+
+    // ==================
+    // 问题1：歌词过期失效
+    // ==================
+    // 原因：没有设置 TTL（过期时间）
+    // 解决：使用 Upstash Redis 的 EXAT 功能设置 30 天不过期
+
+    async saveUserLyrics(trackInfo, lyrics, lyricsType, source) {
+        const trackKey = this.generateTrackKey(trackInfo);
+        
+        try {
+            const lyricsData = {
+                trackKey,
+                trackInfo: {
+                    id: trackInfo.id,
+                    name: trackInfo.name,
+                    artist: trackInfo.artist
+                },
+                lyrics,
+                lyricsType,
+                source,
+                timestamp: Date.now(),
+                // ✨ 关键：添加更新时间
+                lastModified: Date.now(),
+                // ✨ 添加版本号以支持未来升级
+                version: 2
+            };
+
+            // 📤 上传到 Upstash Redis
+            const response = await fetch(`${this.apiBase}/api/kv/user-lyrics`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(lyricsData)
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            // 💾 同时保存到本地 localStorage 作为备份
+            this.saveToLocalStorageBackup(trackKey, lyricsData);
+
+            console.log(`✅ 歌词已保存（30天不过期）: ${trackInfo.artist} - ${trackInfo.name}`);
+            return true;
+        } catch (error) {
+            console.error('❌ 保存歌词失败:', error);
+            // 降级：仅保存到 localStorage
+            this.saveToLocalStorageBackup(trackKey, lyricsData);
+            return false;
+        }
+    }
+
+    async getUserLyrics(trackInfo) {
+        const trackKey = this.generateTrackKey(trackInfo);
+
+        try {
+            // 1️⃣ 先查 Redis（云端）
+            const response = await fetch(`${this.apiBase}/api/kv/user-lyrics/${trackKey}`, {
+                headers: { 'X-Track-Info': JSON.stringify(trackInfo) }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.data) {
+                    console.log(`✅ 从 Redis 读取歌词: ${trackInfo.artist} - ${trackInfo.name}`);
+                    
+                    // 更新最后使用时间（刷新 30 天计时器）
+                    this.refreshLyricsExpiry(trackKey);
+                    
+                    return data.data;
+                }
+            }
+        } catch (error) {
+            console.warn('⚠️ Redis 读取失败，尝试本地:', error.message);
+        }
+
+        // 2️⃣ 再查 localStorage（本地备份）
+        try {
+            const backup = this.getFromLocalStorageBackup(trackKey);
+            if (backup) {
+                console.log(`✅ 从本地备份读取歌词: ${trackInfo.artist} - ${trackInfo.name}`);
+                return backup;
+            }
+        } catch (error) {
+            console.warn('⚠️ 本地备份读取失败:', error);
+        }
+
+        console.log(`❌ 未找到歌词: ${trackInfo.artist} - ${trackInfo.name}`);
+        return null;
+    }
+
+    // ✨ 新功能：刷新歌词过期时间（防止过期）
+    async refreshLyricsExpiry(trackKey) {
+        try {
+            await fetch(`${this.apiBase}/api/kv/refresh-expiry/${trackKey}`, {
+                method: 'POST'
+            });
+            console.log(`🔄 已刷新歌词过期时间: ${trackKey}`);
+        } catch (error) {
+            console.warn('⚠️ 刷新过期时间失败:', error);
+        }
+    }
+
+    // ==================
+    // 问题2：时间偏移未保存
+    // ==================
+    // 原因：修改时间偏移后没有保存到云端
+    // 解决：每次调整时间时自动保存
+
+    async saveLyricsTimeOffset(trackInfo, offset) {
+        const trackKey = this.generateTrackKey(trackInfo);
+
+        try {
+            const offsetData = {
+                trackKey,
+                trackInfo: {
+                    id: trackInfo.id,
+                    name: trackInfo.name,
+                    artist: trackInfo.artist
+                },
+                timeOffset: offset,
+                timestamp: Date.now(),
+                // ✨ 添加用户操作标记
+                modifiedBy: 'user_adjustment'
+            };
+
+            // 📤 上传时间偏移到 Upstash
+            const response = await fetch(`${this.apiBase}/api/kv/save-time-offset`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(offsetData)
+            });
+
+            if (response.ok) {
+                console.log(`✅ 时间偏移已保存: ${offset}ms`);
+                
+                // 💾 同时保存到内存
+                this.lyricsTimeOffsets.set(trackKey, offset);
+                
+                // 💾 保存到 localStorage 备份
+                this.saveOffsetToLocalStorage(trackKey, offset);
+                
+                return true;
+            }
+        } catch (error) {
+            console.error('❌ 保存时间偏移失败:', error);
+            // 降级：仅保存到本地
+            this.saveOffsetToLocalStorage(trackKey, offset);
+            return false;
+        }
+    }
+
+    async getLyricsTimeOffset(trackInfo) {
+        const trackKey = this.generateTrackKey(trackInfo);
+
+        try {
+            // 1️⃣ 查 Redis
+            const response = await fetch(`${this.apiBase}/api/kv/get-time-offset/${trackKey}`);
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.timeOffset !== undefined) {
+                    console.log(`✅ 读取时间偏移: ${data.timeOffset}ms`);
+                    this.lyricsTimeOffsets.set(trackKey, data.timeOffset);
+                    return data.timeOffset;
+                }
+            }
+        } catch (error) {
+            console.warn('⚠️ Redis 时间偏移读取失败:', error);
+        }
+
+        // 2️⃣ 查本地
+        try {
+            const offset = this.getOffsetFromLocalStorage(trackKey);
+            if (offset !== null) {
+                console.log(`✅ 从本地读取时间偏移: ${offset}ms`);
+                return offset;
+            }
+        } catch (error) {
+            console.warn('⚠️ 本地时间偏移读取失败:', error);
+        }
+
+        return 0; // 默认无偏移
+    }
+
+    // ==================
+    // 本地存储备份方法
+    // ==================
+
+    saveToLocalStorageBackup(trackKey, data) {
+        try {
+            const backups = JSON.parse(localStorage.getItem('lyrics_backup') || '{}');
+            backups[trackKey] = {
+                ...data,
+                backupTime: Date.now()
+            };
+            localStorage.setItem('lyrics_backup', JSON.stringify(backups));
+            console.log(`💾 已备份到 localStorage: ${trackKey}`);
+        } catch (error) {
+            console.warn('⚠️ localStorage 备份失败:', error);
+        }
+    }
+
+    getFromLocalStorageBackup(trackKey) {
+        try {
+            const backups = JSON.parse(localStorage.getItem('lyrics_backup') || '{}');
+            return backups[trackKey] || null;
+        } catch (error) {
+            console.warn('⚠️ localStorage 读取失败:', error);
+            return null;
+        }
+    }
+
+    saveOffsetToLocalStorage(trackKey, offset) {
+        try {
+            const offsets = JSON.parse(localStorage.getItem('lyrics_offsets') || '{}');
+            offsets[trackKey] = {
+                offset,
+                savedTime: Date.now()
+            };
+            localStorage.setItem('lyrics_offsets', JSON.stringify(offsets));
+        } catch (error) {
+            console.warn('⚠️ 本地时间偏移保存失败:', error);
+        }
+    }
+
+    getOffsetFromLocalStorage(trackKey) {
+        try {
+            const offsets = JSON.parse(localStorage.getItem('lyrics_offsets') || '{}');
+            return offsets[trackKey]?.offset ?? null;
+        } catch (error) {
+            console.warn('⚠️ 本地时间偏移读取失败:', error);
+            return null;
+        }
+    }
+
+    // ==================
+    // 工具方法
+    // ==================
+
+    generateTrackKey(trackInfo) {
+        const artist = trackInfo.artist || '';
+        const name = trackInfo.name || '';
+        const id = trackInfo.id || '';
+        
+        return `${id}-${artist}-${name}`.toLowerCase()
+            .replace(/\s+/g, '_')
+            .replace(/[^\w\-_]/g, '');
+    }
+
+    async initStorage() {
+        console.log('🎵 歌词存储管理器已初始化');
+    }
+
+    // ✨ 新功能：检查和清理过期歌词
+    async cleanupExpiredLyrics() {
+        console.log('🧹 开始清理过期歌词...');
+        
+        try {
+            const response = await fetch(`${this.apiBase}/api/kv/cleanup-expired`, {
+                method: 'POST'
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                console.log(`✅ 已清理 ${result.deleted} 条过期歌词`);
+                return result;
+            }
+        } catch (error) {
+            console.warn('⚠️ 清理过期歌词失败:', error);
+        }
+    }
+
+    // ✨ 新功能：导出所有歌词（用于备份）
+    async exportAllLyrics() {
+        try {
+            const response = await fetch(`${this.apiBase}/api/kv/export-all-lyrics`);
+            
+            if (response.ok) {
+                const data = await response.json();
+                const blob = new Blob([JSON.stringify(data, null, 2)], { 
+                    type: 'application/json' 
+                });
+                
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `lyrics-backup-${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                
+                console.log('✅ 歌词已导出');
+                return true;
+            }
+        } catch (error) {
+            console.error('❌ 导出歌词失败:', error);
+        }
+
+        return false;
+    }
+}
+
+// 全局实例
+window.lyricsStorageManager = new LyricsStorageManager();
+
 // 創建全局實例
 window.kvStorageManager = new KVStorageManager();
 

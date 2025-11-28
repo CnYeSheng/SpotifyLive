@@ -3025,121 +3025,145 @@ class SpotifyLyricsPlayer {
         update();
     }
 
-    async loadLyrics() {
-        if (!this.currentTrack) {
-            console.log('ℹ️ 沒有當前歌曲，跳過歌詞載入');
-            return;
-        }
+async loadLyrics() {
+    if (!this.currentTrack) {
+        console.log('ℹ️ 没有当前歌曲，跳过歌词载入');
+        return;
+    }
 
-        // 如果是 Podcast，顯示特殊訊息而不載入歌詞
-        if (this.currentTrack.contentType === 'podcast') {
-            this.showLyricsPlaceholder('🎙️ 正在播放 Podcast\n\n享受精彩的音頻內容吧！');
-            this.updateStatus('lyrics', true);
-            return;
-        }
+    // 如果是 Podcast，显示特殊讯息而不载入歌词
+    if (this.currentTrack.contentType === 'podcast') {
+        this.showLyricsPlaceholder('🎙️ 正在播放 Podcast\n\n享受精彩的音频内容吧！');
+        this.updateStatus('lyrics', true);
+        return;
+    }
 
-        const trackKey = `${this.currentTrack.id}-${this.currentTrack.name}-${this.currentTrack.artist}`;
-        console.log(`🎤 請求歌詞: ${this.currentTrack.artist} - ${this.currentTrack.name}`);
+    const trackKey = `${this.currentTrack.id}-${this.currentTrack.name}-${this.currentTrack.artist}`;
+    console.log(`🎤 请求歌词: ${this.currentTrack.artist} - ${this.currentTrack.name}`);
+    
+    // 检查是否已有该歌曲的歌词
+    if (this.lyrics && this.lyrics.length > 0 && 
+        this.currentLyricsTrackId === this.currentTrack.id &&
+        this.currentLyricsTrackId !== null) {
+        console.log('✅ 歌词已存在，跳过载入');
         
-        // 檢查是否已有該歌曲的歌詞（更宽松的检查）
-        if (this.lyrics && this.lyrics.length > 0 && 
-            this.currentLyricsTrackId === this.currentTrack.id &&
-            this.currentLyricsTrackId !== null) {
-            console.log('✅ 歌詞已存在，跳過載入');
-            return;
+        // ✨ 关键：载入保存的时间偏移
+        if (window.lyricsStorageManager) {
+            const savedOffset = await window.lyricsStorageManager
+                .getLyricsTimeOffset(this.currentTrack);
+            if (savedOffset !== 0) {
+                this.lyricsTimeOffset = savedOffset;
+                console.log(`✅ 已载入保存的时间偏移: ${savedOffset}ms`);
+            }
         }
         
-        this.log(`🎤 開始載入歌詞: ${this.currentTrack.name} - ${this.currentTrack.artist}`);
+        return;
+    }
+    
+    this.log(`🎤 开始载入歌词: ${this.currentTrack.name} - ${this.currentTrack.artist}`);
 
-        // 防止重複請求 - 使用更嚴格的檢查
+    if (this.isLoadingLyrics) {
+        console.log('⏳ 歌词载入中，跳过重复请求');
+        return;
+    }
+    
+    if (this.lastLyricsRequest && 
+        this.lastLyricsRequest.trackKey === trackKey && 
+        Date.now() - this.lastLyricsRequest.time < 5000) {
+        console.log('⏳ 最近刚请求过此歌曲，跳过重复请求');
+        return;
+    }
+    
+    this.isLoadingLyrics = true;
+    this.lastLyricsRequest = {
+        trackKey: trackKey,
+        time: Date.now()
+    };
+    
+    // 设置载入超时保护
+    const loadingTimeout = setTimeout(() => {
         if (this.isLoadingLyrics) {
-            console.log('⏳ 歌詞正在載入中，跳過重複請求');
-            return;
-        }
-        
-        // 檢查是否最近剛請求過同一首歌 (缩短到5秒，更快响应歌曲切换)
-        if (this.lastLyricsRequest && 
-            this.lastLyricsRequest.trackKey === trackKey && 
-            Date.now() - this.lastLyricsRequest.time < 5000) {
-            console.log('⏳ 最近剛請求過此歌曲，跳過重複請求');
-            return;
-        }
-        
-        // 設置載入狀態和請求記錄
-        this.isLoadingLyrics = true;
-        this.lastLyricsRequest = {
-            trackKey: trackKey,
-            time: Date.now()
-        };
-        
-        // 設置載入超時保護 (延長到40秒以適應較慢網絡)
-        const loadingTimeout = setTimeout(() => {
-            if (this.isLoadingLyrics) {
-                console.log('⚠️ 歌詞載入超時，重置狀態');
-                this.isLoadingLyrics = false;
-                // 清除可能存在的載入超時ID
-                if (this.lyricsLoadTimeout) {
-                    clearTimeout(this.lyricsLoadTimeout);
-                    this.lyricsLoadTimeout = null;
-                }
-            }
-        }, 40000);
-
-        this.updateStatus('lyrics', null);
-        this.showLyricsPlaceholder('🎵 正在載入歌詞...');
-
-        try {
-            // 由於 CORS 限制，直接使用本地代理
-            const proxyUrl = `/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}`;
-            const response = await fetch(proxyUrl);
-            
-            if (!response.ok) {
-                throw new Error(`API 響應錯誤: ${response.status} ${response.statusText}`);
-            }
-            
-            const data = await response.json();
-            console.log('歌詞 API 回應:', data);
-
-            if (data.success && data.lyrics && Array.isArray(data.lyrics) && data.lyrics.length > 0) {
-                const validLyrics = data.lyrics.filter(line => {
-                    const text = line.text || line;
-                    return text && text.trim() !== '' && this.isValidText(text);
-                });
-
-                if (validLyrics.length > 0) {
-                    // 確保這是當前歌曲的歌詞
-                    if (this.currentTrack && this.currentTrack.id) {
-                        this.lyrics = validLyrics;
-                        this.lyricsType = data.type || 'plain';
-                        this.currentLyricsTrackId = this.currentTrack.id;
-                        this.displayLyrics();
-                        this.updateStatus('lyrics', true);
-                        console.log(`✅ 歌詞載入成功: ${validLyrics.length} 行 (${this.lyricsType}) 來源: ${data.source}`);
-                    } else {
-                        console.log('⚠️ 歌曲已切換，忽略此歌詞響應');
-                    }
-                } else {
-                    console.log(`⚠️ 歌詞內容無效或為亂碼`);
-                    this.showLyricsError('歌詞內容格式錯誤');
-                }
-            } else {
-                const errorMsg = data.error || '找不到歌詞';
-                console.log(`⚠️ 歌詞載入失敗: ${errorMsg}`);
-                this.showLyricsError(errorMsg);
-            }
-        } catch (error) {
-            console.error('載入歌詞失敗:', error);
-            this.showLyricsError('載入歌詞失敗: ' + error.message);
-        } finally {
-            clearTimeout(loadingTimeout);
+            console.log('⚠️ 歌词载入超时，重置状态');
             this.isLoadingLyrics = false;
-            // 確保清除載入超時
             if (this.lyricsLoadTimeout) {
                 clearTimeout(this.lyricsLoadTimeout);
                 this.lyricsLoadTimeout = null;
             }
         }
+    }, 40000);
+
+    this.updateStatus('lyrics', null);
+    this.showLyricsPlaceholder('🎵 正在载入歌词...');
+
+    try {
+        const proxyUrl = `/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}`;
+        const response = await fetch(proxyUrl);
+        
+        if (!response.ok) {
+            throw new Error(`API 响应错误: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        console.log('歌词 API 回应:', data);
+
+        if (data.success && data.lyrics && Array.isArray(data.lyrics) && data.lyrics.length > 0) {
+            const validLyrics = data.lyrics.filter(line => {
+                const text = line.text || line;
+                return text && text.trim() !== '' && this.isValidText(text);
+            });
+
+            if (validLyrics.length > 0) {
+                if (this.currentTrack && this.currentTrack.id) {
+                    this.lyrics = validLyrics;
+                    this.lyricsType = data.type || 'plain';
+                    this.currentLyricsTrackId = this.currentTrack.id;
+                    
+                    // ✨ 关键：载入保存的歌词（优先级最高）
+                    if (window.lyricsStorageManager) {
+                        const savedLyrics = await window.lyricsStorageManager
+                            .getUserLyrics(this.currentTrack);
+                        if (savedLyrics) {
+                            this.lyrics = savedLyrics.lyrics;
+                            this.lyricsType = savedLyrics.lyricsType;
+                            console.log(`✅ 已使用保存的歌词: ${savedLyrics.source}`);
+                        }
+                        
+                        // ✨ 关键：载入保存的时间偏移
+                        const savedOffset = await window.lyricsStorageManager
+                            .getLyricsTimeOffset(this.currentTrack);
+                        if (savedOffset !== 0) {
+                            this.lyricsTimeOffset = savedOffset;
+                            console.log(`✅ 已载入保存的时间偏移: ${savedOffset}ms`);
+                        }
+                    }
+                    
+                    this.displayLyrics();
+                    this.updateStatus('lyrics', true);
+                    console.log(`✅ 歌词载入成功: ${validLyrics.length} 行 (${this.lyricsType}) 来源: ${data.source}`);
+                } else {
+                    console.log('⚠️ 歌曲已切换，忽略此歌词响应');
+                }
+            } else {
+                console.log(`⚠️ 歌词内容无效或为乱码`);
+                this.showLyricsError('歌词内容格式错误');
+            }
+        } else {
+            const errorMsg = data.error || '找不到歌词';
+            console.log(`⚠️ 歌词载入失败: ${errorMsg}`);
+            this.showLyricsError(errorMsg);
+        }
+    } catch (error) {
+        console.error('载入歌词失败:', error);
+        this.showLyricsError('载入歌词失败: ' + error.message);
+    } finally {
+        clearTimeout(loadingTimeout);
+        this.isLoadingLyrics = false;
+        if (this.lyricsLoadTimeout) {
+            clearTimeout(this.lyricsLoadTimeout);
+            this.lyricsLoadTimeout = null;
+        }
     }
+}
 
     isValidText(text) {
         if (!text || typeof text !== 'string') return false;
@@ -3303,28 +3327,44 @@ class SpotifyLyricsPlayer {
         }
     }
 
-    // 歌詞時間偏移調整
-    adjustLyricsOffset(offset) {
-        this.lyricsTimeOffset += offset;
-        this.showOffsetMessage();
-        console.log(`歌詞時間偏移: ${this.lyricsTimeOffset}ms`);
+    // 调整歌词时间偏移
+adjustLyricsOffset(offset) {
+    this.lyricsTimeOffset += offset;
+    this.showOffsetMessage();
+    console.log(`⏰ 歌词时间偏移: ${this.lyricsTimeOffset}ms`);
+    
+    // ✨ 关键修复：立即保存时间偏移
+    if (this.currentTrack && window.lyricsStorageManager) {
+        window.lyricsStorageManager.saveLyricsTimeOffset(
+            this.currentTrack, 
+            this.lyricsTimeOffset
+        );
     }
+}
 
-    // 重置歌詞時間偏移
-    resetLyricsOffset() {
-        this.lyricsTimeOffset = 0;
-        this.showOffsetMessage();
-        console.log('歌詞時間偏移已重置');
+// 重置歌词时间偏移
+resetLyricsOffset() {
+    this.lyricsTimeOffset = 0;
+    this.showOffsetMessage();
+    console.log('⏰ 歌词时间偏移已重置');
+    
+    // ✨ 关键修复：保存重置状态
+    if (this.currentTrack && window.lyricsStorageManager) {
+        window.lyricsStorageManager.saveLyricsTimeOffset(
+            this.currentTrack, 
+            0
+        );
     }
+}
 
-    // 顯示偏移調整訊息
-    showOffsetMessage() {
-        const message = this.lyricsTimeOffset === 0 
-            ? '歌詞時間已重置' 
-            : `歌詞${this.lyricsTimeOffset > 0 ? '提前' : '延後'} ${Math.abs(this.lyricsTimeOffset/1000)} 秒`;
-        
-        this.showSuccessMessage(message);
-    }
+// 显示偏移调整提示
+showOffsetMessage() {
+    const message = this.lyricsTimeOffset === 0 
+        ? '⏰ 歌词时间已重置' 
+        : `⏰ 歌词${this.lyricsTimeOffset > 0 ? '提前' : '延后'} ${Math.abs(this.lyricsTimeOffset/1000).toFixed(1)} 秒`;
+    
+    this.showSuccessMessage(message);
+}
 
     // 手機頁面切換
     switchMobilePage(page) {
