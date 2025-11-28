@@ -473,6 +473,20 @@ class AutoErrorLogger {
                 console.log('🔒 自動下載已停用，跳過session錯誤日誌下載');
             }
             this.isErrorDetected = false;
+            try {
+                const cooldownKey = 'auto_error_session_reauth_cooldown_until';
+                const now = Date.now();
+                const until = parseInt(localStorage.getItem(cooldownKey) || '0', 10);
+                if (!until || now >= until) {
+                    localStorage.setItem(cooldownKey, String(now + 60 * 1000));
+                    const tm = window.spotifyPlayer && window.spotifyPlayer.tokenManager;
+                    if (tm && typeof tm.triggerAuth === 'function') {
+                        tm.triggerAuth();
+                    } else {
+                        window.location.href = '/api/auth';
+                    }
+                }
+            } catch (e) {}
         }, 500); // 極短延遲，確保在頁面重載前執行
     }
 

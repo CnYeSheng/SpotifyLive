@@ -10,7 +10,8 @@ const kvStorage = new KVStorageManager();
 // Middleware
 app.use(cors({
     origin: true,
-    credentials: true
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'X-Session-Id']
 }));
 app.use(express.json());
 
