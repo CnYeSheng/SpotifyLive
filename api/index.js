@@ -6,6 +6,26 @@ const KVStorageManager = require('./kv-storage');
 
 const app = express();
 const kvStorage = new KVStorageManager();
+const { Redis } = require('@upstash/redis');
+
+// ✨ 新增：初始化 Redis 连接
+const redis = new Redis({
+    url: process.env.KV_REST_API_URL,
+    token: process.env.KV_REST_API_TOKEN
+});
+
+// ✨ 新增：测试 Redis 连接
+async function initializeRedis() {
+    try {
+        await redis.set('test_connection', 'success');
+        const value = await redis.get('test_connection');
+        console.log('✅ Redis 连接成功，读写正常:', value);
+        await redis.del('test_connection');
+    } catch (error) {
+        console.error('❌ Redis 连接失败:', error.message);
+        console.error('请检查 .env 文件中的 KV_REST_API_URL 和 KV_REST_API_TOKEN');
+    }
+}
 
 // Middleware
 app.use(cors({
@@ -1345,7 +1365,7 @@ app.post('/api/refresh-token', async (req, res) => {
 // 保存用戶自定義歌詞
 app.post('/api/kv/user-lyrics', async (req, res) => {
     try {
-        const { trackKey, trackInfo, lyrics, lyricsType, source } = req.body;
+        const { trackInfo, lyrics, lyricsType, source } = req.body;
         
         if (!trackInfo || !lyrics) {
             return res.status(400).json({ 
@@ -1354,6 +1374,7 @@ app.post('/api/kv/user-lyrics', async (req, res) => {
             });
         }
 
+        // ✨ 生成 key（使用更清晰的格式）
         const key = `lyrics:${trackInfo.id}:${trackInfo.name}:${trackInfo.artist}`;
         
         const data = {
@@ -1366,20 +1387,60 @@ app.post('/api/kv/user-lyrics', async (req, res) => {
             version: 2
         };
 
-        // ✨ 关键：设置 30 天的过期时间
-        // EXAT = 时间戳（秒），所以 30天 = 30 * 24 * 60 * 60 秒
-        const expiresIn = 30 * 24 * 60 * 60; // 秒
+        // ✨ 关键修改：永不过期
+        // 直接 set，不设置 setex
+        await redis.set(key, JSON.stringify(data));
 
-        await redis.setex(key, expiresIn, JSON.stringify(data));
+        console.log(`✅ 歌词已永久保存: ${key}`);
 
         res.json({ 
             success: true, 
-            message: '歌词已保存（30天不过期）',
-            data: { key, expiresIn }
+            message: '歌词已永久保存',
+            data: { key, expiry: 'never' }
         });
 
     } catch (error) {
-        console.error('保存歌词失败:', error);
+        console.error('❌ 保存歌词失败:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+// 2. 保存时间偏移（永不过期）
+app.post('/api/kv/save-time-offset', async (req, res) => {
+    try {
+        const { trackInfo, timeOffset } = req.body;
+
+        if (!trackInfo || timeOffset === undefined) {
+            return res.status(400).json({ 
+                success: false, 
+                error: '缺少必要参数' 
+            });
+        }
+
+        const key = `offset:${trackInfo.id}:${trackInfo.name}:${trackInfo.artist}`;
+        
+        const data = {
+            trackInfo,
+            timeOffset,
+            timestamp: Date.now(),
+            modifiedBy: 'user_adjustment'
+        };
+
+        // ✨ 关键修改：永不过期
+        await redis.set(key, JSON.stringify(data));
+
+        console.log(`✅ 时间偏移已永久保存: ${key}`);
+
+        res.json({ 
+            success: true, 
+            message: '时间偏移已永久保存'
+        });
+
+    } catch (error) {
+        console.error('❌ 保存时间偏移失败:', error);
         res.status(500).json({ 
             success: false, 
             error: error.message 
@@ -1404,14 +1465,11 @@ app.get('/api/kv/user-lyrics/:trackKey', async (req, res) => {
         const data = await redis.get(key);
 
         if (data) {
-            // ✨ 自动刷新过期时间（每次读取都延长 30 天）
-            const expiresIn = 30 * 24 * 60 * 60;
-            await redis.expire(key, expiresIn);
-
+            console.log(`✅ 读取歌词: ${key}`);
             res.json({ 
                 success: true, 
                 data: JSON.parse(data),
-                refreshed: true
+                expiry: 'never'
             });
         } else {
             res.json({ 
@@ -1421,7 +1479,7 @@ app.get('/api/kv/user-lyrics/:trackKey', async (req, res) => {
         }
 
     } catch (error) {
-        console.error('获取歌词失败:', error);
+        console.error('❌ 获取歌词失败:', error);
         res.status(500).json({ 
             success: false, 
             error: error.message 
@@ -1445,11 +1503,7 @@ app.get('/api/kv/get-time-offset/:trackKey', async (req, res) => {
 
         if (data) {
             const parsed = JSON.parse(data);
-            
-            // ✨ 自动刷新过期时间
-            const expiresIn = 30 * 24 * 60 * 60;
-            await redis.expire(key, expiresIn);
-
+            console.log(`✅ 读取时间偏移: ${parsed.timeOffset}ms`);
             res.json({ 
                 success: true, 
                 timeOffset: parsed.timeOffset 
@@ -1462,7 +1516,7 @@ app.get('/api/kv/get-time-offset/:trackKey', async (req, res) => {
         }
 
     } catch (error) {
-        console.error('获取时间偏移失败:', error);
+        console.error('❌ 获取时间偏移失败:', error);
         res.status(500).json({ 
             success: false, 
             error: error.message,
@@ -1470,6 +1524,7 @@ app.get('/api/kv/get-time-offset/:trackKey', async (req, res) => {
         });
     }
 });
+
 
 // 刷新歌词过期时间
 app.post('/api/kv/refresh-expiry/:trackKey', async (req, res) => {
@@ -1710,21 +1765,36 @@ app.get('/api/kv/user-providers', async (req, res) => {
 app.delete('/api/kv/user-lyrics/:trackKey', async (req, res) => {
     try {
         const { trackKey } = req.params;
+        const trackInfo = req.headers['x-track-info'] ? 
+            JSON.parse(req.headers['x-track-info']) : null;
+
+        if (!trackInfo) {
+            return res.status(400).json({ 
+                success: false, 
+                error: '缺少歌曲信息' 
+            });
+        }
+
+        const key = `lyrics:${trackInfo.id}:${trackInfo.name}:${trackInfo.artist}`;
         
-        const success = await kvStorage.deleteUserCustomLyrics(req, trackKey);
-        
-        res.json({
-            success: true,
-            message: '用戶自定義歌詞已刪除'
+        await redis.del(key);
+
+        console.log(`🗑️ 已删除歌词: ${key}`);
+
+        res.json({ 
+            success: true, 
+            message: '歌词已删除'
         });
+
     } catch (error) {
-        console.error('刪除用戶自定義歌詞失敗:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
+        console.error('❌ 删除歌词失败:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
         });
     }
 });
+
 
 // 刪除特定的用戶供應商偏好
 app.delete('/api/kv/user-provider/:trackKey', async (req, res) => {
@@ -1810,3 +1880,4 @@ app.get('/api/kv/status', async (req, res) => {
 });
 
 module.exports = app;
+await initializeRedis();

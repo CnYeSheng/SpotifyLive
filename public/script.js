@@ -323,33 +323,100 @@ class SpotifyLyricsPlayer {
 
     // 保存歌詞時間調整
     saveLyricsTimeAdjustment(track, timeOffset) {
-        if (!track) {
-            this.log('⚠️ 無法保存時間調整，缺少 track 資訊');
-            return;
-        }
+    if (!track) {
+        this.log('⚠️ 无法保存时间调整，缺少 track 信息');
+        return;
+    }
 
-        const cacheKey = this.generateTrackCacheKey(track); // 確保這裡生成的 key 是標準化的
-        if (timeOffset === 0 || timeOffset === null || timeOffset === undefined) {
-            // 如果時間偏移為 0 或無效值，移除該鍵值對，避免儲存不必要的資料
-            this.lyricsTimeAdjustments.delete(cacheKey);
-            this.log(`🧹 已移除 ${track.name} 的時間調整 (歸零或無效)`);
-        } else {
-            // 儲存包含 timeOffset 和 timestamp 的物件
-            const adjustmentData = {
-                timeOffset: timeOffset,
-                timestamp: Date.now(),
+    const cacheKey = this.generateTrackCacheKey(track);
+    
+    if (timeOffset === 0 || timeOffset === null || timeOffset === undefined) {
+        this.lyricsTimeAdjustments.delete(cacheKey);
+        this.log(`🧹 已移除 ${track.name} 的时间调整`);
+    } else {
+        const adjustmentData = {
+            timeOffset: timeOffset,
+            timestamp: Date.now(),
+            trackInfo: {
+                id: track.id,
+                name: track.name,
+                artist: track.artist
+            }
+        };
+        this.lyricsTimeAdjustments.set(cacheKey, adjustmentData);
+        this.log(`⏰ 歌词时间调整已保存 (${timeOffset}ms) for ${track.name}`);
+    }
+
+    this.saveTimeAdjustmentsToStorage();
+    
+    // ✨ 新增：同时保存到服务器 KV
+    this.syncTimeOffsetToServer(track, timeOffset);
+}
+
+// ✨ 新增：同步时间偏移到服务器
+async syncTimeOffsetToServer(track, timeOffset) {
+    try {
+        const response = await fetch('/api/kv/save-time-offset', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Id': this.sessionId
+            },
+            body: JSON.stringify({
                 trackInfo: {
                     id: track.id,
                     name: track.name,
                     artist: track.artist
-                }
-            };
-            this.lyricsTimeAdjustments.set(cacheKey, adjustmentData); // 使用標準化的 key 保存
-            this.log(`⏰ 歌詞時間調整已保存 (${timeOffset}ms) for ${track.name} (鍵值: ${cacheKey})`);
+                },
+                timeOffset: timeOffset
+            })
+        });
+        
+        if (response.ok) {
+            this.log(`✅ 时间偏移已同步到服务器`);
         }
-
-        this.saveTimeAdjustmentsToStorage(); // 觸發保存到 localStorage
+    } catch (error) {
+        this.log(`⚠️ 同步时间偏移失败: ${error.message}`);
     }
+}
+
+// 核心同步逻辑
+async loadUserSettingsFromKV() {
+    try {
+        // 1. 检查是否有 KV 中的数据
+        const response = await fetch('/api/kv/user-lyrics', {
+            headers: { 'X-Session-Id': this.sessionId }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            
+            // 2. 将 KV 数据同步到本地
+            if (data.data && Array.isArray(data.data)) {
+                data.data.forEach(lyricData => {
+                    const cacheKey = this.generateTrackCacheKey(lyricData.trackInfo);
+                    this.savedLyrics.set(cacheKey, lyricData);
+                });
+                
+                this.saveSavedLyricsToStorage();
+                this.log(`✅ 已从 KV 加载 ${data.data.length} 条歌词`);
+            }
+        }
+    } catch (error) {
+        this.log(`⚠️ 从 KV 加载数据失败: ${error.message}`);
+    }
+}
+
+// 在初始化时调用
+async initializeStorage() {
+    // 加载本地数据
+    this.initSavedLyricsAndAdjustments();
+    
+    // 加载 KV 数据并同步
+    await this.loadUserSettingsFromKV();
+    
+    this.log('✅ 存储初始化完成');
+}
 
     // 套用時間調整到歌詞
     applyTimeAdjustmentToLyrics(lyrics, timeAdjustment) {
