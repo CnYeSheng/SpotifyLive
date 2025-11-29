@@ -14,37 +14,68 @@ class KVStorageManager {
 
     // 檢查 KV 存儲狀態
     async checkKVStatus() {
-        try {
-            const response = await fetch(`${this.apiBase}/api/kv/status`);
-            const data = await response.json();
+    try {
+        // ✨ 修复：添加完整的 URL
+        const statusUrl = window.location.origin + '/api/kv/status';
+        console.log(`🔍 检查 KV 状态，URL: ${statusUrl}`);
+        
+        const response = await fetch(statusUrl, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'same-origin'
+        });
+        
+        // ✨ 修复：检查响应类型
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            console.warn(`⚠️ KV 状态检查返回非 JSON 内容: ${contentType}`);
+            console.warn(`📝 响应状态: ${response.status}`);
             
-            if (data.success) {
-                this.kvAvailable = data.kvAvailable;
-                this.userKey = data.userKey;
-                console.log(`✅ KV Status: ${this.kvAvailable ? 'Available' : 'Not Available'}, User: ${this.userKey}`);
-                
-                // 检查迁移状态
-                const migrationCompleted = localStorage.getItem('kv_migration_completed') === 'true';
-                const migrationSkipped = localStorage.getItem('kv_migration_skip') === 'true';
-                
-                // 如果 KV 可用且有 localStorage 数据且还未迁移过
-                if (this.kvAvailable && 
-                    this.hasLocalStorageData() && 
-                    !migrationCompleted && 
-                    !migrationSkipped) {
-                    
-                    console.log('🔄 发现未迁移的数据，提示用户迁移');
-                    this.promptForMigration();
-                } else if (migrationCompleted) {
-                    console.log('✅ 已记录迁移完成，不再提示');
-                }
-            } else {
-                console.warn('无法检查 KV 状态:', data.error);
-            }
-        } catch (error) {
-            console.error('检查 KV 状态失败:', error);
+            // 尝试读取响应体以调试
+            const text = await response.text();
+            console.error(`📄 响应内容: ${text.substring(0, 200)}`);
+            
+            this.kvAvailable = false;
+            return;
         }
+
+        const data = await response.json();
+        
+        if (data.success) {
+            this.kvAvailable = data.kvAvailable;
+            this.userKey = data.userKey;
+            console.log(`✅ KV 状态: ${this.kvAvailable ? 'Available' : 'Not Available'}, 用户: ${this.userKey}`);
+            
+            // 检查迁移状态
+            const migrationCompleted = localStorage.getItem('kv_migration_completed') === 'true';
+            const migrationSkipped = localStorage.getItem('kv_migration_skip') === 'true';
+            
+            // 如果 KV 可用但有本地数据且还未迁移过
+            if (this.kvAvailable && 
+                this.hasLocalStorageData() && 
+                !migrationCompleted && 
+                !migrationSkipped) {
+                
+                console.log('📄 发现未迁移的数据，提示用户迁移');
+                this.promptForMigration();
+            } else if (migrationCompleted) {
+                console.log('✅ 已记录迁移完成，不再提示');
+            }
+        } else {
+            console.warn('无法检查 KV 状态:', data.error);
+            this.kvAvailable = false;
+        }
+    } catch (error) {
+        console.error('❌ 检查 KV 状态失败:', error.message);
+        this.kvAvailable = false;
+        
+        // 调试信息
+        console.error('📍 错误类型:', error.constructor.name);
+        console.error('📍 错误堆栈:', error.stack);
     }
+}
 
     // 新增：检查用户是否选择永久跳过迁移
     skipMigrationPermanently() {
