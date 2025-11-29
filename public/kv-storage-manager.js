@@ -4,13 +4,17 @@
 class KVStorageManager {
     constructor() {
         this.apiBase = window.location.origin;
+        // ✨ 禁用 KV 功能，所有数据保存到 localStorage
         this.kvAvailable = false;
         this.userKey = '';
         this.fallbackToLocalStorage = true;
         
-        // 初始化檢查 KV 狀態
-        this.checkKVStatus();
+        console.log('📦 KV 存儲管理器已載入 (本地模式 - localStorage)');
+        
+        // ✨ 不调用后端检查，直接返回
+        return;
     }
+
 
     // 檢查 KV 存儲狀態
     async checkKVStatus() {

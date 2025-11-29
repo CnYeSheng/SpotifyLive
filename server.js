@@ -2128,4 +2128,24 @@ if (require.main === module) {
     });
 }
 
+app.get('/api/kv/status', (req, res) => {
+    try {
+        const kvAvailable = !!process.env.KV_REST_API_URL && 
+                           !!process.env.KV_REST_API_TOKEN;
+        
+        res.json({
+            success: true,
+            kvAvailable: kvAvailable,
+            userKey: null,
+            message: kvAvailable ? 'KV available' : 'KV not available'
+        });
+    } catch (error) {
+        console.error('❌ KV status check error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 module.exports = app;
