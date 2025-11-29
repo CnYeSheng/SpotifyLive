@@ -1953,13 +1953,17 @@ app.get('/api/kv/status', async (req, res) => {
 });
 
 app.post('/api/kv/sync-all', async (req, res) => {
+    console.log('🔄 收到 KV 同步請求');
+    
     try {
         const session = getUserSession(req);
         if (!session) {
+            console.log('❌ 未認證');
             return res.status(401).json({ success: false, error: '未認證' });
         }
 
         if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
+            console.log('⚠️ KV 未配置');
             return res.json({
                 success: false,
                 error: 'KV 存儲未配置',
@@ -1981,18 +1985,22 @@ app.post('/api/kv/sync-all', async (req, res) => {
             errors: []
         };
 
+        console.log('📦 開始同步數據...');
+
         // 1. 同步保存的歌詞
         if (syncData.savedLyrics && typeof syncData.savedLyrics === 'object') {
+            console.log(`📝 同步 ${Object.keys(syncData.savedLyrics).length} 個保存的歌詞...`);
             for (const [key, value] of Object.entries(syncData.savedLyrics)) {
                 try {
                     await redis.set(
                         `lyrics:${key}`,
                         JSON.stringify(value),
-                        { ex: 30 * 24 * 60 * 60 } // 30天過期
+                        { ex: 30 * 24 * 60 * 60 }
                     );
                     results.synced++;
                     results.items.push({ type: 'lyrics', key: key, status: 'success' });
                 } catch (error) {
+                    console.error(`❌ 歌詞同步失敗 (${key}):`, error.message);
                     results.failed++;
                     results.errors.push({ type: 'lyrics', key: key, error: error.message });
                 }
@@ -2001,16 +2009,18 @@ app.post('/api/kv/sync-all', async (req, res) => {
 
         // 2. 同步時間調整
         if (syncData.timeAdjustments && typeof syncData.timeAdjustments === 'object') {
+            console.log(`⏰ 同步 ${Object.keys(syncData.timeAdjustments).length} 個時間調整...`);
             for (const [key, value] of Object.entries(syncData.timeAdjustments)) {
                 try {
                     await redis.set(
                         `offset:${key}`,
                         JSON.stringify(value),
-                        { ex: 30 * 24 * 60 * 60 } // 30天過期
+                        { ex: 30 * 24 * 60 * 60 }
                     );
                     results.synced++;
                     results.items.push({ type: 'offset', key: key, status: 'success' });
                 } catch (error) {
+                    console.error(`❌ 時間調整同步失敗 (${key}):`, error.message);
                     results.failed++;
                     results.errors.push({ type: 'offset', key: key, error: error.message });
                 }
@@ -2019,15 +2029,17 @@ app.post('/api/kv/sync-all', async (req, res) => {
 
         // 3. 同步播放器偏好設置
         if (syncData.playerPreferences) {
+            console.log('⚙️ 同步播放器偏好設置...');
             try {
                 await redis.set(
-                    `user:${session.userId}:preferences`,
+                    `user:preferences`,
                     JSON.stringify(syncData.playerPreferences),
-                    { ex: 90 * 24 * 60 * 60 } // 90天過期
+                    { ex: 90 * 24 * 60 * 60 }
                 );
                 results.synced++;
                 results.items.push({ type: 'preferences', status: 'success' });
             } catch (error) {
+                console.error('❌ 偏好設置同步失敗:', error.message);
                 results.failed++;
                 results.errors.push({ type: 'preferences', error: error.message });
             }
@@ -2047,16 +2059,142 @@ app.post('/api/kv/sync-all', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('❌ KV 同步失敗:', error);
+        console.error('❌ KV 同步異常:', error);
         res.status(500).json({
             success: false,
-            error: error.message
+            error: error.message,
+            type: 'exception'
         });
     }
 });
 
+
+// ============================================
+// api/index.js 中新增的 KV 同步端點 (修復版)
+// ============================================
+
+// 一鍵同步所有本地數據到 KV
+app.post('/api/kv/sync-all', async (req, res) => {
+    console.log('🔄 收到 KV 同步請求');
+    
+    try {
+        const session = getUserSession(req);
+        if (!session) {
+            console.log('❌ 未認證');
+            return res.status(401).json({ success: false, error: '未認證' });
+        }
+
+        if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
+            console.log('⚠️ KV 未配置');
+            return res.json({
+                success: false,
+                error: 'KV 存儲未配置',
+                message: '請在環境變數中設置 KV_REST_API_URL 和 KV_REST_API_TOKEN'
+            });
+        }
+
+        const { Redis } = require('@upstash/redis');
+        const redis = new Redis({
+            url: process.env.KV_REST_API_URL,
+            token: process.env.KV_REST_API_TOKEN
+        });
+
+        const syncData = req.body || {};
+        const results = {
+            synced: 0,
+            failed: 0,
+            items: [],
+            errors: []
+        };
+
+        console.log('📦 開始同步數據...');
+
+        // 1. 同步保存的歌詞
+        if (syncData.savedLyrics && typeof syncData.savedLyrics === 'object') {
+            console.log(`📝 同步 ${Object.keys(syncData.savedLyrics).length} 個保存的歌詞...`);
+            for (const [key, value] of Object.entries(syncData.savedLyrics)) {
+                try {
+                    await redis.set(
+                        `lyrics:${key}`,
+                        JSON.stringify(value),
+                        { ex: 30 * 24 * 60 * 60 }
+                    );
+                    results.synced++;
+                    results.items.push({ type: 'lyrics', key: key, status: 'success' });
+                } catch (error) {
+                    console.error(`❌ 歌詞同步失敗 (${key}):`, error.message);
+                    results.failed++;
+                    results.errors.push({ type: 'lyrics', key: key, error: error.message });
+                }
+            }
+        }
+
+        // 2. 同步時間調整
+        if (syncData.timeAdjustments && typeof syncData.timeAdjustments === 'object') {
+            console.log(`⏰ 同步 ${Object.keys(syncData.timeAdjustments).length} 個時間調整...`);
+            for (const [key, value] of Object.entries(syncData.timeAdjustments)) {
+                try {
+                    await redis.set(
+                        `offset:${key}`,
+                        JSON.stringify(value),
+                        { ex: 30 * 24 * 60 * 60 }
+                    );
+                    results.synced++;
+                    results.items.push({ type: 'offset', key: key, status: 'success' });
+                } catch (error) {
+                    console.error(`❌ 時間調整同步失敗 (${key}):`, error.message);
+                    results.failed++;
+                    results.errors.push({ type: 'offset', key: key, error: error.message });
+                }
+            }
+        }
+
+        // 3. 同步播放器偏好設置
+        if (syncData.playerPreferences) {
+            console.log('⚙️ 同步播放器偏好設置...');
+            try {
+                await redis.set(
+                    `user:preferences`,
+                    JSON.stringify(syncData.playerPreferences),
+                    { ex: 90 * 24 * 60 * 60 }
+                );
+                results.synced++;
+                results.items.push({ type: 'preferences', status: 'success' });
+            } catch (error) {
+                console.error('❌ 偏好設置同步失敗:', error.message);
+                results.failed++;
+                results.errors.push({ type: 'preferences', error: error.message });
+            }
+        }
+
+        console.log(`✅ KV 同步完成: ${results.synced} 項成功，${results.failed} 項失敗`);
+
+        res.json({
+            success: results.failed === 0,
+            summary: {
+                synced: results.synced,
+                failed: results.failed,
+                total: results.synced + results.failed
+            },
+            items: results.items,
+            errors: results.errors.length > 0 ? results.errors : undefined
+        });
+
+    } catch (error) {
+        console.error('❌ KV 同步異常:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            type: 'exception'
+        });
+    }
+});
+
+// 檢查 KV 同步狀態
 app.get('/api/kv/sync-status', async (req, res) => {
     try {
+        console.log('🔍 檢查 KV 狀態...');
+        
         if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
             return res.json({
                 kvConfigured: false,
@@ -2070,26 +2208,37 @@ app.get('/api/kv/sync-status', async (req, res) => {
             token: process.env.KV_REST_API_TOKEN
         });
 
-        // 測試連接
-        await redis.set('sync_test', 'ok');
-        const testValue = await redis.get('sync_test');
-        await redis.del('sync_test');
+        try {
+            // 測試連接
+            await redis.set('sync_test', 'ok');
+            const testValue = await redis.get('sync_test');
+            await redis.del('sync_test');
 
-        res.json({
-            kvConfigured: true,
-            kvConnected: testValue === 'ok',
-            message: 'KV 存儲已配置且可連接'
-        });
+            console.log('✅ KV 連接成功');
+            res.json({
+                kvConfigured: true,
+                kvConnected: testValue === 'ok',
+                message: 'KV 存儲已配置且可連接'
+            });
+        } catch (testError) {
+            console.error('❌ KV 測試失敗:', testError.message);
+            res.json({
+                kvConfigured: true,
+                kvConnected: false,
+                error: testError.message,
+                message: 'KV 連接失敗'
+            });
+        }
 
     } catch (error) {
-        res.json({
-            kvConfigured: true,
-            kvConnected: false,
-            error: error.message,
-            message: 'KV 連接失敗'
+        console.error('❌ 檢查 KV 狀態異常:', error);
+        res.status(500).json({
+            kvConfigured: false,
+            error: error.message
         });
     }
 });
+
 
 (async () => {
     try {

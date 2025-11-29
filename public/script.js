@@ -5277,11 +5277,11 @@ class KVSyncManager {
     init() {
         this.createSyncUI();
         this.bindEvents();
-        this.checkSyncStatus();
+        // 延遲檢查狀態，確保 sessionId 已設置
+        setTimeout(() => this.checkSyncStatus(), 2000);
     }
 
     createSyncUI() {
-        // 創建同步面板
         const panel = document.createElement('div');
         panel.id = 'kv-sync-panel';
         panel.style.cssText = `
@@ -5295,8 +5295,9 @@ class KVSyncManager {
             box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
             z-index: 999;
             font-size: 13px;
-            min-width: 200px;
+            min-width: 220px;
             display: none;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         `;
 
         panel.innerHTML = `
@@ -5315,6 +5316,7 @@ class KVSyncManager {
                     cursor: pointer;
                     font-weight: 500;
                     transition: all 0.2s;
+                    font-family: inherit;
                 ">
                     一鍵同步
                 </button>
@@ -5326,6 +5328,7 @@ class KVSyncManager {
                     border-radius: 6px;
                     cursor: pointer;
                     transition: all 0.2s;
+                    font-family: inherit;
                 ">
                     ✕
                 </button>
@@ -5343,7 +5346,7 @@ class KVSyncManager {
             this.statusPanel.style.display = 'none';
         });
 
-        // 懸停時顯示
+        // 懸停時檢查狀態
         this.statusPanel.addEventListener('mouseenter', () => {
             this.checkSyncStatus();
         });
@@ -5351,9 +5354,23 @@ class KVSyncManager {
 
     async checkSyncStatus() {
         try {
-            const response = await fetch('/api/kv/sync-status');
-            const data = await response.json();
+            // 確保有 sessionId
+            if (!window.player || !window.player.sessionId) {
+                console.log('⏳ 等待 Player 初始化...');
+                return;
+            }
 
+            const response = await fetch('/api/kv/sync-status', {
+                headers: {
+                    'X-Session-Id': window.player.sessionId
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
             const statusEl = document.getElementById('kv-status');
 
             if (data.kvConfigured && data.kvConnected) {
@@ -5380,15 +5397,24 @@ class KVSyncManager {
             }
         } catch (error) {
             console.error('檢查 KV 狀態失敗:', error);
-            document.getElementById('kv-status').innerHTML = `
-                <span style="color: #f87171;">✗ 檢查失敗</span>
-            `;
+            const statusEl = document.getElementById('kv-status');
+            if (statusEl) {
+                statusEl.innerHTML = `
+                    <span style="color: #f87171;">✗ 檢查失敗</span><br>
+                    <span style="font-size: 11px;">${error.message}</span>
+                `;
+            }
         }
     }
 
     async performSync() {
         if (!window.player) {
             alert('播放器未初始化');
+            return;
+        }
+
+        if (!window.player.sessionId) {
+            alert('Session 未就緒，請稍候');
             return;
         }
 
@@ -5414,11 +5440,15 @@ class KVSyncManager {
             const response = await fetch('/api/kv/sync-all', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Content-Type': 'application/json; charset=utf-8',
                     'X-Session-Id': window.player.sessionId
                 },
                 body: JSON.stringify(syncData)
             });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
 
             const result = await response.json();
 
@@ -5430,7 +5460,10 @@ class KVSyncManager {
                     this.syncButton.disabled = false;
                 }, 2000);
             } else {
-                this.showErrorMessage(`⚠️ 同步部分失敗\n成功: ${result.summary.synced} 項\n失敗: ${result.summary.failed} 項`);
+                const msg = result.summary ? 
+                    `⚠️ 同步部分失敗\n成功: ${result.summary.synced} 項\n失敗: ${result.summary.failed} 項` :
+                    `⚠️ 同步失敗\n${result.error}`;
+                this.showErrorMessage(msg);
                 this.syncButton.disabled = false;
                 this.syncButton.textContent = originalText;
             }
@@ -5480,6 +5513,7 @@ class KVSyncManager {
             white-space: pre-line;
             font-weight: 500;
             animation: slideIn 0.3s ease;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         `;
         msgDiv.textContent = message;
         document.body.appendChild(msgDiv);
@@ -5505,6 +5539,7 @@ class KVSyncManager {
             white-space: pre-line;
             font-weight: 500;
             animation: slideIn 0.3s ease;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         `;
         msgDiv.textContent = message;
         document.body.appendChild(msgDiv);
@@ -5516,7 +5551,13 @@ class KVSyncManager {
     }
 }
 
-window.kvSyncManager = new KVSyncManager();
+// 初始化 KV 同步管理器 (延遲初始化，確保 Player 準備好)
+setTimeout(() => {
+    if (typeof KVSyncManager !== 'undefined' && !window.kvSyncManager) {
+        window.kvSyncManager = new KVSyncManager();
+        console.log('✅ KV 同步管理器已初始化');
+    }
+}, 3000);
 
 async function spotifyRequest(url, options = {}) {
     const player = window.spotifyPlayer;
