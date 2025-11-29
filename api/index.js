@@ -1952,6 +1952,13 @@ app.get('/api/kv/status', async (req, res) => {
     }
 });
 
-
+(async () => {
+    try {
+        await initializeRedis();
+        console.log('✅ Redis 初始化完成');
+    } catch (error) {
+        console.error('❌ Redis 初始化失敗:', error);
+        // 不要退出進程，允許應用繼續運行而不使用 KV 存儲
+    }
+})();
 module.exports = app;
-await initializeRedis();
