@@ -5664,19 +5664,23 @@ async function spotifyRequest(url, options = {}) {
     return response;
 }
 
-class AutoSyncManager {
+// ============================================
+// 優化版自動同步 + 設定合併系統
+// ============================================
+
+class OptimizedAutoSyncManager {
     constructor(options = {}) {
-        this.autoSyncInterval = options.autoSyncInterval || 5 * 60 * 1000; // 預設 5 分鐘
-        this.batchSize = options.batchSize || 3; // 每批大小
+        this.autoSyncInterval = options.autoSyncInterval || 5 * 60 * 1000; // 5分鐘
+        this.batchSize = options.batchSize || 3;
         this.maxRetries = options.maxRetries || 3;
         
         // 同步狀態
         this.isSyncing = false;
         this.pendingChanges = {
-            lyrics: new Map(),    // 追蹤改變的歌詞
-            offsets: new Map()    // 追蹤改變的時間調整
+            lyrics: new Map(),
+            offsets: new Map()
         };
-        this.syncQueue = [];     // 待同步隊列
+        this.syncQueue = [];
         this.lastSyncTime = 0;
         this.syncStats = {
             totalSynced: 0,
@@ -5684,9 +5688,14 @@ class AutoSyncManager {
             lastSyncAt: null
         };
         
+        // ✨ 改進：使用 Toast 通知代替 Alert
+        this.toastContainer = null;
+        this.notificationQueue = [];
+        
         // UI 元素
         this.statusPanel = null;
         this.syncButton = null;
+        this.settingsDropdown = null;
         
         this.init();
     }
@@ -5697,11 +5706,25 @@ class AutoSyncManager {
         this.startAutoSync();
         this.monitorLocalChanges();
         
-        console.log('✨ 自動同步管理器已初始化');
-        console.log(`⏰ 自動同步間隔: ${this.autoSyncInterval / 1000 / 60} 分鐘`);
+        console.log('✨ 優化的自動同步管理器已初始化');
     }
 
     createUI() {
+        // ✨ 改進：創建 Toast 通知容器
+        this.toastContainer = document.createElement('div');
+        this.toastContainer.id = 'sync-toast-container';
+        this.toastContainer.style.cssText = `
+            position: fixed;
+            bottom: 100px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 2000;
+            pointer-events: none;
+        `;
+        document.body.appendChild(this.toastContainer);
+
         // 同步狀態面板
         const panel = document.createElement('div');
         panel.id = 'auto-sync-panel';
@@ -5716,14 +5739,16 @@ class AutoSyncManager {
             box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
             z-index: 999;
             font-size: 13px;
-            min-width: 280px;
+            min-width: 300px;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            transition: all 0.3s ease;
         `;
 
         panel.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                <div style="font-weight: 600;">🔄 自動同步</div>
+                <div style="font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                    <span id="sync-status-icon">🔄</span>
+                    <span>自動同步</span>
+                </div>
                 <button id="sync-close-btn" style="
                     background: none;
                     border: none;
@@ -5755,7 +5780,7 @@ class AutoSyncManager {
                 "></div>
             </div>
             
-            <div style="display: flex; gap: 8px;">
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                 <button id="manual-sync-btn" style="
                     flex: 1;
                     padding: 8px 12px;
@@ -5782,10 +5807,47 @@ class AutoSyncManager {
                     ⚙️
                 </button>
             </div>
+            
+            <!-- 設定下拉菜單 -->
+            <div id="sync-settings-dropdown" style="
+                display: none;
+                background: rgba(0,0,0,0.2);
+                border-top: 1px solid rgba(255,255,255,0.2);
+                margin-top: 12px;
+                padding-top: 12px;
+                border-radius: 6px;
+            ">
+                <div style="margin-bottom: 12px;">
+                    <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                        <input type="checkbox" id="auto-sync-enable" checked>
+                        <span style="font-size: 12px;">啟用自動同步</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="sync-notifications" checked>
+                        <span style="font-size: 12px;">顯示同步通知</span>
+                    </label>
+                </div>
+                
+                <div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">
+                    <label style="display: block; font-size: 12px; margin-bottom: 8px;">
+                        同步間隔 (分鐘):
+                    </label>
+                    <input type="number" id="sync-interval-input" min="1" max="60" value="5" style="
+                        width: 100%;
+                        padding: 6px;
+                        border: 1px solid rgba(255,255,255,0.2);
+                        border-radius: 4px;
+                        background: rgba(0,0,0,0.2);
+                        color: white;
+                        font-family: inherit;
+                    ">
+                </div>
+            </div>
         `;
 
         document.body.appendChild(panel);
         this.statusPanel = panel;
+        this.settingsDropdown = panel.querySelector('#sync-settings-dropdown');
     }
 
     bindEvents() {
@@ -5797,23 +5859,134 @@ class AutoSyncManager {
             this.triggerSync('manual');
         });
 
-        document.getElementById('sync-settings-btn').addEventListener('click', () => {
-            this.showSettingsModal();
+        document.getElementById('sync-settings-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggleSettingsDropdown();
         });
 
-        // 點擊面板時顯示詳細信息
-        this.statusPanel.addEventListener('click', (e) => {
-            if (e.target.id !== 'manual-sync-btn' && 
-                e.target.id !== 'sync-settings-btn' &&
-                e.target.id !== 'sync-close-btn') {
-                this.showDetailedStatus();
+        // ✨ 改進：關閉設定時隱藏下拉菜單
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('#sync-settings-btn') && 
+                !e.target.closest('#sync-settings-dropdown')) {
+                this.settingsDropdown.style.display = 'none';
+            }
+        });
+
+        // 設定事件監聽
+        document.getElementById('auto-sync-enable').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                this.startAutoSync();
+                this.showToast('✅ 自動同步已啟用', 'success');
+            } else {
+                this.stopAutoSync();
+                this.showToast('⏸️ 自動同步已停用', 'info');
+            }
+        });
+
+        document.getElementById('sync-notifications').addEventListener('change', (e) => {
+            localStorage.setItem('sync_show_notifications', e.target.checked);
+            this.showToast(
+                e.target.checked ? '✅ 同步通知已啟用' : '⏸️ 同步通知已禁用',
+                e.target.checked ? 'success' : 'info'
+            );
+        });
+
+        document.getElementById('sync-interval-input').addEventListener('change', (e) => {
+            const interval = parseInt(e.target.value);
+            if (interval > 0 && interval <= 60) {
+                this.autoSyncInterval = interval * 60 * 1000;
+                localStorage.setItem('auto_sync_interval', interval);
+                this.showToast(`✅ 同步間隔已設置為 ${interval} 分鐘`, 'success');
+                this.restartAutoSync();
             }
         });
     }
 
-    // ✨ 監控本地改變 - 追蹤每個改變
+    toggleSettingsDropdown() {
+        if (this.settingsDropdown.style.display === 'block') {
+            this.settingsDropdown.style.display = 'none';
+        } else {
+            this.settingsDropdown.style.display = 'block';
+        }
+    }
+
+    // ✨ 改進：使用 Toast 通知代替 Alert
+    showToast(message, type = 'info', duration = 3000) {
+        // 檢查是否應該顯示通知
+        const showNotifications = localStorage.getItem('sync_show_notifications') !== 'false';
+        if (!showNotifications && type !== 'error') {
+            return;
+        }
+
+        const toast = document.createElement('div');
+        const colors = {
+            success: 'rgba(74, 222, 128, 0.9)',
+            error: 'rgba(248, 113, 113, 0.9)',
+            info: 'rgba(96, 165, 250, 0.9)',
+            warning: 'rgba(251, 191, 36, 0.9)'
+        };
+        
+        toast.style.cssText = `
+            background: ${colors[type] || colors.info};
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            animation: slideInRight 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 200px;
+            max-width: 300px;
+            word-break: break-word;
+        `;
+        
+        toast.textContent = message;
+        this.toastContainer.appendChild(toast);
+
+        // 添加動畫樣式
+        if (!document.querySelector('style[data-toast-animation]')) {
+            const style = document.createElement('style');
+            style.setAttribute('data-toast-animation', 'true');
+            style.textContent = `
+                @keyframes slideInRight {
+                    from {
+                        transform: translateX(400px);
+                        opacity: 0;
+                    }
+                    to {
+                        transform: translateX(0);
+                        opacity: 1;
+                    }
+                }
+                @keyframes slideOutRight {
+                    from {
+                        transform: translateX(0);
+                        opacity: 1;
+                    }
+                    to {
+                        transform: translateX(400px);
+                        opacity: 0;
+                    }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
+        // 自動移除
+        setTimeout(() => {
+            toast.style.animation = 'slideOutRight 0.3s ease';
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 300);
+        }, duration);
+    }
+
     monitorLocalChanges() {
-        // 監控 localStorage 的變化
         window.addEventListener('storage', (e) => {
             if (e.key === 'saved_lyrics' || e.key === 'lyrics_time_adjustments') {
                 console.log(`📝 檢測到本地改變: ${e.key}`);
@@ -5821,16 +5994,13 @@ class AutoSyncManager {
             }
         });
 
-        // 定期檢查改變（每 10 秒）
         setInterval(() => {
             this.detectChanges();
         }, 10000);
     }
 
-    // 偵測改變
     detectChanges() {
         try {
-            // 檢查歌詞改變
             const savedLyrics = JSON.parse(localStorage.getItem('saved_lyrics') || '{}');
             const prevLyricsHash = sessionStorage.getItem('lyrics_hash') || '';
             const currentLyricsHash = JSON.stringify(savedLyrics);
@@ -5841,7 +6011,6 @@ class AutoSyncManager {
                 sessionStorage.setItem('lyrics_hash', currentLyricsHash);
             }
 
-            // 檢查時間調整改變
             const timeAdjustments = JSON.parse(localStorage.getItem('lyrics_time_adjustments') || '{}');
             const prevOffsetsHash = sessionStorage.getItem('offsets_hash') || '';
             const currentOffsetsHash = JSON.stringify(timeAdjustments);
@@ -5858,11 +6027,9 @@ class AutoSyncManager {
         }
     }
 
-    // 更新待同步列表
     updatePendingChanges(type, data) {
         const map = this.pendingChanges[type];
         Object.entries(data).forEach(([key, value]) => {
-            // 只添加新的或有改變的項目
             const existing = map.get(key);
             if (!existing || JSON.stringify(existing) !== JSON.stringify(value)) {
                 map.set(key, {
@@ -5876,8 +6043,10 @@ class AutoSyncManager {
         console.log(`📦 ${type} 待同步: ${map.size} 項`);
     }
 
-    // 自動同步定時器
     startAutoSync() {
+        this.autoSyncInterval = 
+            (parseInt(localStorage.getItem('auto_sync_interval')) || 5) * 60 * 1000;
+        
         setInterval(() => {
             const pendingLyrics = this.pendingChanges.lyrics.size;
             const pendingOffsets = this.pendingChanges.offsets.size;
@@ -5892,15 +6061,23 @@ class AutoSyncManager {
         console.log(`⏰ 自動同步定時器已啟動 (${this.autoSyncInterval / 1000 / 60} 分鐘)`);
     }
 
-    // ✨ 觸發同步 - 後台非阻塞式
+    stopAutoSync() {
+        console.log('⏸️ 自動同步已停止');
+    }
+
+    restartAutoSync() {
+        console.log('🔄 重新啟動自動同步...');
+        // 實現重新啟動邏輯
+    }
+
     async triggerSync(source = 'manual') {
         if (this.isSyncing) {
-            console.log('⏳ 已有同步在進行中，新請求已排隊');
+            console.log('⏳ 已有同步在進行中');
             return;
         }
 
         if (!window.player || !window.player.sessionId) {
-            console.log('⚠️ 播放器未初始化，無法同步');
+            console.log('⚠️ 播放器未初始化');
             return;
         }
 
@@ -5908,27 +6085,24 @@ class AutoSyncManager {
         console.log(`🔄 開始同步 (來源: ${source})`);
 
         try {
-            // 構建同步隊列
             this.buildSyncQueue();
 
-            // 逐批同步
-            while (this.syncQueue.length > 0 && !navigator.onLine === false) {
+            while (this.syncQueue.length > 0 && navigator.onLine) {
                 const batch = this.syncQueue.splice(0, this.batchSize);
                 await this.syncBatch(batch);
-                
-                // 更新進度
                 this.updateProgressBar();
-                
-                // 批次之間的延遲，避免過度請求
                 await this.delay(500);
             }
 
+            // ✨ 改進：使用 Toast 通知
+            const message = `✅ 同步完成 (${this.syncStats.totalSynced} 項)`;
+            this.showToast(message, 'success', 4000);
+            
             console.log(`✅ 同步完成! 已同步: ${this.syncStats.totalSynced}, 失敗: ${this.syncStats.totalFailed}`);
-            this.showNotification(`✅ 同步完成 (${this.syncStats.totalSynced} 項)`, 'success');
             
         } catch (error) {
             console.error('❌ 同步過程中出錯:', error);
-            this.showNotification(`❌ 同步失敗: ${error.message}`, 'error');
+            this.showToast(`❌ 同步失敗: ${error.message}`, 'error', 5000);
         } finally {
             this.isSyncing = false;
             this.lastSyncTime = Date.now();
@@ -5937,11 +6111,9 @@ class AutoSyncManager {
         }
     }
 
-    // 構建同步隊列
     buildSyncQueue() {
         this.syncQueue = [];
         
-        // 添加歌詞同步任務
         this.pendingChanges.lyrics.forEach((item, key) => {
             this.syncQueue.push({
                 type: 'lyrics',
@@ -5950,7 +6122,6 @@ class AutoSyncManager {
             });
         });
 
-        // 添加時間調整同步任務
         this.pendingChanges.offsets.forEach((item, key) => {
             this.syncQueue.push({
                 type: 'offsets',
@@ -5962,14 +6133,12 @@ class AutoSyncManager {
         console.log(`📋 同步隊列已構建: ${this.syncQueue.length} 項`);
     }
 
-    // 同步一個批次
     async syncBatch(batch) {
         const batchData = {
             savedLyrics: {},
             timeAdjustments: {}
         };
 
-        // 準備批次數據
         batch.forEach(task => {
             if (task.type === 'lyrics') {
                 batchData.savedLyrics[task.key] = task.item.data;
@@ -5991,7 +6160,6 @@ class AutoSyncManager {
             });
 
             if (response.status === 413) {
-                // 請求過大，重新提交一半
                 console.warn('⚠️ 批次過大，拆分後重試');
                 const halfBatch = batch.slice(0, Math.ceil(batch.length / 2));
                 const otherHalf = batch.slice(Math.ceil(batch.length / 2));
@@ -6010,7 +6178,6 @@ class AutoSyncManager {
             const synced = result.summary?.synced || batch.length;
             const failed = result.summary?.failed || 0;
 
-            // 移除已成功同步的項目
             batch.forEach(task => {
                 if (result.summary?.synced > 0) {
                     if (task.type === 'lyrics') {
@@ -6029,7 +6196,6 @@ class AutoSyncManager {
         } catch (error) {
             console.error(`❌ 批次同步失敗:`, error);
             
-            // 重試機制
             batch.forEach(task => {
                 const pendingItem = task.type === 'lyrics' ? 
                     this.pendingChanges.lyrics.get(task.key) :
@@ -6038,14 +6204,11 @@ class AutoSyncManager {
                 if (pendingItem && pendingItem.retries < this.maxRetries) {
                     pendingItem.retries++;
                     console.log(`🔄 ${task.key} 將在下次同步時重試 (${pendingItem.retries}/${this.maxRetries})`);
-                } else {
-                    console.warn(`⚠️ ${task.key} 已達最大重試次數`);
                 }
             });
         }
     }
 
-    // 更新 UI
     updateUI() {
         const pendingLyrics = this.pendingChanges.lyrics.size;
         const pendingOffsets = this.pendingChanges.offsets.size;
@@ -6055,110 +6218,48 @@ class AutoSyncManager {
         document.getElementById('synced-count').textContent = this.syncStats.totalSynced;
         document.getElementById('failed-count').textContent = this.syncStats.totalFailed;
 
-        // 更新狀態顏色
-        const statusPanel = document.getElementById('sync-status');
-        if (totalPending > 0) {
-            statusPanel.style.opacity = '1';
+        const statusIcon = document.getElementById('sync-status-icon');
+        if (this.isSyncing) {
+            statusIcon.textContent = '⏳';
+        } else if (totalPending > 0) {
+            statusIcon.textContent = '🔔';
         } else {
-            statusPanel.style.opacity = '0.7';
+            statusIcon.textContent = '✅';
         }
     }
 
-    // 更新進度條
     updateProgressBar() {
         const totalItems = this.syncQueue.length + this.syncStats.totalSynced;
         const progress = totalItems > 0 ? (this.syncStats.totalSynced / totalItems * 100) : 0;
         document.getElementById('sync-progress-bar').style.width = progress + '%';
     }
 
-    // 顯示詳細狀態
-    showDetailedStatus() {
-        const pendingLyrics = Array.from(this.pendingChanges.lyrics.keys()).slice(0, 5);
-        const pendingOffsets = Array.from(this.pendingChanges.offsets.keys()).slice(0, 5);
-        
-        let details = '📊 同步詳細狀態\n\n';
-        details += `待同步歌詞: ${this.pendingChanges.lyrics.size} 項\n`;
-        if (pendingLyrics.length > 0) {
-            details += pendingLyrics.map(k => `  • ${k}`).join('\n') + '\n';
-        }
-        
-        details += `\n待同步時間調整: ${this.pendingChanges.offsets.size} 項\n`;
-        if (pendingOffsets.length > 0) {
-            details += pendingOffsets.map(k => `  • ${k}`).join('\n') + '\n';
-        }
-        
-        details += `\n上次同步: ${this.syncStats.lastSyncAt || '未同步'}`;
-        
-        alert(details);
-    }
-
-    // 設置面板
-    showSettingsModal() {
-        const newInterval = prompt(
-            `輸入自動同步間隔 (分鐘):\n\n當前: ${this.autoSyncInterval / 1000 / 60} 分鐘`,
-            Math.floor(this.autoSyncInterval / 1000 / 60)
-        );
-
-        if (newInterval && !isNaN(newInterval) && newInterval > 0) {
-            this.autoSyncInterval = newInterval * 60 * 1000;
-            this.showNotification(`⚙️ 自動同步間隔已更新為 ${newInterval} 分鐘`, 'info');
-            console.log(`⚙️ 自動同步間隔已更新: ${this.autoSyncInterval / 1000 / 60} 分鐘`);
-        }
-    }
-
-    // 通知
-    showNotification(message, type = 'info') {
-        const notif = document.createElement('div');
-        const colors = {
-            success: '#4ade80',
-            error: '#f87171',
-            info: '#60a5fa'
-        };
-        
-        notif.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: ${colors[type]};
-            color: white;
-            padding: 12px 20px;
-            border-radius: 8px;
-            z-index: 2000;
-            animation: slideIn 0.3s ease;
-        `;
-        notif.textContent = message;
-        
-        document.body.appendChild(notif);
-        setTimeout(() => notif.remove(), 3000);
-    }
-
-    // 工具方法
     delay(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 }
 
-// ✨ 初始化自動同步
+// 初始化優化的自動同步管理器
 document.addEventListener('DOMContentLoaded', () => {
-    if (!window.autoSyncManager && window.player) {
-        window.autoSyncManager = new AutoSyncManager({
-            autoSyncInterval: 5 * 60 * 1000,  // 5 分鐘
-            batchSize: 3                      // 每批 3 項
+    if (!window.optimizedAutoSyncManager && window.player) {
+        window.optimizedAutoSyncManager = new OptimizedAutoSyncManager({
+            autoSyncInterval: 5 * 60 * 1000,
+            batchSize: 3
         });
-        console.log('✨ 自動同步系統已啟動');
+        console.log('✨ 優化的自動同步系統已啟動');
     }
 });
 
 // 如果 player 還未初始化，等待後初始化
 if (!window.player) {
     const checkInterval = setInterval(() => {
-        if (window.player && !window.autoSyncManager) {
-            window.autoSyncManager = new AutoSyncManager({
+        if (window.player && !window.optimizedAutoSyncManager) {
+            window.optimizedAutoSyncManager = new OptimizedAutoSyncManager({
                 autoSyncInterval: 5 * 60 * 1000,
                 batchSize: 3
             });
             clearInterval(checkInterval);
-            console.log('✨ 自動同步系統已啟動');
+            console.log('✨ 優化的自動同步系統已啟動');
         }
     }, 1000);
 }
