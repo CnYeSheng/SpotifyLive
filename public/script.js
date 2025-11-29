@@ -5271,13 +5271,13 @@ class KVSyncManager {
     constructor() {
         this.syncButton = null;
         this.statusPanel = null;
+        this.batchSize = 5; // 每批同步的項目數
         this.init();
     }
 
     init() {
         this.createSyncUI();
         this.bindEvents();
-        // 延遲檢查狀態，確保 sessionId 已設置
         setTimeout(() => this.checkSyncStatus(), 2000);
     }
 
@@ -5346,7 +5346,6 @@ class KVSyncManager {
             this.statusPanel.style.display = 'none';
         });
 
-        // 懸停時檢查狀態
         this.statusPanel.addEventListener('mouseenter', () => {
             this.checkSyncStatus();
         });
@@ -5354,13 +5353,12 @@ class KVSyncManager {
 
     async checkSyncStatus() {
         try {
-            // 確保有 sessionId
             if (!window.player || !window.player.sessionId) {
                 console.log('⏳ 等待 Player 初始化...');
                 return;
             }
 
-            const response = await fetch('/api/kv/sync-status', {
+            const response = await fetch('/api/kv/status', {
                 headers: {
                     'X-Session-Id': window.player.sessionId
                 }
@@ -5373,7 +5371,7 @@ class KVSyncManager {
             const data = await response.json();
             const statusEl = document.getElementById('kv-status');
 
-            if (data.kvConfigured && data.kvConnected) {
+            if (data.kvAvailable) {
                 statusEl.innerHTML = `
                     <span style="color: #4ade80;">✓ KV 已連接</span><br>
                     <span style="font-size: 11px; opacity: 0.8;">點擊下方按鈕同步本地數據</span>
@@ -5381,13 +5379,6 @@ class KVSyncManager {
                 this.statusPanel.style.display = 'block';
                 this.syncButton.disabled = false;
                 this.syncButton.style.opacity = '1';
-            } else if (data.kvConfigured && !data.kvConnected) {
-                statusEl.innerHTML = `
-                    <span style="color: #f87171;">✗ KV 連接失敗</span><br>
-                    <span style="font-size: 11px;">${data.error || '未知錯誤'}</span>
-                `;
-                this.syncButton.disabled = true;
-                this.syncButton.style.opacity = '0.5';
             } else {
                 statusEl.innerHTML = `
                     <span style="color: #fbbf24;">⚠ KV 未配置</span><br>
@@ -5397,16 +5388,10 @@ class KVSyncManager {
             }
         } catch (error) {
             console.error('檢查 KV 狀態失敗:', error);
-            const statusEl = document.getElementById('kv-status');
-            if (statusEl) {
-                statusEl.innerHTML = `
-                    <span style="color: #f87171;">✗ 檢查失敗</span><br>
-                    <span style="font-size: 11px;">${error.message}</span>
-                `;
-            }
         }
     }
 
+    // ✨ 改進：分批同步，避免 413 錯誤
     async performSync() {
         if (!window.player) {
             alert('播放器未初始化');
@@ -5423,58 +5408,157 @@ class KVSyncManager {
         this.syncButton.textContent = '同步中...';
 
         try {
-            // 收集所有本地數據
-            const syncData = {
-                savedLyrics: this.getSavedLyricsData(),
-                timeAdjustments: this.getTimeAdjustmentsData(),
-                playerPreferences: {
-                    fontSize: window.player.fontSize,
-                    autoScroll: window.player.autoScroll,
-                    nextSongPreviewMode: window.player.nextSongPreviewMode,
-                    syncedAt: new Date().toISOString()
-                }
+            // 收集本地數據
+            const savedLyrics = this.getSavedLyricsData();
+            const timeAdjustments = this.getTimeAdjustmentsData();
+            
+            console.log(`📊 需要同步的數據:`);
+            console.log(`  - 保存的歌詞: ${Object.keys(savedLyrics).length} 項`);
+            console.log(`  - 時間調整: ${Object.keys(timeAdjustments).length} 項`);
+
+            const results = {
+                synced: 0,
+                failed: 0,
+                items: [],
+                errors: []
             };
 
-            console.log('📤 準備同步數據:', syncData);
-
-            const response = await fetch('/api/kv/sync-all', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json; charset=utf-8',
-                    'X-Session-Id': window.player.sessionId
-                },
-                body: JSON.stringify(syncData)
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            // ✨ 分批同步歌詞
+            const lyricsEntries = Object.entries(savedLyrics);
+            if (lyricsEntries.length > 0) {
+                this.showStatus('📝 同步歌詞...');
+                const lyricsResults = await this.syncDataInBatches(
+                    'lyrics',
+                    lyricsEntries,
+                    this.batchSize,
+                    window.player.sessionId
+                );
+                results.synced += lyricsResults.synced;
+                results.failed += lyricsResults.failed;
+                results.items.push(...lyricsResults.items);
+                results.errors.push(...lyricsResults.errors);
             }
 
-            const result = await response.json();
+            // ✨ 分批同步時間調整
+            const offsetEntries = Object.entries(timeAdjustments);
+            if (offsetEntries.length > 0) {
+                this.showStatus('⏰ 同步時間調整...');
+                const offsetResults = await this.syncDataInBatches(
+                    'offset',
+                    offsetEntries,
+                    this.batchSize,
+                    window.player.sessionId
+                );
+                results.synced += offsetResults.synced;
+                results.failed += offsetResults.failed;
+                results.items.push(...offsetResults.items);
+                results.errors.push(...offsetResults.errors);
+            }
 
-            if (result.success) {
-                this.showSuccessMessage(`✅ 同步成功！\n${result.summary.synced} 項數據已上傳`);
-                this.syncButton.textContent = '✓ 已同步';
-                setTimeout(() => {
-                    this.syncButton.textContent = originalText;
-                    this.syncButton.disabled = false;
-                }, 2000);
-            } else {
-                const msg = result.summary ? 
-                    `⚠️ 同步部分失敗\n成功: ${result.summary.synced} 項\n失敗: ${result.summary.failed} 項` :
-                    `⚠️ 同步失敗\n${result.error}`;
-                this.showErrorMessage(msg);
-                this.syncButton.disabled = false;
+            // 顯示最終結果
+            const message = `✅ 同步完成！\n${results.synced} 項成功\n${results.failed} 項失敗`;
+            this.showSuccessMessage(message);
+            
+            this.syncButton.textContent = '✓ 已同步';
+            setTimeout(() => {
                 this.syncButton.textContent = originalText;
-            }
-
-            console.log('📊 同步結果:', result);
+                this.syncButton.disabled = false;
+            }, 2000);
 
         } catch (error) {
             console.error('同步失敗:', error);
             this.showErrorMessage(`❌ 同步失敗\n${error.message}`);
             this.syncButton.disabled = false;
             this.syncButton.textContent = originalText;
+        }
+    }
+
+    // ✨ 新增：分批同步方法
+    async syncDataInBatches(type, entries, batchSize, sessionId) {
+        const results = {
+            synced: 0,
+            failed: 0,
+            items: [],
+            errors: []
+        };
+
+        // 將數據分成多個批次
+        for (let i = 0; i < entries.length; i += batchSize) {
+            const batch = entries.slice(i, i + batchSize);
+            console.log(`📦 同步 ${type} 批次 ${Math.floor(i / batchSize) + 1}/${Math.ceil(entries.length / batchSize)}`);
+
+            try {
+                const batchData = {};
+                batch.forEach(([key, value]) => {
+                    batchData[key] = value;
+                });
+
+                // 建構請求体
+                let requestBody = {};
+                if (type === 'lyrics') {
+                    requestBody = { savedLyrics: batchData };
+                } else if (type === 'offset') {
+                    requestBody = { timeAdjustments: batchData };
+                }
+
+                const response = await fetch('/api/kv/sync-all', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json; charset=utf-8',
+                        'X-Session-Id': sessionId
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (response.ok) {
+                    const batchResult = await response.json();
+                    results.synced += batchResult.summary?.synced || 0;
+                    results.failed += batchResult.summary?.failed || 0;
+                    results.items.push(...(batchResult.items || []));
+                    if (batchResult.errors) {
+                        results.errors.push(...batchResult.errors);
+                    }
+                    console.log(`✅ ${type} 批次 ${Math.floor(i / batchSize) + 1} 完成`);
+                } else if (response.status === 413) {
+                    console.warn(`⚠️ ${type} 批次太大，嘗試更小的批次`);
+                    // 遞歸調用，使用更小的批次
+                    const smallerBatch = await this.syncDataInBatches(
+                        type,
+                        batch,
+                        Math.max(1, Math.floor(batchSize / 2)),
+                        sessionId
+                    );
+                    results.synced += smallerBatch.synced;
+                    results.failed += smallerBatch.failed;
+                    results.items.push(...smallerBatch.items);
+                    results.errors.push(...smallerBatch.errors);
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                // 批次之間稍作延遲，避免頻繁請求
+                await new Promise(resolve => setTimeout(resolve, 300));
+
+            } catch (error) {
+                console.error(`❌ ${type} 批次同步失敗:`, error);
+                results.failed += batch.length;
+                batch.forEach(([key]) => {
+                    results.errors.push({
+                        type: type,
+                        key: key,
+                        error: error.message
+                    });
+                });
+            }
+        }
+
+        return results;
+    }
+
+    showStatus(message) {
+        const statusEl = document.getElementById('kv-status');
+        if (statusEl) {
+            statusEl.textContent = message;
         }
     }
 
