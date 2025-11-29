@@ -5,7 +5,8 @@
       "src": "api/index.js",
       "use": "@vercel/node",
       "config": {
-        "maxDuration": 30
+        "maxDuration": 30,
+        "maxBodySize": "5mb"
       }
     },
     {
@@ -16,10 +17,7 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "/api/index.js",
-      "config": {
-        "maxBodySize": "5mb"
-      }
+      "dest": "/api/index.js"
     },
     {
       "src": "/(.*)",
