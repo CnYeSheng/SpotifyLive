@@ -5267,6 +5267,257 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
+class KVSyncManager {
+    constructor() {
+        this.syncButton = null;
+        this.statusPanel = null;
+        this.init();
+    }
+
+    init() {
+        this.createSyncUI();
+        this.bindEvents();
+        this.checkSyncStatus();
+    }
+
+    createSyncUI() {
+        // 創建同步面板
+        const panel = document.createElement('div');
+        panel.id = 'kv-sync-panel';
+        panel.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+            z-index: 999;
+            font-size: 13px;
+            min-width: 200px;
+            display: none;
+        `;
+
+        panel.innerHTML = `
+            <div style="margin-bottom: 12px; font-weight: 600;">📤 KV 同步管理</div>
+            <div id="kv-status" style="margin-bottom: 12px; font-size: 12px; opacity: 0.9;">
+                檢查中...
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <button id="kv-sync-btn" style="
+                    flex: 1;
+                    padding: 8px 12px;
+                    background: rgba(255,255,255,0.2);
+                    border: 1px solid rgba(255,255,255,0.3);
+                    color: white;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-weight: 500;
+                    transition: all 0.2s;
+                ">
+                    一鍵同步
+                </button>
+                <button id="kv-close-btn" style="
+                    padding: 8px 12px;
+                    background: rgba(255,255,255,0.1);
+                    border: 1px solid rgba(255,255,255,0.2);
+                    color: white;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                ">
+                    ✕
+                </button>
+            </div>
+        `;
+
+        document.body.appendChild(panel);
+        this.statusPanel = panel;
+        this.syncButton = document.getElementById('kv-sync-btn');
+    }
+
+    bindEvents() {
+        this.syncButton.addEventListener('click', () => this.performSync());
+        document.getElementById('kv-close-btn').addEventListener('click', () => {
+            this.statusPanel.style.display = 'none';
+        });
+
+        // 懸停時顯示
+        this.statusPanel.addEventListener('mouseenter', () => {
+            this.checkSyncStatus();
+        });
+    }
+
+    async checkSyncStatus() {
+        try {
+            const response = await fetch('/api/kv/sync-status');
+            const data = await response.json();
+
+            const statusEl = document.getElementById('kv-status');
+
+            if (data.kvConfigured && data.kvConnected) {
+                statusEl.innerHTML = `
+                    <span style="color: #4ade80;">✓ KV 已連接</span><br>
+                    <span style="font-size: 11px; opacity: 0.8;">點擊下方按鈕同步本地數據</span>
+                `;
+                this.statusPanel.style.display = 'block';
+                this.syncButton.disabled = false;
+                this.syncButton.style.opacity = '1';
+            } else if (data.kvConfigured && !data.kvConnected) {
+                statusEl.innerHTML = `
+                    <span style="color: #f87171;">✗ KV 連接失敗</span><br>
+                    <span style="font-size: 11px;">${data.error || '未知錯誤'}</span>
+                `;
+                this.syncButton.disabled = true;
+                this.syncButton.style.opacity = '0.5';
+            } else {
+                statusEl.innerHTML = `
+                    <span style="color: #fbbf24;">⚠ KV 未配置</span><br>
+                    <span style="font-size: 11px;">環境變數未設置</span>
+                `;
+                this.statusPanel.style.display = 'none';
+            }
+        } catch (error) {
+            console.error('檢查 KV 狀態失敗:', error);
+            document.getElementById('kv-status').innerHTML = `
+                <span style="color: #f87171;">✗ 檢查失敗</span>
+            `;
+        }
+    }
+
+    async performSync() {
+        if (!window.player) {
+            alert('播放器未初始化');
+            return;
+        }
+
+        this.syncButton.disabled = true;
+        const originalText = this.syncButton.textContent;
+        this.syncButton.textContent = '同步中...';
+
+        try {
+            // 收集所有本地數據
+            const syncData = {
+                savedLyrics: this.getSavedLyricsData(),
+                timeAdjustments: this.getTimeAdjustmentsData(),
+                playerPreferences: {
+                    fontSize: window.player.fontSize,
+                    autoScroll: window.player.autoScroll,
+                    nextSongPreviewMode: window.player.nextSongPreviewMode,
+                    syncedAt: new Date().toISOString()
+                }
+            };
+
+            console.log('📤 準備同步數據:', syncData);
+
+            const response = await fetch('/api/kv/sync-all', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Session-Id': window.player.sessionId
+                },
+                body: JSON.stringify(syncData)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.showSuccessMessage(`✅ 同步成功！\n${result.summary.synced} 項數據已上傳`);
+                this.syncButton.textContent = '✓ 已同步';
+                setTimeout(() => {
+                    this.syncButton.textContent = originalText;
+                    this.syncButton.disabled = false;
+                }, 2000);
+            } else {
+                this.showErrorMessage(`⚠️ 同步部分失敗\n成功: ${result.summary.synced} 項\n失敗: ${result.summary.failed} 項`);
+                this.syncButton.disabled = false;
+                this.syncButton.textContent = originalText;
+            }
+
+            console.log('📊 同步結果:', result);
+
+        } catch (error) {
+            console.error('同步失敗:', error);
+            this.showErrorMessage(`❌ 同步失敗\n${error.message}`);
+            this.syncButton.disabled = false;
+            this.syncButton.textContent = originalText;
+        }
+    }
+
+    getSavedLyricsData() {
+        try {
+            const saved = localStorage.getItem('saved_lyrics');
+            return saved ? JSON.parse(saved) : {};
+        } catch (e) {
+            console.error('讀取保存的歌詞失敗:', e);
+            return {};
+        }
+    }
+
+    getTimeAdjustmentsData() {
+        try {
+            const adjustments = localStorage.getItem('lyrics_time_adjustments');
+            return adjustments ? JSON.parse(adjustments) : {};
+        } catch (e) {
+            console.error('讀取時間調整失敗:', e);
+            return {};
+        }
+    }
+
+    showSuccessMessage(message) {
+        const msgDiv = document.createElement('div');
+        msgDiv.style.cssText = `
+            position: fixed;
+            bottom: 110px;
+            left: 20px;
+            background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+            color: white;
+            padding: 16px 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(74, 222, 128, 0.3);
+            z-index: 1000;
+            white-space: pre-line;
+            font-weight: 500;
+            animation: slideIn 0.3s ease;
+        `;
+        msgDiv.textContent = message;
+        document.body.appendChild(msgDiv);
+
+        setTimeout(() => {
+            msgDiv.style.animation = 'slideIn 0.3s ease reverse';
+            setTimeout(() => msgDiv.remove(), 300);
+        }, 3000);
+    }
+
+    showErrorMessage(message) {
+        const msgDiv = document.createElement('div');
+        msgDiv.style.cssText = `
+            position: fixed;
+            bottom: 110px;
+            left: 20px;
+            background: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
+            color: white;
+            padding: 16px 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(248, 113, 113, 0.3);
+            z-index: 1000;
+            white-space: pre-line;
+            font-weight: 500;
+            animation: slideIn 0.3s ease;
+        `;
+        msgDiv.textContent = message;
+        document.body.appendChild(msgDiv);
+
+        setTimeout(() => {
+            msgDiv.style.animation = 'slideIn 0.3s ease reverse';
+            setTimeout(() => msgDiv.remove(), 300);
+        }, 4000);
+    }
+}
+
+window.kvSyncManager = new KVSyncManager();
+
 async function spotifyRequest(url, options = {}) {
     const player = window.spotifyPlayer;
     if (!player) return Promise.reject(new Error('播放器尚未初始化'));
