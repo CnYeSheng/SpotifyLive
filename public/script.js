@@ -165,6 +165,9 @@ class SpotifyLyricsPlayer {
         
         // 初始化歌詞緩存
         this.initLyricsCache();
+        
+        // 初始化自動同步功能
+        this.initAutoSync();
     }
 
     // 初始化歌詞緩存
@@ -186,6 +189,422 @@ class SpotifyLyricsPlayer {
             this.log(`❌ 載入歌詞緩存失敗: ${error.message}`);
             localStorage.removeItem('lyrics_cache');
         }
+    }
+
+    // 初始化自動同步功能
+    initAutoSync() {
+        // 從 localStorage 讀取同步間隔設定，預設為 5 分鐘
+        this.autoSyncInterval = parseInt(localStorage.getItem('auto_sync_interval')) || 300000; // 5分鐘
+        this.autoSyncEnabled = localStorage.getItem('auto_sync_enabled') !== 'false'; // 預設開啟
+        this.lastSyncTime = parseInt(localStorage.getItem('last_sync_time')) || 0;
+        
+        this.log(`🔄 自動同步設定 - 間隔: ${this.autoSyncInterval/1000}秒, 啟用: ${this.autoSyncEnabled}`);
+        
+        if (this.autoSyncEnabled) {
+            this.startAutoSync();
+        }
+    }
+
+    // 開始自動同步
+    startAutoSync() {
+        if (this.autoSyncTimer) {
+            clearInterval(this.autoSyncTimer);
+        }
+        
+        // 立即執行一次同步
+        setTimeout(() => this.performAutoSync(), 3000); // 延遲3秒避免初始化衝突
+        
+        // 設定定期同步
+        this.autoSyncTimer = setInterval(() => {
+            this.performAutoSync();
+        }, this.autoSyncInterval);
+        
+        this.log(`✅ 自動同步已啟動，間隔: ${this.autoSyncInterval/1000}秒`);
+    }
+
+    // 停止自動同步
+    stopAutoSync() {
+        if (this.autoSyncTimer) {
+            clearInterval(this.autoSyncTimer);
+            this.autoSyncTimer = null;
+        }
+        this.log('⏹️ 自動同步已停止');
+    }
+
+    // 執行自動同步
+    async performAutoSync() {
+        if (!this.sessionId || !this.autoSyncEnabled) {
+            this.log('⏭️ 跳過自動同步 - 無session或已停用');
+            return;
+        }
+
+        this.log('🔄 開始自動同步...');
+        
+        try {
+            // 1. 同步歌詞數據 (雙向同步)
+            await this.syncLyricsData();
+            
+            // 2. 同步時間調整數據 (雙向同步)
+            await this.syncTimeAdjustments();
+            
+            // 3. 更新最後同步時間
+            this.lastSyncTime = Date.now();
+            localStorage.setItem('last_sync_time', this.lastSyncTime.toString());
+            
+            this.log('✅ 自動同步完成');
+            
+        } catch (error) {
+            this.log(`❌ 自動同步失敗: ${error.message}`);
+        }
+    }
+
+    // 同步歌詞數據
+    async syncLyricsData() {
+        try {
+            // 上傳本地歌詞到 KV
+            const localLyrics = Array.from(this.savedLyrics.entries()).map(([key, value]) => ({
+                key,
+                ...value
+            }));
+            
+            if (localLyrics.length > 0) {
+                const uploadResponse = await fetch('/api/kv/sync-lyrics', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-Id': this.sessionId
+                    },
+                    body: JSON.stringify({ lyrics: localLyrics })
+                });
+                
+                if (uploadResponse.ok) {
+                    this.log(`📤 已上傳 ${localLyrics.length} 條歌詞到 KV`);
+                }
+            }
+            
+            // 從 KV 下載歌詞
+            const downloadResponse = await fetch('/api/kv/user-lyrics', {
+                headers: { 'X-Session-Id': this.sessionId }
+            });
+            
+            if (downloadResponse.ok) {
+                const data = await downloadResponse.json();
+                if (data.data && Array.isArray(data.data)) {
+                    let newCount = 0;
+                    data.data.forEach(lyricData => {
+                        const cacheKey = this.generateTrackCacheKey(lyricData.trackInfo);
+                        if (!this.savedLyrics.has(cacheKey)) {
+                            this.savedLyrics.set(cacheKey, lyricData);
+                            newCount++;
+                        }
+                    });
+                    
+                    if (newCount > 0) {
+                        this.saveSavedLyricsToStorage();
+                        this.log(`📥 已下載 ${newCount} 條新歌詞從 KV`);
+                    }
+                }
+            }
+        } catch (error) {
+            this.log(`❌ 歌詞同步失敗: ${error.message}`);
+        }
+    }
+
+    // 同步時間調整數據  
+    async syncTimeAdjustments() {
+        try {
+            // 上傳本地時間調整到 KV
+            const localAdjustments = Array.from(this.lyricsTimeAdjustments.entries()).map(([key, value]) => ({
+                key,
+                ...value
+            }));
+            
+            if (localAdjustments.length > 0) {
+                const uploadResponse = await fetch('/api/kv/sync-time-adjustments', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-Id': this.sessionId
+                    },
+                    body: JSON.stringify({ adjustments: localAdjustments })
+                });
+                
+                if (uploadResponse.ok) {
+                    this.log(`📤 已上傳 ${localAdjustments.length} 個時間調整到 KV`);
+                }
+            }
+            
+            // 從 KV 下載時間調整
+            const downloadResponse = await fetch('/api/kv/time-adjustments', {
+                headers: { 'X-Session-Id': this.sessionId }
+            });
+            
+            if (downloadResponse.ok) {
+                const data = await downloadResponse.json();
+                if (data.data && Array.isArray(data.data)) {
+                    let newCount = 0;
+                    data.data.forEach(adjustmentData => {
+                        if (!this.lyricsTimeAdjustments.has(adjustmentData.key)) {
+                            this.lyricsTimeAdjustments.set(adjustmentData.key, adjustmentData);
+                            newCount++;
+                        }
+                    });
+                    
+                    if (newCount > 0) {
+                        this.saveTimeAdjustmentsToStorage();
+                        this.log(`📥 已下載 ${newCount} 個新時間調整從 KV`);
+                    }
+                }
+            }
+        } catch (error) {
+            this.log(`❌ 時間調整同步失敗: ${error.message}`);
+        }
+    }
+
+    // 設定自動同步間隔
+    setAutoSyncInterval(intervalMs) {
+        this.autoSyncInterval = intervalMs;
+        localStorage.setItem('auto_sync_interval', intervalMs.toString());
+        
+        if (this.autoSyncEnabled) {
+            this.startAutoSync(); // 重啟同步以應用新間隔
+        }
+        
+        this.log(`⏰ 自動同步間隔已設定為 ${intervalMs/1000}秒`);
+    }
+
+    // 切換自動同步開關
+    toggleAutoSync() {
+        this.autoSyncEnabled = !this.autoSyncEnabled;
+        localStorage.setItem('auto_sync_enabled', this.autoSyncEnabled.toString());
+        
+        if (this.autoSyncEnabled) {
+            this.startAutoSync();
+        } else {
+            this.stopAutoSync();
+        }
+        
+        this.log(`🔄 自動同步已${this.autoSyncEnabled ? '啟用' : '停用'}`);
+        return this.autoSyncEnabled;
+    }
+
+    // 初始化同步控制事件
+    initSyncControlEvents() {
+        // 同步控制面板切換
+        document.getElementById('toggle-sync-controls')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggleSyncControlsDropdown();
+        });
+
+        // 點擊外部關閉下拉菜單
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.sync-controls-section')) {
+                this.hideSyncControlsDropdown();
+            }
+        });
+
+        // 自動同步開關
+        document.getElementById('auto-sync-toggle')?.addEventListener('change', (e) => {
+            this.toggleAutoSync();
+            this.updateSyncStatus();
+        });
+
+        // 同步間隔選擇
+        document.getElementById('sync-interval-select')?.addEventListener('change', (e) => {
+            const interval = parseInt(e.target.value);
+            this.setAutoSyncInterval(interval);
+            this.updateSyncStatus();
+        });
+
+        // 手動同步按鈕
+        document.getElementById('manual-sync-btn')?.addEventListener('click', () => {
+            this.performManualSync();
+        });
+
+        // 清除雲端按鈕
+        document.getElementById('clear-kv-btn')?.addEventListener('click', () => {
+            this.clearCloudData();
+        });
+
+        // 初始化同步狀態顯示
+        this.updateSyncStatus();
+        
+        // 恢復同步控制設定
+        this.restoreSyncControlSettings();
+    }
+
+    // 切換同步控制下拉菜單
+    toggleSyncControlsDropdown() {
+        const dropdown = document.getElementById('sync-controls-dropdown');
+        if (dropdown) {
+            const isVisible = dropdown.style.display === 'block';
+            if (isVisible) {
+                this.hideSyncControlsDropdown();
+            } else {
+                this.showSyncControlsDropdown();
+            }
+        }
+    }
+
+    // 顯示同步控制下拉菜單
+    showSyncControlsDropdown() {
+        const dropdown = document.getElementById('sync-controls-dropdown');
+        if (dropdown) {
+            dropdown.style.display = 'block';
+            this.updateSyncStatus();
+        }
+    }
+
+    // 隱藏同步控制下拉菜單
+    hideSyncControlsDropdown() {
+        const dropdown = document.getElementById('sync-controls-dropdown');
+        if (dropdown) {
+            dropdown.style.display = 'none';
+        }
+    }
+
+    // 恢復同步控制設定
+    restoreSyncControlSettings() {
+        // 恢復自動同步開關狀態
+        const toggleElement = document.getElementById('auto-sync-toggle');
+        if (toggleElement) {
+            toggleElement.checked = this.autoSyncEnabled;
+        }
+
+        // 恢復同步間隔設定
+        const intervalSelect = document.getElementById('sync-interval-select');
+        if (intervalSelect) {
+            intervalSelect.value = this.autoSyncInterval.toString();
+        }
+    }
+
+    // 更新同步狀態顯示
+    updateSyncStatus() {
+        const syncIndicator = document.getElementById('sync-indicator');
+        const syncStatusText = document.getElementById('sync-status-text');
+        const lastSyncTimeElement = document.getElementById('last-sync-time');
+        const localLyricsCountElement = document.getElementById('local-lyrics-count');
+        const cloudStatusElement = document.getElementById('cloud-status');
+
+        if (syncIndicator && syncStatusText) {
+            if (this.autoSyncEnabled) {
+                syncIndicator.className = 'sync-dot active';
+                syncStatusText.textContent = '已啟用';
+            } else {
+                syncIndicator.className = 'sync-dot';
+                syncStatusText.textContent = '已停用';
+            }
+        }
+
+        if (lastSyncTimeElement) {
+            if (this.lastSyncTime) {
+                const lastSyncDate = new Date(this.lastSyncTime);
+                lastSyncTimeElement.textContent = lastSyncDate.toLocaleString('zh-TW');
+            } else {
+                lastSyncTimeElement.textContent = '從未';
+            }
+        }
+
+        if (localLyricsCountElement) {
+            localLyricsCountElement.textContent = this.savedLyrics.size.toString();
+        }
+
+        if (cloudStatusElement) {
+            cloudStatusElement.textContent = this.sessionId ? '已連接' : '未連接';
+        }
+    }
+
+    // 執行手動同步
+    async performManualSync() {
+        const manualSyncBtn = document.getElementById('manual-sync-btn');
+        if (manualSyncBtn) {
+            const originalText = manualSyncBtn.innerHTML;
+            manualSyncBtn.innerHTML = '<div class="loading"></div> 同步中...';
+            manualSyncBtn.disabled = true;
+        }
+
+        try {
+            await this.performAutoSync();
+            this.updateSyncStatus();
+            this.showSyncMessage('✅ 手動同步完成', 'success');
+        } catch (error) {
+            this.showSyncMessage('❌ 同步失敗: ' + error.message, 'error');
+        } finally {
+            if (manualSyncBtn) {
+                manualSyncBtn.innerHTML = originalText;
+                manualSyncBtn.disabled = false;
+            }
+        }
+    }
+
+    // 清除雲端數據
+    async clearCloudData() {
+        if (!confirm('確定要清除所有雲端數據嗎？此操作無法復原。')) {
+            return;
+        }
+
+        const clearBtn = document.getElementById('clear-kv-btn');
+        if (clearBtn) {
+            const originalText = clearBtn.innerHTML;
+            clearBtn.innerHTML = '<div class="loading"></div> 清除中...';
+            clearBtn.disabled = true;
+        }
+
+        try {
+            const response = await fetch('/api/kv/clear-all', {
+                method: 'DELETE',
+                headers: { 'X-Session-Id': this.sessionId }
+            });
+
+            if (response.ok) {
+                this.showSyncMessage('✅ 雲端數據已清除', 'success');
+                this.updateSyncStatus();
+            } else {
+                throw new Error('清除失敗');
+            }
+        } catch (error) {
+            this.showSyncMessage('❌ 清除失敗: ' + error.message, 'error');
+        } finally {
+            if (clearBtn) {
+                clearBtn.innerHTML = originalText;
+                clearBtn.disabled = false;
+            }
+        }
+    }
+
+    // 顯示同步訊息
+    showSyncMessage(message, type = 'info') {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `sync-message ${type}`;
+        messageDiv.style.cssText = `
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: ${type === 'success' ? 'linear-gradient(135deg, #1db954, #1ed760)' : 
+                         type === 'error' ? 'linear-gradient(135deg, #e74c3c, #c0392b)' : 
+                         'rgba(0, 0, 0, 0.8)'};
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            z-index: 2000;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+            animation: slideIn 0.3s ease;
+        `;
+        messageDiv.textContent = message;
+        document.body.appendChild(messageDiv);
+
+        setTimeout(() => {
+            if (messageDiv.parentNode) {
+                messageDiv.style.animation = 'slideIn 0.3s ease reverse';
+                setTimeout(() => {
+                    if (messageDiv.parentNode) {
+                        messageDiv.parentNode.removeChild(messageDiv);
+                    }
+                }, 300);
+            }
+        }, 3000);
     }
 
     // 初始化保存的歌詞和時間調整
@@ -878,6 +1297,9 @@ async initializeStorage() {
         // 初始化自动登录防护
         this.lastAutoLoginAttempt = 0;
         this.consecutiveAuthErrors = 0;
+        
+        // 初始化同步控制事件
+        this.initSyncControlEvents();
     }
 
     // 初始化下一首歌曲預覽設定
