@@ -446,7 +446,8 @@ class SpotifyLyricsPlayer {
     showSyncControlsModal() {
         const modal = document.getElementById('sync-controls-modal');
         if (modal) {
-            modal.style.display = 'block';
+            modal.style.display = 'flex';
+            modal.classList.add('show');
             this.updateSyncStatus();
             this.updateConnectionStatus();
         }
@@ -457,6 +458,7 @@ class SpotifyLyricsPlayer {
         const modal = document.getElementById('sync-controls-modal');
         if (modal) {
             modal.style.display = 'none';
+            modal.classList.remove('show');
         }
     }
 
