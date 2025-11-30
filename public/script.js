@@ -607,6 +607,109 @@ class SpotifyLyricsPlayer {
         }, 3000);
     }
 
+    // 初始化手機版歌詞控制
+    initMobileLyricsControls() {
+        // 觸發按鈕事件
+        document.getElementById('mobile-lyrics-trigger')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggleMobileLyricsPanel();
+        });
+
+        // 點擊外部關閉面板
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.mobile-lyrics-controls')) {
+                this.hideMobileLyricsPanel();
+            }
+        });
+
+        // 歌詞時間控制
+        document.getElementById('mobile-lyrics-fast')?.addEventListener('click', () => {
+            this.adjustLyricsOffset(-500);
+            this.hideMobileLyricsPanel();
+        });
+
+        document.getElementById('mobile-lyrics-reset')?.addEventListener('click', () => {
+            this.resetLyricsOffset();
+            this.hideMobileLyricsPanel();
+        });
+
+        document.getElementById('mobile-lyrics-slow')?.addEventListener('click', () => {
+            this.adjustLyricsOffset(500);
+            this.hideMobileLyricsPanel();
+        });
+
+        // 其他歌詞功能
+        document.getElementById('mobile-search')?.addEventListener('click', () => {
+            this.showLyricsSearchModal();
+            this.hideMobileLyricsPanel();
+        });
+
+        document.getElementById('mobile-download')?.addEventListener('click', () => {
+            this.downloadCurrentLyrics();
+            this.hideMobileLyricsPanel();
+        });
+
+        document.getElementById('mobile-upload')?.addEventListener('click', () => {
+            document.getElementById('upload-lyrics-btn')?.click();
+            this.hideMobileLyricsPanel();
+        });
+
+        // 手動同步
+        document.getElementById('mobile-manual-sync')?.addEventListener('click', () => {
+            this.performManualSync();
+            this.updateMobileSyncStatus();
+        });
+
+        // 初始化手機同步狀態
+        this.updateMobileSyncStatus();
+    }
+
+    // 切換手機版歌詞面板
+    toggleMobileLyricsPanel() {
+        const panel = document.getElementById('mobile-lyrics-panel');
+        if (panel) {
+            const isVisible = panel.classList.contains('show');
+            if (isVisible) {
+                this.hideMobileLyricsPanel();
+            } else {
+                this.showMobileLyricsPanel();
+            }
+        }
+    }
+
+    // 顯示手機版歌詞面板
+    showMobileLyricsPanel() {
+        const panel = document.getElementById('mobile-lyrics-panel');
+        if (panel) {
+            panel.classList.add('show');
+            this.updateMobileSyncStatus();
+        }
+    }
+
+    // 隱藏手機版歌詞面板
+    hideMobileLyricsPanel() {
+        const panel = document.getElementById('mobile-lyrics-panel');
+        if (panel) {
+            panel.classList.remove('show');
+        }
+    }
+
+    // 更新手機版同步狀態
+    updateMobileSyncStatus() {
+        const indicator = document.getElementById('mobile-sync-indicator');
+        const statusText = document.getElementById('mobile-sync-status-text');
+
+        if (indicator && statusText) {
+            if (this.autoSyncEnabled) {
+                indicator.className = 'sync-dot active';
+                statusText.textContent = '已啟用';
+            } else {
+                indicator.className = 'sync-dot';
+                statusText.textContent = '已停用';
+            }
+        }
+    }
+
     // 初始化保存的歌詞和時間調整
     initSavedLyricsAndAdjustments() {
         try {
@@ -1300,6 +1403,9 @@ async initializeStorage() {
         
         // 初始化同步控制事件
         this.initSyncControlEvents();
+        
+        // 初始化手機版歌詞控制
+        this.initMobileLyricsControls();
     }
 
     // 初始化下一首歌曲預覽設定
