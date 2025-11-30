@@ -5832,7 +5832,7 @@ class KVSyncManager {
         setTimeout(() => this.checkSyncStatus(), 2000);
     }
 
-    createSyncUI() {
+    /*createSyncUI() {
         const panel = document.createElement('div');
         panel.id = 'kv-sync-panel';
         panel.style.cssText = `
@@ -5889,7 +5889,7 @@ class KVSyncManager {
         document.body.appendChild(panel);
         this.statusPanel = panel;
         this.syncButton = document.getElementById('kv-sync-btn');
-    }
+    }*/
 
     bindEvents() {
         this.syncButton.addEventListener('click', () => this.performSync());
