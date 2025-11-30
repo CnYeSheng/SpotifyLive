@@ -249,7 +249,9 @@ class SpotifyLyricsPlayer {
             
             // 3. 更新最後同步時間
             this.lastSyncTime = Date.now();
-            localStorage.setItem('last_sync_time', this.lastSyncTime.toString());
+            if (this.lastSyncTime) {
+                localStorage.setItem('last_sync_time', this.lastSyncTime.toString());
+            }
             
             this.log('✅ 自動同步完成');
             
@@ -364,7 +366,9 @@ class SpotifyLyricsPlayer {
     // 設定自動同步間隔
     setAutoSyncInterval(intervalMs) {
         this.autoSyncInterval = intervalMs;
-        localStorage.setItem('auto_sync_interval', intervalMs.toString());
+        if (intervalMs) {
+            localStorage.setItem('auto_sync_interval', intervalMs.toString());
+        }
         
         if (this.autoSyncEnabled) {
             this.startAutoSync(); // 重啟同步以應用新間隔
@@ -376,7 +380,7 @@ class SpotifyLyricsPlayer {
     // 切換自動同步開關
     toggleAutoSync() {
         this.autoSyncEnabled = !this.autoSyncEnabled;
-        localStorage.setItem('auto_sync_enabled', this.autoSyncEnabled.toString());
+        localStorage.setItem('auto_sync_enabled', String(this.autoSyncEnabled));
         
         if (this.autoSyncEnabled) {
             this.startAutoSync();
@@ -473,7 +477,7 @@ class SpotifyLyricsPlayer {
 
         // 恢復同步間隔設定
         const intervalSelect = document.getElementById('sync-interval-select');
-        if (intervalSelect) {
+        if (intervalSelect && this.autoSyncInterval) {
             intervalSelect.value = this.autoSyncInterval.toString();
         }
     }
@@ -506,7 +510,7 @@ class SpotifyLyricsPlayer {
         }
 
         if (localLyricsCountElement) {
-            localLyricsCountElement.textContent = this.savedLyrics.size.toString();
+            localLyricsCountElement.textContent = (this.savedLyrics?.size || 0).toString();
         }
 
         if (cloudStatusElement) {
