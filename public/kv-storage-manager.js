@@ -138,12 +138,22 @@ class KVStorageManager {
                 const profile = JSON.parse(localStorage.getItem('spotify_user_profile') || '{}');
                 const headers = { 'Content-Type': 'application/json' };
                 if (s && s.sessionId) {
-                    headers['X-Session-Id'] = s.sessionId;
+                    // 确保sessionId只包含ISO-8859-1字符
+                    const cleanSessionId = encodeURIComponent(s.sessionId);
+                    headers['X-Session-Id'] = cleanSessionId;
                 } else {
                     const sid = localStorage.getItem('spotify_session_id');
-                    if (sid) headers['X-Session-Id'] = sid;
+                    if (sid) {
+                        // 确保sessionId只包含ISO-8859-1字符
+                        const cleanSid = encodeURIComponent(sid);
+                        headers['X-Session-Id'] = cleanSid;
+                    }
                 }
-                if (profile && profile.userId) headers['X-Spotify-User-Id'] = profile.userId;
+                if (profile && profile.userId) {
+                    // 确保userId只包含ISO-8859-1字符
+                    const cleanUserId = encodeURIComponent(profile.userId);
+                    headers['X-Spotify-User-Id'] = cleanUserId;
+                }
                 const response = await fetch(`${this.apiBase}/api/kv/user-lyrics`, {
                     method: 'POST',
                     headers,

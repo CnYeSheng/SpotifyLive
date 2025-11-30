@@ -6252,33 +6252,14 @@ class OptimizedAutoSyncManager {
     }
 
     init() {
-        this.createUI();
+        // this.createSyncUI();
         this.bindEvents();
-        this.startAutoSync();
-        this.monitorLocalChanges();
-        
-        console.log('✨ 優化的自動同步管理器已初始化');
+        // setTimeout(() => this.checkSyncStatus(), 2000);
     }
 
-    createUI() {
-        // ✨ 改進：創建 Toast 通知容器
-        this.toastContainer = document.createElement('div');
-        this.toastContainer.id = 'sync-toast-container';
-        this.toastContainer.style.cssText = `
-            position: fixed;
-            bottom: 100px;
-            right: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            z-index: 2000;
-            pointer-events: none;
-        `;
-        document.body.appendChild(this.toastContainer);
-
-        // 同步狀態面板
+    /* createSyncUI() {
         const panel = document.createElement('div');
-        panel.id = 'auto-sync-panel';
+        panel.id = 'kv-sync-panel';
         panel.style.cssText = `
             position: fixed;
             bottom: 20px;
@@ -6290,116 +6271,34 @@ class OptimizedAutoSyncManager {
             box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
             z-index: 999;
             font-size: 13px;
-            min-width: 300px;
+            min-width: 220px;
+            display: none;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         `;
 
         panel.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                <div style="font-weight: 600; display: flex; align-items: center; gap: 8px;">
-                    <span id="sync-status-icon">🔄</span>
-                    <span>自動同步</span>
-                </div>
-                <button id="sync-close-btn" style="
-                    background: none;
-                    border: none;
-                    color: white;
-                    cursor: pointer;
-                    font-size: 16px;
-                    padding: 0;
-                ">✕</button>
+            <div style="margin-bottom: 12px; font-weight: 600;">📤 KV 同步管理</div>
+            <div id="kv-status" style="margin-bottom: 12px; font-size: 12px; opacity: 0.9;">
+                檢查中...
             </div>
-            
-            <div id="sync-status" style="margin-bottom: 12px; font-size: 12px; opacity: 0.9;">
-                <div>📊 待同步: <span id="pending-count">0</span> 項</div>
-                <div>✅ 已同步: <span id="synced-count">0</span> 項</div>
-                <div>❌ 失敗: <span id="failed-count">0</span> 項</div>
-            </div>
-            
-            <div id="sync-progress" style="
-                background: rgba(255,255,255,0.2);
-                height: 4px;
-                border-radius: 2px;
-                margin-bottom: 12px;
-                overflow: hidden;
-            ">
-                <div id="sync-progress-bar" style="
-                    width: 0%;
-                    height: 100%;
-                    background: #4ade80;
-                    transition: width 0.3s ease;
-                "></div>
-            </div>
-            
-            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                <button id="manual-sync-btn" style="
-                    flex: 1;
-                    padding: 8px 12px;
-                    background: rgba(255,255,255,0.2);
-                    border: 1px solid rgba(255,255,255,0.3);
-                    color: white;
-                    border-radius: 6px;
-                    cursor: pointer;
-                    font-weight: 500;
-                    transition: all 0.2s;
-                    font-family: inherit;
-                ">
-                    手動同步
-                </button>
-                <button id="sync-settings-btn" style="
-                    padding: 8px 12px;
-                    background: rgba(255,255,255,0.1);
-                    border: 1px solid rgba(255,255,255,0.2);
-                    color: white;
-                    border-radius: 6px;
-                    cursor: pointer;
-                    font-family: inherit;
-                ">
-                    ⚙️
-                </button>
-            </div>
-            
-            <!-- 設定下拉菜單 -->
-            <div id="sync-settings-dropdown" style="
-                display: none;
-                background: rgba(0,0,0,0.2);
-                border-top: 1px solid rgba(255,255,255,0.2);
-                margin-top: 12px;
-                padding-top: 12px;
+            <button id="force-sync-btn" style="
+                background: rgba(255, 255, 255, 0.2);
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                color: white;
+                padding: 8px 16px;
                 border-radius: 6px;
-            ">
-                <div style="margin-bottom: 12px;">
-                    <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                        <input type="checkbox" id="auto-sync-enable" checked>
-                        <span style="font-size: 12px;">啟用自動同步</span>
-                    </label>
-                    <label style="display: flex; align-items: center; gap: 8px;">
-                        <input type="checkbox" id="sync-notifications" checked>
-                        <span style="font-size: 12px;">顯示同步通知</span>
-                    </label>
-                </div>
-                
-                <div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">
-                    <label style="display: block; font-size: 12px; margin-bottom: 8px;">
-                        同步間隔 (分鐘):
-                    </label>
-                    <input type="number" id="sync-interval-input" min="1" max="60" value="5" style="
-                        width: 100%;
-                        padding: 6px;
-                        border: 1px solid rgba(255,255,255,0.2);
-                        border-radius: 4px;
-                        background: rgba(0,0,0,0.2);
-                        color: white;
-                        font-family: inherit;
-                    ">
-                </div>
-            </div>
+                cursor: pointer;
+                font-size: 12px;
+                transition: all 0.2s ease;
+            ">立即同步</button>
         `;
-
+        
         document.body.appendChild(panel);
-        this.statusPanel = panel;
-        this.settingsDropdown = panel.querySelector('#sync-settings-dropdown');
-    }
+        
+        document.getElementById('force-sync-btn')?.addEventListener('click', () => {
+            this.forceSync();
+        });
+    } */
 
     bindEvents() {
         document.getElementById('sync-close-btn').addEventListener('click', () => {
