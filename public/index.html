@@ -262,57 +262,6 @@
                                 </svg>
                                 同步
                             </button>
-                            <div id="sync-controls-dropdown" class="sync-controls-dropdown" style="display: none;">
-                                <div class="sync-header">
-                                    <span>自動同步設定</span>
-                                    <div class="sync-status" id="sync-status">
-                                        <span class="sync-dot" id="sync-indicator"></span>
-                                        <span id="sync-status-text">未知</span>
-                                    </div>
-                                </div>
-                                
-                                <div class="sync-toggle">
-                                    <label class="switch">
-                                        <input type="checkbox" id="auto-sync-toggle" checked>
-                                        <span class="slider"></span>
-                                    </label>
-                                    <span>啟用自動同步</span>
-                                </div>
-                                
-                                <div class="sync-interval-section">
-                                    <label>同步間隔:</label>
-                                    <select id="sync-interval-select">
-                                        <option value="60000">1分鐘</option>
-                                        <option value="300000" selected>5分鐘</option>
-                                        <option value="600000">10分鐘</option>
-                                        <option value="1800000">30分鐘</option>
-                                        <option value="3600000">1小時</option>
-                                    </select>
-                                </div>
-                                
-                                <div class="sync-actions">
-                                    <button id="manual-sync-btn" class="sync-action-btn">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                                            <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
-                                        </svg>
-                                        立即同步
-                                    </button>
-                                    <button id="clear-kv-btn" class="sync-action-btn danger">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                                        </svg>
-                                        清除雲端
-                                    </button>
-                                </div>
-                                
-                                <div class="sync-info">
-                                    <div class="sync-stats">
-                                        <div>上次同步: <span id="last-sync-time">從未</span></div>
-                                        <div>本地歌詞: <span id="local-lyrics-count">0</span></div>
-                                        <div>雲端狀態: <span id="cloud-status">未知</span></div>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
                         <!-- <button id="auto-scroll-btn" class="control-btn active">自動滾動</button>
                         <button id="font-size-btn" class="control-btn">字體大小</button> -->
@@ -461,6 +410,94 @@
             
             <div class="modal-actions">
                 <button id="close-lyrics-upload-modal" class="close-btn">關閉</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 同步控制模態框 -->
+    <div id="sync-controls-modal" class="modal" style="display: none;">
+        <div class="modal-content sync-modal">
+            <h3>🔄 自動同步設定</h3>
+            
+            <div class="sync-status-section">
+                <div class="sync-status-header">
+                    <span class="sync-status-label">同步狀態</span>
+                    <div class="sync-status" id="sync-status">
+                        <span class="sync-dot" id="sync-indicator"></span>
+                        <span id="sync-status-text">未知</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="sync-settings-section">
+                <div class="sync-toggle-section">
+                    <div class="setting-group">
+                        <label class="setting-label">
+                            <span>啟用自動同步</span>
+                            <label class="switch">
+                                <input type="checkbox" id="auto-sync-toggle" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </label>
+                        <p class="setting-description">自動在背景同步歌詞和時間調整到雲端</p>
+                    </div>
+                </div>
+                
+                <div class="sync-interval-section">
+                    <div class="setting-group">
+                        <label class="setting-label">同步間隔</label>
+                        <select id="sync-interval-select" class="setting-select">
+                            <option value="60000">1分鐘</option>
+                            <option value="300000" selected>5分鐘</option>
+                            <option value="600000">10分鐘</option>
+                            <option value="1800000">30分鐘</option>
+                            <option value="3600000">1小時</option>
+                        </select>
+                        <p class="setting-description">設定多久同步一次資料</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="sync-actions-section">
+                <div class="action-buttons">
+                    <button id="manual-sync-btn" class="action-btn primary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                        </svg>
+                        立即同步
+                    </button>
+                    <button id="clear-kv-btn" class="action-btn danger">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                        </svg>
+                        清除雲端資料
+                    </button>
+                </div>
+            </div>
+            
+            <div class="sync-info-section">
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">上次同步</span>
+                        <span class="info-value" id="last-sync-time">從未</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">本地歌詞</span>
+                        <span class="info-value" id="local-lyrics-count">0</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">雲端狀態</span>
+                        <span class="info-value" id="cloud-status">未知</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">連線狀態</span>
+                        <span class="info-value" id="connection-status">檢查中...</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-actions">
+                <button id="close-sync-modal" class="close-btn">關閉</button>
             </div>
         </div>
     </div>

@@ -394,16 +394,21 @@ class SpotifyLyricsPlayer {
 
     // 初始化同步控制事件
     initSyncControlEvents() {
-        // 同步控制面板切換
+        // 同步控制按鈕 - 開啟模態框
         document.getElementById('toggle-sync-controls')?.addEventListener('click', (e) => {
             e.stopPropagation();
-            this.toggleSyncControlsDropdown();
+            this.showSyncControlsModal();
         });
 
-        // 點擊外部關閉下拉菜單
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.sync-controls-section')) {
-                this.hideSyncControlsDropdown();
+        // 關閉模態框
+        document.getElementById('close-sync-modal')?.addEventListener('click', () => {
+            this.hideSyncControlsModal();
+        });
+
+        // 點擊背景關閉模態框
+        document.getElementById('sync-controls-modal')?.addEventListener('click', (e) => {
+            if (e.target.id === 'sync-controls-modal') {
+                this.hideSyncControlsModal();
             }
         });
 
@@ -437,33 +442,21 @@ class SpotifyLyricsPlayer {
         this.restoreSyncControlSettings();
     }
 
-    // 切換同步控制下拉菜單
-    toggleSyncControlsDropdown() {
-        const dropdown = document.getElementById('sync-controls-dropdown');
-        if (dropdown) {
-            const isVisible = dropdown.style.display === 'block';
-            if (isVisible) {
-                this.hideSyncControlsDropdown();
-            } else {
-                this.showSyncControlsDropdown();
-            }
-        }
-    }
-
-    // 顯示同步控制下拉菜單
-    showSyncControlsDropdown() {
-        const dropdown = document.getElementById('sync-controls-dropdown');
-        if (dropdown) {
-            dropdown.style.display = 'block';
+    // 顯示同步控制模態框
+    showSyncControlsModal() {
+        const modal = document.getElementById('sync-controls-modal');
+        if (modal) {
+            modal.style.display = 'block';
             this.updateSyncStatus();
+            this.updateConnectionStatus();
         }
     }
 
-    // 隱藏同步控制下拉菜單
-    hideSyncControlsDropdown() {
-        const dropdown = document.getElementById('sync-controls-dropdown');
-        if (dropdown) {
-            dropdown.style.display = 'none';
+    // 隱藏同步控制模態框
+    hideSyncControlsModal() {
+        const modal = document.getElementById('sync-controls-modal');
+        if (modal) {
+            modal.style.display = 'none';
         }
     }
 
@@ -609,6 +602,30 @@ class SpotifyLyricsPlayer {
                 }, 300);
             }
         }, 3000);
+    }
+
+    // 更新連線狀態
+    async updateConnectionStatus() {
+        const connectionStatusElement = document.getElementById('connection-status');
+        if (!connectionStatusElement) return;
+
+        try {
+            connectionStatusElement.textContent = '檢查中...';
+            
+            const response = await fetch('/api/health', {
+                headers: this.sessionId ? { 'X-Session-Id': this.sessionId } : {},
+                timeout: 5000
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                connectionStatusElement.textContent = data.spotify ? '已連線' : '未連線';
+            } else {
+                connectionStatusElement.textContent = '連線異常';
+            }
+        } catch (error) {
+            connectionStatusElement.textContent = '連線失敗';
+        }
     }
 
     // 初始化手機版歌詞控制
