@@ -242,7 +242,7 @@ class KVStorageManager {
             
             // 同时保存到 Redis 和内存
             if (this.isKVAvailable && this.redis) {
-                await this.redis.set(key, JSON.stringify(offsetData));
+                await this.redis.set(key, JSON.stringify(offsetData), { ex: 2592000 }); // 30天过期
                 console.log(`✅ 时间偏移已保存到 KV: ${key}`);
             }
             
@@ -251,6 +251,75 @@ class KVStorageManager {
         } catch (error) {
             console.error('❌ 保存时间偏移失败:', error.message);
             return false;
+        }
+    }
+
+    // ✨ 30天歌词缓存
+    async cacheLyricsFor30Days(trackInfo, lyrics, lyricsType, source = 'auto') {
+        if (!trackInfo || !lyrics) {
+            return false;
+        }
+
+        const cacheData = {
+            trackInfo,
+            lyrics,
+            lyricsType,
+            source,
+            timestamp: Date.now(),
+            cached_until: Date.now() + (30 * 24 * 60 * 60 * 1000), // 30天
+            version: 3
+        };
+
+        try {
+            const key = `cache:${this.generateTrackKey(trackInfo)}`;
+            
+            // 保存到 Redis，设置30天过期
+            if (this.isKVAvailable && this.redis) {
+                await this.redis.set(key, JSON.stringify(cacheData), { ex: 2592000 }); // 30天
+                console.log(`✅ 歌词已缓存30天: ${key}`);
+            }
+            
+            this.cache.set(key, cacheData);
+            return true;
+        } catch (error) {
+            console.error('❌ 30天缓存失败:', error.message);
+            return false;
+        }
+    }
+
+    // ✨ 获取30天缓存的歌词
+    async get30DayCachedLyrics(trackInfo) {
+        if (!trackInfo) return null;
+
+        try {
+            const key = `cache:${this.generateTrackKey(trackInfo)}`;
+            
+            // 1. 先从内存缓存查找
+            if (this.cache.has(key)) {
+                const data = this.cache.get(key);
+                if (Date.now() < data.cached_until) {
+                    console.log(`✅ 从30天缓存获取歌词: ${key}`);
+                    return data;
+                }
+            }
+            
+            // 2. 从 Redis 查找
+            if (this.isKVAvailable && this.redis) {
+                const data = await this.redis.get(key);
+                if (data) {
+                    const cacheData = typeof data === 'string' ? JSON.parse(data) : data;
+                    if (Date.now() < cacheData.cached_until) {
+                        this.cache.set(key, cacheData);
+                        console.log(`✅ 从 KV 获取30天缓存歌词: ${key}`);
+                        return cacheData;
+                    }
+                }
+            }
+            
+            return null;
+        } catch (error) {
+            console.error('❌ 获取30天缓存失败:', error.message);
+            return null;
         }
     }
 

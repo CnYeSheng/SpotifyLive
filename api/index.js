@@ -2249,4 +2249,30 @@ app.get('/api/kv/sync-status', async (req, res) => {
         // 不要退出進程，允許應用繼續運行而不使用 KV 存儲
     }
 })();
+// =============================
+// 增強歌詞緩存功能端點
+// =============================
+const enhancedLyricsEndpoints = require('./enhanced-lyrics-endpoints');
+
+// 30天自動緩存
+app.post('/api/kv/auto-cache', enhancedLyricsEndpoints.handleAutoCache);
+
+// 獲取30天緩存歌詞
+app.get('/api/kv/cache/:trackId/:trackName/:artist', enhancedLyricsEndpoints.getCachedLyrics);
+
+// 永久保存歌詞 (本地+KV)
+app.post('/api/kv/save-lyrics-permanent', enhancedLyricsEndpoints.savePermanentLyrics);
+
+// 保存時間偏移 (增強版)
+app.post('/api/kv/save-time-offset', enhancedLyricsEndpoints.saveTimeOffset);
+
+// 獲取時間偏移
+app.get('/api/kv/time-offset/:trackId/:trackName/:artist', enhancedLyricsEndpoints.getTimeOffset);
+
+// 清理過期緩存
+app.delete('/api/kv/cleanup-cache', enhancedLyricsEndpoints.cleanupExpiredCache);
+
+// 獲取緩存統計
+app.get('/api/kv/cache-stats', enhancedLyricsEndpoints.getCacheStats);
+
 module.exports = app;
