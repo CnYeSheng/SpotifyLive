@@ -6360,7 +6360,7 @@ class OptimizedAutoSyncManager {
         });
 
         // 設定事件監聽
-        document.getElementById('auto-sync-enable').addEventListener('change', (e) => {
+        document.getElementById('auto-sync-enable')?.addEventListener('change', (e) => {
             if (e.target.checked) {
                 this.startAutoSync();
                 this.showToast('✅ 自動同步已啟用', 'success');
@@ -6370,7 +6370,7 @@ class OptimizedAutoSyncManager {
             }
         });
 
-        document.getElementById('sync-notifications').addEventListener('change', (e) => {
+        document.getElementById('sync-notifications')?.addEventListener('change', (e) => {
             localStorage.setItem('sync_show_notifications', e.target.checked);
             this.showToast(
                 e.target.checked ? '✅ 同步通知已啟用' : '⏸️ 同步通知已禁用',
@@ -6378,7 +6378,7 @@ class OptimizedAutoSyncManager {
             );
         });
 
-        document.getElementById('sync-interval-input').addEventListener('change', (e) => {
+        document.getElementById('sync-interval-input')?.addEventListener('change', (e) => {
             const interval = parseInt(e.target.value);
             if (interval > 0 && interval <= 60) {
                 this.autoSyncInterval = interval * 60 * 1000;
