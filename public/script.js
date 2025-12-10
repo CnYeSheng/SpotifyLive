@@ -5852,7 +5852,8 @@ class KVSyncManager {
     }
 
     init() {
-        this.createSyncUI();
+        // Comment out createSyncUI to prevent errors
+        // this.createSyncUI();
         this.bindEvents();
         setTimeout(() => this.checkSyncStatus(), 2000);
     }
@@ -6326,18 +6327,29 @@ class OptimizedAutoSyncManager {
     } */
 
     bindEvents() {
-        document.getElementById('sync-close-btn').addEventListener('click', () => {
-            this.statusPanel.style.display = 'none';
-        });
+        const syncCloseBtn = document.getElementById('sync-close-btn');
+        if (syncCloseBtn) {
+            syncCloseBtn.addEventListener('click', () => {
+                if (this.statusPanel) {
+                    this.statusPanel.style.display = 'none';
+                }
+            });
+        }
 
-        document.getElementById('manual-sync-btn').addEventListener('click', () => {
-            this.triggerSync('manual');
-        });
+        const manualSyncBtn = document.getElementById('manual-sync-btn');
+        if (manualSyncBtn) {
+            manualSyncBtn.addEventListener('click', () => {
+                this.triggerSync('manual');
+            });
+        }
 
-        document.getElementById('sync-settings-btn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.toggleSettingsDropdown();
-        });
+        const syncSettingsBtn = document.getElementById('sync-settings-btn');
+        if (syncSettingsBtn) {
+            syncSettingsBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleSettingsDropdown();
+            });
+        }
 
         // ✨ 改進：關閉設定時隱藏下拉菜單
         document.addEventListener('click', (e) => {
