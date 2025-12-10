@@ -386,9 +386,12 @@ function initUserLyricsManager() {
         document.body.appendChild(modal);
         
         // 綁定關閉事件
-        modal.querySelector('#close-user-lyrics-manager').addEventListener('click', () => {
-            modal.style.display = 'none';
-        });
+        const closeBtn = modal.querySelector('#close-user-lyrics-manager');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                modal.style.display = 'none';
+            });
+        }
         
         modal.addEventListener('click', (e) => {
             if (e.target === modal) {

@@ -743,9 +743,11 @@ class AutoErrorLogger {
         
         // 添加關閉事件
         const closeBtn = notification.querySelector('.notification-close');
-        closeBtn.addEventListener('click', () => {
-            notification.remove();
-        });
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                notification.remove();
+            });
+        }
         
         // 添加到頁面
         document.body.appendChild(notification);
