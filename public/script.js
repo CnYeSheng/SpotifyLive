@@ -70,6 +70,9 @@ class SpotifyLyricsPlayer {
         this.autoLoginInterval = null;
         this.autoLoginEnabled = true;
         
+        // 增強的 Session 管理器
+        this.sessionManager = null;
+        
         // Podcast 檢測相關
         this.currentContentType = 'music'; // 'music' 或 'podcast'
         
@@ -168,6 +171,9 @@ class SpotifyLyricsPlayer {
         
         // 初始化自動同步功能
         this.initAutoSync();
+        
+        // 初始化增強 Session 管理器
+        this.initSessionManager();
     }
 
     // 初始化歌詞緩存
@@ -202,6 +208,20 @@ class SpotifyLyricsPlayer {
         
         if (this.autoSyncEnabled) {
             this.startAutoSync();
+        }
+    }
+    
+    // 初始化增強 Session 管理器
+    initSessionManager() {
+        try {
+            if (typeof EnhancedSessionManager !== 'undefined') {
+                this.sessionManager = new EnhancedSessionManager(this);
+                this.log('✅ 增強 Session 管理器已啟動');
+            } else {
+                this.log('⚠️ EnhancedSessionManager 未載入，使用基礎 session 管理');
+            }
+        } catch (error) {
+            this.log(`❌ 初始化 Session 管理器失敗: ${error.message}`);
         }
     }
 
@@ -1093,6 +1113,11 @@ async initializeStorage() {
             }
             window.history.replaceState({}, document.title, window.location.pathname);
             this.showSuccessMessage('🎉 Spotify 連接成功！');
+            
+            // 通知增強 Session 管理器重置重試計數器
+            if (this.sessionManager) {
+                this.sessionManager.resetRetryCount();
+            }
         } else {
             // 嘗試從 localStorage 恢復 sessionId
             const storedSessionId = localStorage.getItem('spotify_session_id');
