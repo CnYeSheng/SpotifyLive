@@ -2149,6 +2149,17 @@ async initializeStorage() {
         this.playerSection.style.display = 'none';
         this.noMusicSection.style.display = 'none';
         this.updateStatus('spotify', false);
+        
+        // 自動觸發自動登入（每次顯示登入畫面都會觸發）
+        if (this.autoLoginEnabled) {
+            this.log('🚀 回到登入畫面，自動觸發自動登入...');
+            // 重置自動登入標記，允許重新嘗試
+            this.autoLoginAttempted = false;
+            // 立即觸發自動登入
+            setTimeout(() => {
+                this.scheduleAutoLogin();
+            }, 800); // 短暫延遲以確保頁面顯示完成
+        }
     }
 
     showPlayerSection() {
