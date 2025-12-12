@@ -5926,17 +5926,33 @@ class KVSyncManager {
         document.body.appendChild(panel);
         this.statusPanel = panel;
         this.syncButton = document.getElementById('kv-sync-btn');
+        // Create missing elements if they don't exist
+        if (!this.syncButton) {
+            console.log('⚠️ KV sync button not found in DOM, creating placeholder');
+            this.syncButton = null; // Set to null to avoid errors
+        }
     }*/
 
     bindEvents() {
-        this.syncButton.addEventListener('click', () => this.performSync());
-        document.getElementById('kv-close-btn').addEventListener('click', () => {
-            this.statusPanel.style.display = 'none';
-        });
+        // Add null checks to prevent errors
+        if (this.syncButton) {
+            this.syncButton.addEventListener('click', () => this.performSync());
+        }
+        
+        const kvCloseBtn = document.getElementById('kv-close-btn');
+        if (kvCloseBtn) {
+            kvCloseBtn.addEventListener('click', () => {
+                if (this.statusPanel) {
+                    this.statusPanel.style.display = 'none';
+                }
+            });
+        }
 
-        this.statusPanel.addEventListener('mouseenter', () => {
-            this.checkSyncStatus();
-        });
+        if (this.statusPanel) {
+            this.statusPanel.addEventListener('mouseenter', () => {
+                this.checkSyncStatus();
+            });
+        }
     }
 
     async checkSyncStatus() {
@@ -6224,12 +6240,20 @@ class KVSyncManager {
 }
 
 // 初始化 KV 同步管理器 (延遲初始化，確保 Player 準備好)
+// ⚠️ 暂时禁用 KVSyncManager 以防止 DOM 错误
+/*
 setTimeout(() => {
-    if (typeof KVSyncManager !== 'undefined' && !window.kvSyncManager) {
-        window.kvSyncManager = new KVSyncManager();
-        console.log('✅ KV 同步管理器已初始化');
+    try {
+        if (typeof KVSyncManager !== 'undefined' && !window.kvSyncManager) {
+            window.kvSyncManager = new KVSyncManager();
+            console.log('✅ KV 同步管理器已初始化');
+        }
+    } catch (error) {
+        console.log('⚠️ KV 同步管理器初始化失敗:', error.message);
+        // KVSyncManager 可能因为缺少 DOM 元素而失败，这是正常的
     }
 }, 3000);
+*/
 
 async function spotifyRequest(url, options = {}) {
     const player = window.spotifyPlayer;
@@ -6361,12 +6385,17 @@ class OptimizedAutoSyncManager {
                 this.toggleSettingsDropdown();
             });
         }
+        
+        // Initialize settings dropdown reference
+        this.settingsDropdown = document.getElementById('sync-settings-dropdown');
 
         // ✨ 改進：關閉設定時隱藏下拉菜單
         document.addEventListener('click', (e) => {
             if (!e.target.closest('#sync-settings-btn') && 
                 !e.target.closest('#sync-settings-dropdown')) {
-                this.settingsDropdown.style.display = 'none';
+                if (this.settingsDropdown) {
+                    this.settingsDropdown.style.display = 'none';
+                }
             }
         });
 

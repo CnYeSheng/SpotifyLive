@@ -135,14 +135,18 @@ app.get('/api/callback', async (req, res) => {
 function checkSessionValidity(req, res, next) {
     const session = getUserSession(req);
     if (!session) {
-        return res.status(401).json({ error: 'Not authenticated' });
+        console.log('❌ 會話檢查失敗：無會話');
+        return res.status(401).json({ 
+            error: 'Not authenticated',
+            message: '請重新登錄 Spotify'
+        });
     }
     
     // 检查token是否即将过期（提前5分钟）
     const fiveMinutesFromNow = Date.now() + (5 * 60 * 1000);
     if (fiveMinutesFromNow >= session.expiresAt) {
-        console.log(`[${new Date().toLocaleTimeString()}] ⚠️ Token 即將過期，主動刷新...`);
-        // 不在这里刷新，而是在实际需要时刷新
+        console.log(`[${new Date().toLocaleTimeString()}] ⚠️ Token 即將過期，標記需要刷新...`);
+        req.needsTokenRefresh = true;
     }
     
     next();
@@ -167,7 +171,8 @@ async function refreshAccessToken(session) {
             {
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded'
-                }
+                },
+                timeout: 10000 // Add timeout
             }
         );
         
@@ -176,10 +181,13 @@ async function refreshAccessToken(session) {
             session.refreshToken = response.data.refresh_token;
         }
         session.expiresAt = Date.now() + (response.data.expires_in * 1000);
-        console.log('✅ Token refreshed');
+        console.log('✅ Token refreshed successfully');
         return true;
     } catch (error) {
         console.error('❌ Token 刷新失敗:', error.response?.data || error.message);
+        if (error.response?.data?.error === 'invalid_grant') {
+            console.log('🔄 Refresh token 已失效，需要重新認證');
+        }
         return false;
     }
 }
@@ -199,6 +207,51 @@ app.get('/api/auth-status', async (req, res) => {
         }
     }
     res.json({ authenticated: true, sessionId: sessionId });
+});
+
+// Refresh token endpoint
+app.post('/api/refresh-token', async (req, res) => {
+    const session = getUserSession(req);
+    
+    if (!session) {
+        console.log('❌ 刷新Token失敗：無會話');
+        return res.status(401).json({ 
+            error: 'Not authenticated',
+            message: '請重新登錄 Spotify'
+        });
+    }
+    
+    if (!session.refreshToken) {
+        console.log('❌ 刷新Token失敗：無Refresh Token');
+        return res.status(401).json({ 
+            error: 'No refresh token',
+            message: '請重新登錄 Spotify'
+        });
+    }
+    
+    try {
+        const refreshed = await refreshAccessToken(session);
+        if (refreshed) {
+            console.log('✅ Token 刷新成功');
+            res.json({ 
+                success: true, 
+                message: 'Token refreshed successfully',
+                expiresAt: session.expiresAt
+            });
+        } else {
+            console.log('❌ Token 刷新失敗');
+            res.status(401).json({ 
+                error: 'Token refresh failed',
+                message: '請重新登錄 Spotify'
+            });
+        }
+    } catch (error) {
+        console.error('❌ 刷新Token異常:', error.message);
+        res.status(500).json({ 
+            error: 'Internal error',
+            message: '服務器內部錯誤'
+        });
+    }
 });
 
 // Get currently playing track with enhanced information

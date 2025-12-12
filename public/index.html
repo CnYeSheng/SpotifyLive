@@ -823,5 +823,77 @@
     </div>
 
     <!-- 动态背景相关脚本已完全移除 -->
+    
+    <!-- Missing Sync Settings Dropdown -->
+    <div id="sync-settings-dropdown" class="settings-dropdown" style="display: none; position: absolute; background: white; border: 1px solid #ccc; border-radius: 8px; padding: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000;">
+        <div class="dropdown-content">
+            <div class="setting-item" style="margin-bottom: 12px;">
+                <label style="display: flex; align-items: center; gap: 8px;">
+                    <input type="checkbox" id="auto-sync-enable" checked>
+                    <span>啟用自動同步</span>
+                </label>
+            </div>
+            <div class="setting-item" style="margin-bottom: 12px;">
+                <label style="display: flex; align-items: center; gap: 8px;">
+                    <input type="checkbox" id="sync-notifications" checked>
+                    <span>同步通知</span>
+                </label>
+            </div>
+            <div class="setting-item">
+                <label for="sync-interval-input" style="display: block; margin-bottom: 4px;">同步間隔 (秒):</label>
+                <input type="number" id="sync-interval-input" min="60" value="300" style="width: 100%; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+        </div>
+    </div>
+
+    <!-- Missing KV Sync Elements -->
+    <div id="kv-sync-panel" style="display: none;">
+        <button id="kv-sync-btn" style="display: none;">KV Sync</button>
+        <button id="kv-close-btn" style="display: none;">Close</button>
+        <div id="kv-status"></div>
+    </div>
+
+    <!-- Missing Sync Control Modal Elements -->
+    <div id="sync-controls-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span id="close-sync-modal" class="close">&times;</span>
+            <h2>同步控制</h2>
+            
+            <div class="sync-status-section">
+                <div class="sync-status-item">
+                    <span class="sync-dot" id="sync-indicator"></span>
+                    <span id="sync-status-text">已停用</span>
+                </div>
+                <div class="sync-info">
+                    <p>最後同步: <span id="last-sync-time">從未</span></p>
+                    <p>本地歌詞: <span id="local-lyrics-count">0</span></p>
+                    <p>雲端狀態: <span id="cloud-status">未連接</span></p>
+                    <p>連線狀態: <span id="connection-status">未知</span></p>
+                </div>
+            </div>
+            
+            <div class="sync-controls">
+                <button id="manual-sync-btn" class="sync-btn">手動同步</button>
+                <button id="clear-kv-btn" class="sync-btn danger">清除雲端數據</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sync Control Trigger -->
+    <button id="toggle-sync-controls" style="display: none;">同步設定</button>
+
+    <!-- Additional Missing Elements -->
+    <div id="sync-settings-btn" style="display: none;"></div>
+    <button id="force-sync-btn" style="display: none;">強制同步</button>
+    <button id="sync-close-btn" style="display: none;">關閉</button>
+    
+    <!-- Sync Progress Elements -->
+    <div id="sync-progress-container" style="display: none;">
+        <div id="sync-progress-bar" style="width: 0%;"></div>
+        <span id="synced-count">0</span>
+        <span id="failed-count">0</span>
+        <span id="sync-status-icon">⏸️</span>
+    </div>
+
 </body>
 </html>
