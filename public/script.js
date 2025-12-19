@@ -2155,10 +2155,11 @@ async initializeStorage() {
             this.log('🚀 回到登入畫面，自動觸發自動登入...');
             // 重置自動登入標記，允許重新嘗試
             this.autoLoginAttempted = false;
+            this.lastAutoLoginAttempt = 0; // 允許立即重試
             // 立即觸發自動登入
             setTimeout(() => {
                 this.scheduleAutoLogin();
-            }, 800); // 短暫延遲以確保頁面顯示完成
+            }, 500); // 縮短延遲以提供更快的響應
         }
     }
 
@@ -2590,10 +2591,10 @@ async initializeStorage() {
 
     // 頁面載入後自動嘗試登入
     scheduleAutoLogin() {
-        // 防止重複自動登入 - 改为1分钟，更快响应
+        // 防止重複自動登入 - 改为 5 秒，更快响应
         const now = Date.now();
-        if (this.lastAutoLoginAttempt && now - this.lastAutoLoginAttempt < 1 * 60 * 1000) {
-            this.log('⏭️ 1分钟内已尝试过自動登入，跳過');
+        if (this.lastAutoLoginAttempt && now - this.lastAutoLoginAttempt < 5000) {
+            this.log('⏭️ 短時間內已嘗試過自動登入，跳過');
             return;
         }
         
@@ -2650,17 +2651,17 @@ async initializeStorage() {
                 const inAuthFlow = window.location.pathname.indexOf('/api/auth') !== -1 || window.location.pathname.indexOf('/callback') !== -1;
                 if (!inAuthFlow && (!until || now >= until)) {
                     this.log('🚀 检测到登录页面，立即触发自动登录');
+                    // 減少延遲，提供更快的體驗
                     setTimeout(() => {
+                        localStorage.setItem(k, String(Date.now() + 60 * 1000));
                         if (loginButton && getComputedStyle(loginButton).display !== 'none') {
-                            localStorage.setItem(k, String(Date.now() + 60 * 1000));
                             this.log('🖱️ 自动点击登录按钮');
                             loginButton.click();
                         } else {
-                            localStorage.setItem(k, String(Date.now() + 60 * 1000));
                             this.log('🔗 直接跳转到认证页面');
                             window.location.href = '/api/auth';
                         }
-                    }, 1000);
+                    }, 100);
                 } else {
                     this.log('⏳ 跳过自动登录（正在认证流程或冷却中）');
                 }
