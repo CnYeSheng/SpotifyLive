@@ -1478,6 +1478,138 @@ app.post('/api/kv/user-lyrics', async (req, res) => {
 });
 
 
+// ✨ 新增：批量同步歌词 (从客户端上传)
+app.post('/api/kv/sync-lyrics', async (req, res) => {
+    try {
+        const session = getUserSession(req);
+        if (!session) {
+            return res.status(401).json({ success: false, error: '未认证' });
+        }
+
+        const { lyrics } = req.body;
+        if (!lyrics || !Array.isArray(lyrics)) {
+            return res.status(400).json({ success: false, error: '无效的数据格式' });
+        }
+
+        if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
+            return res.json({ success: true, message: 'KV 不可用' });
+        }
+
+        const { Redis } = require('@upstash/redis');
+        const redis = new Redis({
+            url: process.env.KV_REST_API_URL,
+            token: process.env.KV_REST_API_TOKEN
+        });
+
+        let savedCount = 0;
+        const pipeline = redis.pipeline();
+
+        for (const item of lyrics) {
+            if (item.trackInfo && item.lyrics) {
+                const key = `lyrics:${item.trackInfo.id}:${item.trackInfo.name}:${item.trackInfo.artist}`;
+                const data = {
+                    ...item,
+                    timestamp: Date.now(),
+                    lastModified: Date.now(),
+                    syncedBy: session.id || 'user'
+                };
+                // 30天过期
+                pipeline.set(key, JSON.stringify(data), { ex: 30 * 24 * 60 * 60 });
+                savedCount++;
+            }
+        }
+
+        if (savedCount > 0) {
+            await pipeline.exec();
+        }
+
+        console.log(`✅ 批量同步歌词: ${savedCount} 首`);
+        res.json({ success: true, count: savedCount });
+
+    } catch (error) {
+        console.error('❌ 同步歌词失败:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ✨ 新增：批量同步时间偏移 (从客户端上传)
+app.post('/api/kv/sync-time-adjustments', async (req, res) => {
+    try {
+        const session = getUserSession(req);
+        if (!session) {
+            return res.status(401).json({ success: false, error: '未认证' });
+        }
+
+        const { adjustments } = req.body;
+        if (!adjustments || !Array.isArray(adjustments)) {
+            return res.status(400).json({ success: false, error: '无效的数据格式' });
+        }
+
+        if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
+            return res.json({ success: true, message: 'KV 不可用' });
+        }
+
+        const { Redis } = require('@upstash/redis');
+        const redis = new Redis({
+            url: process.env.KV_REST_API_URL,
+            token: process.env.KV_REST_API_TOKEN
+        });
+
+        let savedCount = 0;
+        const pipeline = redis.pipeline();
+
+        for (const item of adjustments) {
+            if (item.trackInfo && item.timeOffset !== undefined) {
+                const key = `offset:${item.trackInfo.id}:${item.trackInfo.name}:${item.trackInfo.artist}`;
+                const data = {
+                    ...item,
+                    timestamp: Date.now(),
+                    syncedBy: session.id || 'user'
+                };
+                // 30天过期
+                pipeline.set(key, JSON.stringify(data), { ex: 30 * 24 * 60 * 60 });
+                savedCount++;
+            }
+        }
+
+        if (savedCount > 0) {
+            await pipeline.exec();
+        }
+
+        console.log(`✅ 批量同步时间偏移: ${savedCount} 个`);
+        res.json({ success: true, count: savedCount });
+
+    } catch (error) {
+        console.error('❌ 同步时间偏移失败:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ✨ 新增：获取时间偏移列表 (目前返回空，因为数据是全局的)
+app.get('/api/kv/time-adjustments', async (req, res) => {
+    res.json({ success: true, data: [] });
+});
+
+// ✨ 新增：清除所有云端数据 (仅限当前用户的 session 数据)
+app.delete('/api/kv/clear-all', async (req, res) => {
+    try {
+        const session = getUserSession(req);
+        if (!session) {
+            return res.status(401).json({ success: false, error: '未认证' });
+        }
+
+        // 调用 kvStorage 的清理方法 (只清理 user:...)
+        await kvStorage.clearAllUserData(req);
+        
+        console.log('🗑️ 用户请求清除云端数据 (User-scoped)');
+        res.json({ success: true, message: '用户数据已清除' });
+
+    } catch (error) {
+        console.error('❌ 清除数据失败:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // 2. 保存时间偏移（永不过期）
 app.post('/api/kv/save-time-offset', async (req, res) => {
     try {

@@ -2591,11 +2591,22 @@ async initializeStorage() {
 
     // 頁面載入後自動嘗試登入
     scheduleAutoLogin() {
-        // 防止重複自動登入 - 改为 5 秒，更快响应
         const now = Date.now();
-        if (this.lastAutoLoginAttempt && now - this.lastAutoLoginAttempt < 5000) {
-            this.log('⏭️ 短時間內已嘗試過自動登入，跳過');
-            return;
+        // 降低冷卻時間閾值，如果是強制重試或明顯已登出，則忽略冷卻
+        const cooldown = 2000; 
+        
+        // 檢查是否處於明顯的已登出狀態（無 Session ID 且認證區域可見）
+        const isClearlyLoggedOut = !this.sessionId || 
+                                  (this.authSection && getComputedStyle(this.authSection).display !== 'none');
+
+        if (this.lastAutoLoginAttempt && (now - this.lastAutoLoginAttempt < cooldown)) {
+            // 如果明顯已登出，則忽略冷卻，強制重試
+            if (isClearlyLoggedOut && (now - this.lastAutoLoginAttempt > 1000)) {
+                 this.log('⚠️ 處於已登出狀態，強制重試自動登入...');
+            } else {
+                this.log('⏭️ 短時間內已嘗試過自動登入，暫時跳過');
+                return;
+            }
         }
         
         this.lastAutoLoginAttempt = now;
@@ -2653,7 +2664,8 @@ async initializeStorage() {
                     this.log('🚀 检测到登录页面，立即触发自动登录');
                     // 減少延遲，提供更快的體驗
                     setTimeout(() => {
-                        localStorage.setItem(k, String(Date.now() + 60 * 1000));
+                        // 縮短冷卻時間至 5 秒，允許更頻繁的重試
+                        localStorage.setItem(k, String(Date.now() + 5000));
                         if (loginButton && getComputedStyle(loginButton).display !== 'none') {
                             this.log('🖱️ 自动点击登录按钮');
                             loginButton.click();
@@ -2663,7 +2675,8 @@ async initializeStorage() {
                         }
                     }, 100);
                 } else {
-                    this.log('⏳ 跳过自动登录（正在认证流程或冷却中）');
+                    const remaining = Math.ceil((until - now) / 1000);
+                    this.log(`⏳ 跳过自动登录（冷卻中，剩餘 ${remaining} 秒）`);
                 }
             } else {
                 this.log('ℹ️ 播放器已运行或状态未知，尝试checkAuthStatus');
@@ -2762,18 +2775,25 @@ async initializeStorage() {
             this.log('🔄 尝试后台静默刷新session...');
             
             // 1. 首先检查认证状态
-            const authResponse = await fetch('/api/auth-status', {
-                method: 'GET',
-                headers: this.sessionId ? { 'X-Session-Id': this.sessionId } : {}
-            });
+            try {
+                const authResponse = await fetch('/api/auth-status', {
+                    method: 'GET',
+                    headers: this.sessionId ? { 'X-Session-Id': this.sessionId } : {},
+                    credentials: 'same-origin'
+                });
 
-            if (authResponse.ok) {
-                const authData = await authResponse.json();
-                if (authData.authenticated) {
-                    this.log('✅ session仍然有效');
-                    this.consecutiveAuthErrors = Math.max(0, this.consecutiveAuthErrors - 2);
-                    return true;
+                if (authResponse.ok) {
+                    const authData = await authResponse.json();
+                    if (authData.authenticated) {
+                        this.log('✅ session仍然有效');
+                        this.consecutiveAuthErrors = 0;
+                        return true;
+                    } else {
+                        this.log('⚠️ session無效，嘗試刷新...');
+                    }
                 }
+            } catch (e) {
+                this.log(`⚠️ 檢查認證狀態失敗: ${e.message}`);
             }
             
             // 2. 尝试静默token刷新
@@ -2782,25 +2802,24 @@ async initializeStorage() {
                 const refreshResponse = await fetch('/api/refresh-token', {
                     method: 'POST',
                     headers: this.sessionId ? { 'X-Session-Id': this.sessionId } : {},
-                    credentials: 'include' // 包含cookies
+                    credentials: 'same-origin' // 包含cookies
                 });
                 
                 if (refreshResponse.ok) {
                     const refreshData = await refreshResponse.json();
-                    if (refreshData.success && refreshData.sessionId) {
-                        this.log('✅ 静默token刷新成功');
-                        this.sessionId = refreshData.sessionId;
-                        localStorage.setItem('spotify_session_id', this.sessionId);
-                        try {
-                            localStorage.setItem('spotify_session_data', JSON.stringify({ sessionId: this.sessionId, savedAt: Date.now() }));
-                        } catch (e) {}
+                    if (refreshData.success) {
+                        this.log('✅ token刷新成功');
+                        if (refreshData.sessionId && refreshData.sessionId !== this.sessionId) {
+                            this.sessionId = refreshData.sessionId;
+                            localStorage.setItem('spotify_session_id', this.sessionId);
+                        }
                         this.consecutiveAuthErrors = 0;
                         return true;
                     }
                 } else if (refreshResponse.status === 404) {
                     this.log('⚠️ /api/refresh-token 端点不存在，跳过此方法');
                 } else if (refreshResponse.status === 401) {
-                    this.log('⚠️ Refresh token也已失效，需要重新授权');
+                    this.log('⚠️ Refresh token也已失效');
                 }
             } catch (error) {
                 this.log(`⚠️ token刷新请求失败: ${error.message}`);
@@ -2808,55 +2827,58 @@ async initializeStorage() {
             
             // 3. 尝试使用现有cookie进行认证
             this.log('🔄 尝试cookie认证...');
-            const cookieAuthResponse = await fetch('/api/current-track', {
-                method: 'GET',
-                credentials: 'include'
-            });
-            
-            if (cookieAuthResponse.ok) {
-                const newSessionHeader = cookieAuthResponse.headers.get('X-New-Session-Id');
-                if (newSessionHeader) {
-                    this.log('✅ cookie认证成功，获得新session');
-                    this.sessionId = newSessionHeader;
-                    localStorage.setItem('spotify_session_id', this.sessionId);
-                    try {
-                        localStorage.setItem('spotify_session_data', JSON.stringify({ sessionId: this.sessionId, savedAt: Date.now() }));
-                    } catch (e) {}
+            try {
+                const cookieAuthResponse = await fetch('/api/current-track', {
+                    method: 'GET',
+                    credentials: 'same-origin'
+                });
+                
+                if (cookieAuthResponse.ok) {
+                    // 如果能成功獲取當前歌曲，說明 cookie 有效
+                    const newSessionHeader = cookieAuthResponse.headers.get('X-New-Session-Id');
+                    // 或者如果響應正常，我們可以假設 session 有效
+                    this.log('✅ cookie认证成功');
+                    
+                    if (newSessionHeader) {
+                        this.sessionId = newSessionHeader;
+                        localStorage.setItem('spotify_session_id', this.sessionId);
+                    }
+                    
                     this.consecutiveAuthErrors = 0;
                     if (this.authChannel) {
                         this.authChannel.postMessage({ type: 'session-update', sessionId: this.sessionId });
                     }
                     return true;
                 }
+            } catch (e) {
+                 this.log(`⚠️ cookie认证嘗試失敗: ${e.message}`);
             }
             
             this.log('❌ 所有后台刷新方法都失败');
             
-            // 最后尝试：直接使用现有session强制刷新
-            this.log('🔄 最后尝试：强制session刷新...');
-            try {
-                const forceRefreshResponse = await fetch('/api/current-track', {
-                    method: 'GET',
-                    headers: this.sessionId ? { 'X-Session-Id': this.sessionId } : {},
-                    credentials: 'include',
-                    cache: 'no-cache' // 强制不使用缓存
-                });
-                
-                if (forceRefreshResponse.ok) {
-                    this.log('✅ 强制刷新成功，session已恢复');
-                    this.consecutiveAuthErrors = 0;
-                    return true;
+            // 最后尝试：直接使用现有session强制刷新 (如果 session ID 存在)
+            if (this.sessionId) {
+                this.log('🔄 最后尝试：强制session刷新...');
+                try {
+                    const forceRefreshResponse = await fetch('/api/current-track', {
+                        method: 'GET',
+                        headers: { 'X-Session-Id': this.sessionId },
+                        credentials: 'same-origin',
+                        cache: 'no-cache'
+                    });
+                    
+                    if (forceRefreshResponse.ok) {
+                        this.log('✅ 强制刷新成功，session已恢复');
+                        this.consecutiveAuthErrors = 0;
+                        return true;
+                    }
+                } catch (error) {
+                    this.log(`❌ 强制刷新也失败: ${error.message}`);
                 }
-            } catch (error) {
-                this.log(`❌ 强制刷新也失败: ${error.message}`);
             }
             
-            // 真正失败时，静默重置而不是跳转
-            this.log('🔄 静默重置认证状态...');
-            this.consecutiveAuthErrors = 0; // 重置错误计数
-            this.sessionId = null;
-            localStorage.removeItem('spotify_session_id');
-            
+            // 真正失败时，不立即清除，让 enhanced-session-manager 处理
+            this.log('❌ 無法恢復 Session');
             return false;
         } catch (error) {
             this.log(`❌ 后台刷新异常: ${error.message}`);
