@@ -2757,16 +2757,47 @@ async initializeStorage() {
     }
     
     // 401错误处理：直接触发自动登录
-    handle401Error() {
-        this.log('🔑 檢測到401認證過期，立即觸發自動登入');
+    async handle401Error() {
+        if (this.isHandlingAuthError) return;
+        this.isHandlingAuthError = true;
         
-        // 清理无效session
-        // 不立即清除sessionId，給予重試機會
-        this.log('⚠️ 認證失敗，但保留sessionId供重試使用');
-        this.consecutiveAuthErrors++;
+        this.log('🔑 檢測到401認證過期，嘗試自動恢復...');
         
-        // 立即跳转到认证页面
-        window.location.href = '/api/auth';
+        try {
+            const success = await this.tryBackgroundRefresh();
+            if (success) {
+                this.log('✅ 自動恢復成功，恢復正常輪詢');
+                this.isHandlingAuthError = false;
+                this.consecutiveAuthErrors = 0;
+                // 恢復正常輪詢
+                this.checkCurrentTrackWithRateLimit();
+                return;
+            }
+
+            this.log('⚠️ 自動恢復失敗，準備重定向到登入頁面');
+            this.consecutiveAuthErrors++;
+            
+            if (this.consecutiveAuthErrors >= 3) {
+                this.log('❌ 連續認證失敗次數過多，停止自動重定向');
+                this.showAuthSection();
+                this.isHandlingAuthError = false;
+                return;
+            }
+
+            // 延遲重定向，給用戶一點反應時間
+            setTimeout(() => {
+                this.log('🚀 執行重定向到 /api/auth');
+                window.location.href = '/api/auth';
+            }, 2000);
+            
+        } catch (error) {
+            this.log(`❌ 處理 401 錯誤時發生異常: ${error.message}`);
+            this.showAuthSection();
+        } finally {
+            // 注意：重定向會導致頁面重新載入，所以這裡的狀態重置可能不重要
+            // 但為了安全起見還是重置
+            setTimeout(() => { this.isHandlingAuthError = false; }, 5000);
+        }
     }
 
     // 后台静默刷新session
@@ -3027,10 +3058,10 @@ async initializeStorage() {
             
             const response = await fetch(`${this.apiBase}/api/current-track`, { headers });
             
-            // 處理認證錯誤 - 直接触发登录
+            // 處理認證錯誤
             if (response.status === 401) {
-                this.log('🔑 當前歌曲API遇到401，直接觸發自動登入');
-                this.handle401Error();
+                this.log('🔑 當前歌曲API遇到401，嘗試自動恢復');
+                await this.handle401Error();
                 return;
             }
             
@@ -3876,8 +3907,12 @@ async loadLyrics() {
 
         const lyricsHTML = this.lyrics.map((line, index) => {
             let text = this.lyricsType === 'synced' ? line.text : (line.text || line);
-            if (typeof convertToTraditional === 'function') {
-                text = convertToTraditional(text);
+            try {
+                if (typeof convertToTraditional === 'function') {
+                    text = convertToTraditional(text);
+                }
+            } catch (err) {
+                console.warn('繁體轉換失敗:', err);
             }
             const timeAttr = this.lyricsType === 'synced' && line.time ? `data-time="${line.time}"` : '';
             return `<div class="lyrics-line" data-index="${index}" ${timeAttr}>${this.escapeHtml(text)}</div>`;
@@ -5091,36 +5126,42 @@ showOffsetMessage() {
     
     // 安全的歌詞載入方法 - 防止重複調用
     safeLyricsLoad() {
+        this.log(`🧬 調用 safeLyricsLoad, isLoadingLyrics: ${this.isLoadingLyrics}, hasTimeout: ${!!this.lyricsLoadTimeout}`);
+        
         // 清除之前的載入請求
         if (this.lyricsLoadTimeout) {
             clearTimeout(this.lyricsLoadTimeout);
-            console.log('🔄 清除之前的歌詞載入請求');
+            this.log('🔄 清除之前的延遲歌詞載入請求');
         }
         
         // 如果已經在載入中，直接返回
         if (this.isLoadingLyrics) {
-            console.log('⏳ 歌詞載入中，忽略新的載入請求');
+            this.log('⏳ 歌詞載入中，忽略新的載入請求');
             return;
         }
         
-        // 檢查是否最近剛請求過 (缩短到5秒，更快响应歌曲切换)
+        // 檢查是否最近剛請求過 (缩短到3秒)
         const trackKey = this.currentTrack ? `${this.currentTrack.id}-${this.currentTrack.name}-${this.currentTrack.artist}` : null;
         if (this.lastLyricsRequest && 
             this.lastLyricsRequest.trackKey === trackKey && 
-            Date.now() - this.lastLyricsRequest.time < 5000) {
-            console.log('⏳ 最近剛請求過此歌曲，跳過重複請求');
+            Date.now() - this.lastLyricsRequest.time < 3000) {
+            this.log('⏳ 最近剛請求過此歌曲且未超過3秒，跳過重複請求');
             return;
         }
         
+        // 對於新歌曲，我們稍微等待一下給 Spotify API 穩定時間，但不需要 2 秒那麼久
+        const delay = 800; 
+        
+        this.log(`⏰ 安排在 ${delay}ms 後載入歌詞`);
         this.lyricsLoadTimeout = setTimeout(() => {
             if (this.currentTrack && !this.isLoadingLyrics) {
-                console.log('⏰ 執行延遲的歌詞載入');
+                this.log('🚀 執行延遲的歌詞載入');
                 this.loadLyrics();
             } else {
-                console.log('⏸️ 跳過歌詞載入：歌曲已切換或正在載入中');
+                this.log('⏸️ 跳過歌詞載入：歌曲可能已切換或正在載入中');
             }
             this.lyricsLoadTimeout = null;
-        }, 2000); // 設置為2秒延遲，給Spotify API一點時間穩定
+        }, delay);
     }
 
     showNextTrackPreview() {
@@ -5381,7 +5422,7 @@ showOffsetMessage() {
             
             if (response.status === 401) {
                 this.log('🔑 Queue API遇到401，直接觸發自動登入');
-                this.handle401Error();
+                await this.handle401Error();
                 return;
             }
             
@@ -5507,7 +5548,7 @@ showOffsetMessage() {
             
             if (response.status === 401) {
                 this.log('🔑 Devices API遇到401，直接觸發自動登入');
-                this.handle401Error();
+                await this.handle401Error();
                 return;
             }
             
@@ -5589,7 +5630,7 @@ showOffsetMessage() {
             
             if (response.status === 401) {
                 this.log('🔑 Transfer API遇到401，直接觸發自動登入');
-                this.handle401Error();
+                await this.handle401Error();
                 return;
             }
 
@@ -5640,7 +5681,7 @@ showOffsetMessage() {
 
             if (response.status === 401) {
                 this.log('🔑 播放API遇到401，直接觸發自動登入');
-                this.handle401Error();
+                await this.handle401Error();
                 return;
             }
 
@@ -5778,7 +5819,7 @@ showOffsetMessage() {
             
             if (response.status === 401) {
                 this.log('🔑 喜欢状态检查遇到401，直接觸發自動登入');
-                this.handle401Error();
+                await this.handle401Error();
                 return;
             }
             

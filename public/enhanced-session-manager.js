@@ -145,9 +145,14 @@ class EnhancedSessionManager {
         }, this.autoLoginDelayMs);
     }
     
-    // 執行自動登入
-    executeAutoLogin() {
+    async executeAutoLogin() {
         try {
+            if (this.player && typeof this.player.handle401Error === 'function') {
+                this.log('🚀 委託播放器處理 Session 過期...');
+                await this.player.handle401Error();
+                return;
+            }
+            
             this.log('🚀 執行自動登入重定向...');
             
             // 清除當前 session

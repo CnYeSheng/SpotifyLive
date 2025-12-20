@@ -67,28 +67,20 @@ class KVStorageManager {
         if (!sessionId) return null;
         
         // 1. 先檢查內存緩存
-        if (this.cache.has(sessionId)) {
-            return this.cache.get(sessionId);
+        if (this.cache.has(`session:${sessionId}`)) {
+            return this.cache.get(`session:${sessionId}`);
         }
         
         // 2. 檢查 KV
-        if (this.isKVAvailable) {
+        if (this.isKVAvailable && this.redis) {
             try {
-                const response = await fetch(`${process.env.KV_REST_API_URL}/${encodeURIComponent(`session:${sessionId}`)}`, {
-                    headers: {
-                        'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}`
-                    }
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data && data.metadata) {
-                        const sessionData = JSON.parse(data.metadata);
-                        // 檢查 session 是否過期
-                        if (sessionData.expiresAt && Date.now() < sessionData.expiresAt) {
-                            this.cache.set(sessionId, sessionData);
-                            return sessionData;
-                        }
+                const data = await this.redis.get(`session:${sessionId}`);
+                if (data) {
+                    const sessionData = typeof data === 'string' ? JSON.parse(data) : data;
+                    // 檢查 session 是否過期
+                    if (sessionData.expiresAt && Date.now() < sessionData.expiresAt + (7 * 24 * 60 * 60 * 1000)) { // 增加一個禮拜的寬容期
+                        this.cache.set(`session:${sessionId}`, sessionData);
+                        return sessionData;
                     }
                 }
             } catch (error) {
@@ -104,26 +96,21 @@ class KVStorageManager {
         if (!sessionId || !sessionData) return false;
         
         // 1. 保存到內存緩存
-        this.cache.set(sessionId, sessionData);
+        this.cache.set(`session:${sessionId}`, sessionData);
         
         // 2. 保存到 KV
-        if (this.isKVAvailable) {
+        if (this.isKVAvailable && this.redis) {
             try {
-                const metadata = JSON.stringify({
+                const data = {
                     ...sessionData,
                     lastUpdated: Date.now()
+                };
+                
+                await this.redis.set(`session:${sessionId}`, JSON.stringify(data), {
+                    ex: 7 * 24 * 60 * 60 // 7天過期
                 });
                 
-                const response = await fetch(`${process.env.KV_REST_API_URL}/${encodeURIComponent(`session:${sessionId}`)}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ metadata })
-                });
-                
-                return response.ok;
+                return true;
             } catch (error) {
                 console.error('KV 保存 session 失敗:', error);
                 return false;

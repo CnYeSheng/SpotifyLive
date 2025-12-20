@@ -5,7 +5,10 @@ const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
 const axios = require('axios');
+const KVStorageManager = require('./api/kv-storage');
 require('dotenv').config();
+
+const kvStorage = new KVStorageManager();
 
 // Rate limiter for Spotify API
 class SpotifyRateLimiter {
@@ -136,7 +139,7 @@ function trackSongChange(sessionId, trackId) {
             // Trigger token refresh
             const session = userSessions.get(sessionId);
             if (session) {
-                refreshAccessToken(session).then(refreshed => {
+                refreshAccessToken(session, req.sessionId).then(refreshed => {
                     if (refreshed) {
                         console.log(`✅ Token refreshed successfully after song change`);
                     } else {
@@ -170,19 +173,59 @@ function generateSessionId() {
 }
 
 // Get user session from request
-function getUserSession(req) {
+async function getUserSession(req) {
     const headerId = req.headers['x-session-id'] || req.query.sessionId;
-    if (headerId) {
-        return userSessions.get(headerId) || null;
+    let sessionId = headerId;
+    
+    if (!sessionId) {
+        const cookieHeader = req.headers.cookie || '';
+        const cookies = Object.fromEntries(cookieHeader.split(';').map(v => {
+            const idx = v.indexOf('=');
+            if (idx === -1) return [v.trim(), ''];
+            return [v.slice(0, idx).trim(), decodeURIComponent(v.slice(idx + 1))];
+        }));
+        sessionId = cookies['spotify_session'];
     }
-    const cookieHeader = req.headers.cookie || '';
-    const cookies = Object.fromEntries(cookieHeader.split(';').map(v => {
-        const idx = v.indexOf('=');
-        if (idx === -1) return [v.trim(), ''];
-        return [v.slice(0, idx).trim(), decodeURIComponent(v.slice(idx + 1))];
-    }));
-    const cookieId = cookies['spotify_session'];
-    return cookieId ? userSessions.get(cookieId) || null : null;
+    
+    req.sessionId = sessionId;
+    if (!sessionId) return null;
+    
+    // 優先檢查內存緩存
+    if (userSessions.has(sessionId)) {
+        return userSessions.get(sessionId);
+    }
+    
+    // 從 KV 存儲中恢復
+    try {
+        if (typeof kvStorage !== 'undefined' && kvStorage.getSession) {
+            const session = await kvStorage.getSession(sessionId);
+            if (session) {
+                userSessions.set(sessionId, session);
+                return session;
+            }
+        }
+    } catch (error) {
+        console.error('從 KV 恢復 Session 失敗:', error.message);
+    }
+    
+    return null;
+}
+
+// 保存會話
+async function saveUserSession(sessionId, sessionData) {
+    if (!sessionId || !sessionData) return;
+    
+    // 保存到內存
+    userSessions.set(sessionId, sessionData);
+    
+    // 保存到 KV
+    try {
+        if (typeof kvStorage !== 'undefined' && kvStorage.saveSession) {
+            await kvStorage.saveSession(sessionId, sessionData);
+        }
+    } catch (error) {
+        console.error('保存 Session 到 KV 失敗:', error.message);
+    }
 }
 
 // Spotify authorization URL with enhanced scopes
@@ -231,7 +274,7 @@ app.get('/callback', async (req, res) => {
             }
         );
         
-        userSessions.set(sessionId, {
+        await saveUserSession(sessionId, {
             accessToken: response.data.access_token,
             refreshToken: response.data.refresh_token,
             expiresAt: Date.now() + (response.data.expires_in * 1000)
@@ -251,7 +294,7 @@ app.get('/callback', async (req, res) => {
 
 // Get currently playing track with enhanced information
 app.get('/api/current-track', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -262,7 +305,7 @@ app.get('/api/current-track', async (req, res) => {
     const oneMinuteFromNow = Date.now() + (1 * 60 * 1000);
     if (session.expiresAt <= oneMinuteFromNow) {
         console.log('🔄 Token expires soon, attempting refresh...');
-        const refreshed = await refreshAccessToken(session);
+        const refreshed = await refreshAccessToken(session, req.sessionId);
         if (!refreshed) {
             console.log('⚠️ Token refresh failed, but allowing current request to proceed');
             // Don't immediately return 401, let the request proceed and handle errors gracefully
@@ -367,7 +410,7 @@ app.get('/api/current-track', async (req, res) => {
         
         if (error.response?.status === 401) {
             console.log('🔑 Authentication error detected, attempting token refresh...');
-            const refreshed = await refreshAccessToken(session);
+            const refreshed = await refreshAccessToken(session, req.sessionId);
             if (!refreshed) {
                 console.log('⚠️ Token refresh failed, returning 401');
                 return res.status(401).json({ 
@@ -423,11 +466,11 @@ app.get('/api/current-track', async (req, res) => {
 // 靜默刷新 token 端點（正確多使用者版本）
 app.post('/api/refresh-token', async (req, res) => {
     try {
-        const session = getUserSession(req);
+        const session = await getUserSession(req);
         if (!session) {
             return res.status(401).json({ error: 'No session found' });
         }
-        const refreshed = await refreshAccessToken(session);
+        const refreshed = await refreshAccessToken(session, req.sessionId);
         if (refreshed) {
             const sessionId = req.headers['x-session-id'] || req.query.sessionId;
             res.json({ 
@@ -458,7 +501,7 @@ function authenticateSpotify(req, res, next) {
     const fiveMinutesFromNow = Date.now() + (5 * 60 * 1000);
     if (session.expiresAt <= fiveMinutesFromNow) {
         console.log('🔄 Token expires soon, refreshing proactively...');
-        refreshAccessToken(session).then(refreshed => {
+        refreshAccessToken(session, req.sessionId).then(refreshed => {
             if (!refreshed) {
                 return res.status(401).json({ error: 'Token expired, please re-authenticate' });
             }
@@ -474,7 +517,7 @@ function authenticateSpotify(req, res, next) {
 }
 
 // Enhanced refresh access token with better logging
-async function refreshAccessToken(session) {
+async function refreshAccessToken(session, sessionId) {
     if (!session.refreshToken) {
         console.log('ℹ️ No refresh token available');
         return false;
@@ -488,13 +531,23 @@ async function refreshAccessToken(session) {
                 client_id: CLIENT_ID,
                 client_secret: CLIENT_SECRET
             }),
-            // ...
+            {
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            }
         );
         session.accessToken = response.data.access_token;
         if (response.data.refresh_token) {
             session.refreshToken = response.data.refresh_token;
         }
         session.expiresAt = Date.now() + (response.data.expires_in * 1000);
+        
+        // 同步到 KV
+        if (sessionId) {
+            await saveUserSession(sessionId, session);
+        }
+        
         console.log('✅ Token refreshed successfully...');
         return true;
     } catch (error) {
@@ -505,7 +558,7 @@ async function refreshAccessToken(session) {
 
 // Enhanced authentication status check with proactive token refresh
 app.get('/api/auth-status', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     const sessionId = req.headers['x-session-id'] || req.query.sessionId;
     
     if (!session) {
@@ -519,7 +572,7 @@ app.get('/api/auth-status', async (req, res) => {
     const fiveMinutesFromNow = Date.now() + (5 * 60 * 1000);
     if (session.expiresAt <= fiveMinutesFromNow) {
         console.log('🔄 Proactive token refresh triggered by auth-status check');
-        const refreshed = await refreshAccessToken(session);
+        const refreshed = await refreshAccessToken(session, req.sessionId);
         if (!refreshed) {
             // Token refresh failed, but still return current status
             console.log('⚠️ Token refresh failed in auth-status check');
@@ -539,7 +592,7 @@ app.get('/api/auth-status', async (req, res) => {
 
 // Get available devices
 app.get('/api/devices', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -548,7 +601,7 @@ app.get('/api/devices', async (req, res) => {
     
     // Check if token needs refresh
     if (Date.now() >= session.expiresAt) {
-        const refreshed = await refreshAccessToken(session);
+        const refreshed = await refreshAccessToken(session, req.sessionId);
         if (!refreshed) {
             return res.status(401).json({ error: 'Token expired, please re-authenticate' });
         }
@@ -572,7 +625,7 @@ app.get('/api/devices', async (req, res) => {
         }
         
         if (error.response?.status === 401) {
-            const refreshed = await refreshAccessToken(session);
+            const refreshed = await refreshAccessToken(session, req.sessionId);
             if (!refreshed) {
                 return res.status(401).json({ error: 'Token expired, please re-authenticate' });
             }
@@ -600,7 +653,7 @@ app.get('/api/devices', async (req, res) => {
 
 // Get user playlists
 app.get('/api/playlists', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -626,7 +679,7 @@ app.get('/api/playlists', async (req, res) => {
 
 // Get user's liked songs
 app.get('/api/liked-songs', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -653,7 +706,7 @@ app.get('/api/liked-songs', async (req, res) => {
 
 // Enhanced player control endpoints
 app.post('/api/playback/play-pause', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -691,7 +744,7 @@ app.post('/api/playback/play-pause', async (req, res) => {
 });
 
 app.post('/api/playback/previous', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -708,7 +761,7 @@ app.post('/api/playback/previous', async (req, res) => {
 });
 
 app.post('/api/playback/next', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -725,7 +778,7 @@ app.post('/api/playback/next', async (req, res) => {
 });
 
 app.post('/api/playback/volume', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -744,7 +797,7 @@ app.post('/api/playback/volume', async (req, res) => {
 });
 
 app.post('/api/playback/shuffle', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -770,7 +823,7 @@ app.post('/api/playback/shuffle', async (req, res) => {
 });
 
 app.post('/api/playback/repeat', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -801,7 +854,7 @@ app.post('/api/playback/repeat', async (req, res) => {
 
 // Library management
 app.post('/api/library/add', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -820,7 +873,7 @@ app.post('/api/library/add', async (req, res) => {
 });
 
 app.post('/api/library/remove', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -840,7 +893,7 @@ app.post('/api/library/remove', async (req, res) => {
 
 // Check if track is in user's library
 app.get('/api/library/check/:trackId', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -850,7 +903,7 @@ app.get('/api/library/check/:trackId', async (req, res) => {
     
     // Check if token needs refresh
     if (Date.now() >= session.expiresAt) {
-        const refreshed = await refreshAccessToken(session);
+        const refreshed = await refreshAccessToken(session, req.sessionId);
         if (!refreshed) {
             return res.status(401).json({ error: 'Token expired, please re-authenticate' });
         }
@@ -875,7 +928,7 @@ app.get('/api/library/check/:trackId', async (req, res) => {
         }
         
         if (error.response?.status === 401) {
-            const refreshed = await refreshAccessToken(session);
+            const refreshed = await refreshAccessToken(session, req.sessionId);
             if (!refreshed) {
                 return res.status(401).json({ error: 'Token expired, please re-authenticate' });
             }
@@ -923,7 +976,7 @@ app.get('/api/library/check/:trackId', async (req, res) => {
 
 // Get queue information
 app.get('/api/player/queue', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -932,7 +985,7 @@ app.get('/api/player/queue', async (req, res) => {
     
     // Check if token needs refresh
     if (Date.now() >= session.expiresAt) {
-        const refreshed = await refreshAccessToken(session);
+        const refreshed = await refreshAccessToken(session, req.sessionId);
         if (!refreshed) {
             return res.status(401).json({ error: 'Token expired, please re-authenticate' });
         }
@@ -1018,7 +1071,7 @@ app.get('/api/player/queue', async (req, res) => {
         }
         
         if (error.response?.status === 401) {
-            const refreshed = await refreshAccessToken(session);
+            const refreshed = await refreshAccessToken(session, req.sessionId);
             if (!refreshed) {
                 return res.status(401).json({ error: 'Token expired, please re-authenticate' });
             }
@@ -1992,7 +2045,7 @@ app.post('/api/extract-colors', async (req, res) => {
 
 // Play specific track
 app.put('/api/player/play', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -2002,7 +2055,7 @@ app.put('/api/player/play', async (req, res) => {
     
     // Check if token needs refresh
     if (Date.now() >= session.expiresAt) {
-        const refreshed = await refreshAccessToken(session);
+        const refreshed = await refreshAccessToken(session, req.sessionId);
         if (!refreshed) {
             return res.status(401).json({ error: 'Token expired, please re-authenticate' });
         }
@@ -2035,7 +2088,7 @@ app.put('/api/player/play', async (req, res) => {
         }
         
         if (error.response?.status === 401) {
-            const refreshed = await refreshAccessToken(session);
+            const refreshed = await refreshAccessToken(session, req.sessionId);
             if (!refreshed) {
                 return res.status(401).json({ error: 'Token expired, please re-authenticate' });
             }
@@ -2054,7 +2107,7 @@ app.put('/api/player/play', async (req, res) => {
 
 // Transfer playback to device
 app.put('/api/player/transfer', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -2064,7 +2117,7 @@ app.put('/api/player/transfer', async (req, res) => {
     
     // Check if token needs refresh
     if (Date.now() >= session.expiresAt) {
-        const refreshed = await refreshAccessToken(session);
+        const refreshed = await refreshAccessToken(session, req.sessionId);
         if (!refreshed) {
             return res.status(401).json({ error: 'Token expired, please re-authenticate' });
         }
@@ -2093,7 +2146,7 @@ app.put('/api/player/transfer', async (req, res) => {
         }
         
         if (error.response?.status === 401) {
-            const refreshed = await refreshAccessToken(session);
+            const refreshed = await refreshAccessToken(session, req.sessionId);
             if (!refreshed) {
                 return res.status(401).json({ error: 'Token expired, please re-authenticate' });
             }

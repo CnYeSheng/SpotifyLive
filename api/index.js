@@ -49,19 +49,55 @@ function generateSessionId() {
 }
 
 // Get user session from request
-function getUserSession(req) {
+async function getUserSession(req) {
     const headerId = req.headers['x-session-id'] || req.query.sessionId;
-    if (headerId) {
-        return userSessions.get(headerId) || null;
+    let sessionId = headerId;
+    
+    if (!sessionId) {
+        const cookieHeader = req.headers.cookie || '';
+        const cookies = Object.fromEntries(cookieHeader.split(';').map(v => {
+            const idx = v.indexOf('=');
+            if (idx === -1) return [v.trim(), ''];
+            return [v.slice(0, idx).trim(), decodeURIComponent(v.slice(idx + 1))];
+        }));
+        sessionId = cookies['spotify_session'];
     }
-    const cookieHeader = req.headers.cookie || '';
-    const cookies = Object.fromEntries(cookieHeader.split(';').map(v => {
-        const idx = v.indexOf('=');
-        if (idx === -1) return [v.trim(), ''];
-        return [v.slice(0, idx).trim(), decodeURIComponent(v.slice(idx + 1))];
-    }));
-    const cookieId = cookies['spotify_session'];
-    return cookieId ? userSessions.get(cookieId) || null : null;
+    
+    req.sessionId = sessionId;
+    if (!sessionId) return null;
+    
+    // 優先檢查內存緩存 (效能優化)
+    if (userSessions.has(sessionId)) {
+        return userSessions.get(sessionId);
+    }
+    
+    // 從 KV 存儲中恢復
+    try {
+        const session = await kvStorage.getSession(sessionId);
+        if (session) {
+            userSessions.set(sessionId, session);
+            return session;
+        }
+    } catch (error) {
+        console.error('從 KV 恢復 Session 失敗:', error.message);
+    }
+    
+    return null;
+}
+
+// 保存會話
+async function saveUserSession(sessionId, sessionData) {
+    if (!sessionId || !sessionData) return;
+    
+    // 保存到內存
+    userSessions.set(sessionId, sessionData);
+    
+    // 保存到 KV
+    try {
+        await kvStorage.saveSession(sessionId, sessionData);
+    } catch (error) {
+        console.error('保存 Session 到 KV 失敗:', error.message);
+    }
 }
 
 // Spotify authorization URL with enhanced scopes
@@ -110,8 +146,8 @@ app.get('/api/callback', async (req, res) => {
             }
         );
         
-        // 存储会话信息到内存中
-        userSessions.set(sessionId, {
+        // 存储会话信息
+        await saveUserSession(sessionId, {
             accessToken: response.data.access_token,
             refreshToken: response.data.refresh_token,
             expiresAt: Date.now() + (response.data.expires_in * 1000)
@@ -132,8 +168,8 @@ app.get('/api/callback', async (req, res) => {
 });
 
 // 中间件：检查会话有效性
-function checkSessionValidity(req, res, next) {
-    const session = getUserSession(req);
+async function checkSessionValidity(req, res, next) {
+    const session = await getUserSession(req);
     if (!session) {
         console.log('❌ 會話檢查失敗：無會話');
         return res.status(401).json({ 
@@ -153,7 +189,7 @@ function checkSessionValidity(req, res, next) {
 }
 
 // Refresh access token
-async function refreshAccessToken(session) {
+async function refreshAccessToken(session, sessionId) {
     if (!session.refreshToken) {
         console.log('ℹ️ 沒有 refresh token，無法刷新');
         return false;
@@ -181,6 +217,12 @@ async function refreshAccessToken(session) {
             session.refreshToken = response.data.refresh_token;
         }
         session.expiresAt = Date.now() + (response.data.expires_in * 1000);
+        
+        // 同步到 KV
+        if (sessionId) {
+            await saveUserSession(sessionId, session);
+        }
+        
         console.log('✅ Token refreshed successfully');
         return true;
     } catch (error) {
@@ -194,14 +236,14 @@ async function refreshAccessToken(session) {
 
 // Check authentication status
 app.get('/api/auth-status', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     const sessionId = req.headers['x-session-id'] || req.query.sessionId;
     if (!session) {
         return res.json({ authenticated: false, sessionId: null });
     }
     const fiveMinutesFromNow = Date.now() + (5 * 60 * 1000);
     if (session.expiresAt <= fiveMinutesFromNow) {
-        const refreshed = await refreshAccessToken(session);
+        const refreshed = await refreshAccessToken(session, req.sessionId);
         if (!refreshed) {
             return res.json({ authenticated: false, sessionId: sessionId, error: 'Token refresh failed' });
         }
@@ -211,7 +253,7 @@ app.get('/api/auth-status', async (req, res) => {
 
 // Refresh token endpoint
 app.post('/api/refresh-token', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     
     if (!session) {
         console.log('❌ 刷新Token失敗：無會話');
@@ -230,7 +272,7 @@ app.post('/api/refresh-token', async (req, res) => {
     }
     
     try {
-        const refreshed = await refreshAccessToken(session);
+        const refreshed = await refreshAccessToken(session, req.sessionId);
         if (refreshed) {
             console.log('✅ Token 刷新成功');
             res.json({ 
@@ -256,13 +298,13 @@ app.post('/api/refresh-token', async (req, res) => {
 
 // Get currently playing track with enhanced information
 app.get('/api/current-track', checkSessionValidity, async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     
     // Check if token needs refresh (提前 5 分鐘檢查)
     const fiveMinutesFromNow = Date.now() + (5 * 60 * 1000);
     if (fiveMinutesFromNow >= session.expiresAt) {
         console.log(`[${new Date().toLocaleTimeString()}] 🔄 Current-track - Token 即將過期，主動刷新...`);
-        const refreshed = await refreshAccessToken(session);
+        const refreshed = await refreshAccessToken(session, req.sessionId);
         if (!refreshed) {
             console.log(`[${new Date().toLocaleTimeString()}] ⚠️ Current-track - Token 刷新失敗，要求重新認證`);
             return res.status(401).json({ error: 'Token expired, please re-authenticate' });
@@ -270,12 +312,20 @@ app.get('/api/current-track', checkSessionValidity, async (req, res) => {
     }
     
     try {
-        const [playerResponse, userResponse] = await Promise.all([
+        // 一次性獲取所有需要的數據，包括播放隊列
+        const [playerResponse, userResponse, queueResponse] = await Promise.all([
             axios.get('https://api.spotify.com/v1/me/player', {
                 headers: { 'Authorization': `Bearer ${session.accessToken}` }
             }),
             axios.get('https://api.spotify.com/v1/me', {
                 headers: { 'Authorization': `Bearer ${session.accessToken}` }
+            }),
+            // 同時獲取播放隊列信息
+            axios.get('https://api.spotify.com/v1/me/player/queue', {
+                headers: { 'Authorization': `Bearer ${session.accessToken}` }
+            }).catch(err => {
+                console.log('⚠️ Queue API failed (non-critical):', err.message);
+                return null;
             })
         ]);
         
@@ -307,13 +357,25 @@ app.get('/api/current-track', checkSessionValidity, async (req, res) => {
                 name: device.name,
                 type: device.type,
                 volume: device.volume_percent
+            } : null,
+            // 包含隊列信息
+            queue: queueResponse?.data?.queue?.slice(0, 10).map(qTrack => ({
+                id: qTrack.id,
+                name: qTrack.name,
+                artist: qTrack.artists.map(a => a.name).join(', '),
+                image: qTrack.album.images[0]?.url
+            })) || [],
+            nextTrack: queueResponse?.data?.queue?.[0] ? {
+                id: queueResponse.data.queue[0].id,
+                name: queueResponse.data.queue[0].name,
+                artist: queueResponse.data.queue[0].artists.map(a => a.name).join(', ')
             } : null
         };
         
         res.json(currentTrack);
     } catch (error) {
         if (error.response?.status === 401) {
-            const refreshed = await refreshAccessToken(session);
+            const refreshed = await refreshAccessToken(session, req.sessionId);
             if (!refreshed) {
                 return res.status(401).json({ error: 'Token expired, please re-authenticate' });
             }
@@ -327,7 +389,7 @@ app.get('/api/current-track', checkSessionValidity, async (req, res) => {
 
 // Get available devices
 app.get('/api/devices', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -346,7 +408,7 @@ app.get('/api/devices', async (req, res) => {
 
 // Get user playlists
 app.get('/api/playlists', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -373,7 +435,7 @@ app.get('/api/playlists', async (req, res) => {
 
 // Get playlist items
 app.get('/api/playlists/:playlistId', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     const { playlistId } = req.params;
     
     if (!session) {
@@ -416,7 +478,7 @@ app.get('/api/playlists/:playlistId', async (req, res) => {
 
 // Get user's liked songs
 app.get('/api/liked-songs', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -443,7 +505,7 @@ app.get('/api/liked-songs', async (req, res) => {
 
 // Enhanced player control endpoints
 app.post('/api/playback/play-pause', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -480,7 +542,7 @@ app.post('/api/playback/play-pause', async (req, res) => {
 });
 
 app.post('/api/playback/previous', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -497,7 +559,7 @@ app.post('/api/playback/previous', async (req, res) => {
 });
 
 app.post('/api/playback/next', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -514,7 +576,7 @@ app.post('/api/playback/next', async (req, res) => {
 });
 
 app.post('/api/playback/volume', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -533,7 +595,7 @@ app.post('/api/playback/volume', async (req, res) => {
 });
 
 app.post('/api/playback/shuffle', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -558,7 +620,7 @@ app.post('/api/playback/shuffle', async (req, res) => {
 });
 
 app.post('/api/playback/repeat', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -588,7 +650,7 @@ app.post('/api/playback/repeat', async (req, res) => {
 
 // Library management
 app.post('/api/library/add', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -607,7 +669,7 @@ app.post('/api/library/add', async (req, res) => {
 });
 
 app.post('/api/library/remove', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -627,7 +689,7 @@ app.post('/api/library/remove', async (req, res) => {
 
 // Check if track is in user's library
 app.get('/api/library/check/:trackId', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -643,7 +705,7 @@ app.get('/api/library/check/:trackId', async (req, res) => {
         res.json({ isLiked });
     } catch (error) {
         if (error.response?.status === 401) {
-            const refreshed = await refreshAccessToken(session);
+            const refreshed = await refreshAccessToken(session, req.sessionId);
             if (!refreshed) {
                 return res.status(401).json({ error: 'Token expired, please re-authenticate' });
             }
@@ -671,7 +733,7 @@ app.get('/api/library/check/:trackId', async (req, res) => {
 
 // Get user's queue
 app.get('/api/player/queue', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -735,7 +797,7 @@ app.get('/api/player/queue', async (req, res) => {
         }
     } catch (error) {
         if (error.response?.status === 401) {
-            const refreshed = await refreshAccessToken(session);
+            const refreshed = await refreshAccessToken(session, req.sessionId);
             if (!refreshed) {
                 return res.status(401).json({ error: 'Token expired, please re-authenticate' });
             }
@@ -776,7 +838,7 @@ app.get('/api/player/queue', async (req, res) => {
 
 // Play specific track
 app.put('/api/player/play', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -801,7 +863,7 @@ app.put('/api/player/play', async (req, res) => {
 
 // Transfer playback to device
 app.put('/api/player/transfer', async (req, res) => {
-    const session = getUserSession(req);
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -819,7 +881,7 @@ app.put('/api/player/transfer', async (req, res) => {
         res.json({ success: true });
     } catch (error) {
         if (error.response?.status === 401) {
-            const refreshed = await refreshAccessToken(session);
+            const refreshed = await refreshAccessToken(session, req.sessionId);
             if (!refreshed) {
                 return res.status(401).json({ error: 'Token expired, please re-authenticate' });
             }
@@ -1390,11 +1452,11 @@ app.get('/api/lyrics-search-multi/:artist/:title', async (req, res) => {
 // 靜默刷新 token 端點（Vercel 版）
 app.post('/api/refresh-token', async (req, res) => {
     try {
-        const session = getUserSession(req);
+        const session = await getUserSession(req);
         if (!session) {
             return res.status(401).json({ error: 'No session found' });
         }
-        const refreshed = await refreshAccessToken(session);
+        const refreshed = await refreshAccessToken(session, req.sessionId);
         if (refreshed) {
             const sessionId = req.headers['x-session-id'] || req.query.sessionId;
             res.json({ 
@@ -1418,7 +1480,7 @@ app.post('/api/refresh-token', async (req, res) => {
 // ✨ 新增：保存用户自定义歌词到 KV
 app.post('/api/kv/user-lyrics', async (req, res) => {
     try {
-        const session = getUserSession(req);
+        const session = await getUserSession(req);
         if (!session) {
             return res.status(401).json({ success: false, error: '未认证' });
         }
@@ -1481,7 +1543,7 @@ app.post('/api/kv/user-lyrics', async (req, res) => {
 // ✨ 新增：批量同步歌词 (从客户端上传)
 app.post('/api/kv/sync-lyrics', async (req, res) => {
     try {
-        const session = getUserSession(req);
+        const session = await getUserSession(req);
         if (!session) {
             return res.status(401).json({ success: false, error: '未认证' });
         }
@@ -1535,7 +1597,7 @@ app.post('/api/kv/sync-lyrics', async (req, res) => {
 // ✨ 新增：批量同步时间偏移 (从客户端上传)
 app.post('/api/kv/sync-time-adjustments', async (req, res) => {
     try {
-        const session = getUserSession(req);
+        const session = await getUserSession(req);
         if (!session) {
             return res.status(401).json({ success: false, error: '未认证' });
         }
@@ -1593,7 +1655,7 @@ app.get('/api/kv/time-adjustments', async (req, res) => {
 // ✨ 新增：清除所有云端数据 (仅限当前用户的 session 数据)
 app.delete('/api/kv/clear-all', async (req, res) => {
     try {
-        const session = getUserSession(req);
+        const session = await getUserSession(req);
         if (!session) {
             return res.status(401).json({ success: false, error: '未认证' });
         }
@@ -1613,7 +1675,7 @@ app.delete('/api/kv/clear-all', async (req, res) => {
 // 2. 保存时间偏移（永不过期）
 app.post('/api/kv/save-time-offset', async (req, res) => {
     try {
-        const session = getUserSession(req);
+        const session = await getUserSession(req);
         if (!session) {
             return res.status(401).json({ success: false, error: '未认证' });
         }
@@ -1708,7 +1770,7 @@ app.get('/api/kv/user-lyrics/:trackKey', async (req, res) => {
 app.get('/api/kv/get-time-offset/:trackKey', async (req, res) => {
     try {
         const { trackKey } = req.params;
-        const session = getUserSession(req);
+        const session = await getUserSession(req);
         
         if (!session) {
             return res.json({ success: true, timeOffset: 0 });
@@ -1946,7 +2008,7 @@ app.get('/api/kv/user-provider/:artist/:title', async (req, res) => {
 // 獲取用戶所有自定義歌詞
 app.get('/api/kv/user-lyrics', async (req, res) => {
     try {
-        const session = getUserSession(req);
+        const session = await getUserSession(req);
         if (!session) {
             return res.status(401).json({ success: false, error: '未认证' });
         }
@@ -2102,7 +2164,7 @@ app.post('/api/kv/migrate', async (req, res) => {
 // ✨ 新增：检查 KV 存储状态
 app.get('/api/kv/status', async (req, res) => {
     try {
-        const session = getUserSession(req);
+        const session = await getUserSession(req);
         
         if (!session) {
             return res.json({
@@ -2141,7 +2203,7 @@ app.post('/api/kv/sync-all', async (req, res) => {
     console.log('🔄 收到 KV 同步請求');
     
     try {
-        const session = getUserSession(req);
+        const session = await getUserSession(req);
         if (!session) {
             console.log('❌ 未認證');
             return res.status(401).json({ success: false, error: '未認證' });
@@ -2263,7 +2325,7 @@ app.post('/api/kv/sync-all', async (req, res) => {
     console.log('🔄 收到 KV 同步請求');
     
     try {
-        const session = getUserSession(req);
+        const session = await getUserSession(req);
         if (!session) {
             console.log('❌ 未認證');
             return res.status(401).json({ success: false, error: '未認證' });
