@@ -3436,9 +3436,12 @@ async initializeStorage() {
         
         // 歌词处理逻辑
         if (isNewTrack) {
-            this.log('🎵 新歌曲，重置歌詞狀態');
-            // 重置歌詞狀態
+            this.log('🎵 新歌曲，重置歌詞狀態並立即清理 UI');
+            // 立即清理界面，防止看到上一首
             this.lyrics = [];
+            this.displayLyrics(); // 這會清空當前列表
+            this.showLyricsPlaceholder('🎵 正在載入新歌詞...');
+            
             this.currentLyricsTrackId = null;
             this.isLoadingLyrics = false;
             this.lastLyricsRequest = null; // 重置请求记录
@@ -3777,12 +3780,13 @@ async loadLyrics() {
     
     if (this.lastLyricsRequest && 
         this.lastLyricsRequest.trackKey === trackKey && 
-        Date.now() - this.lastLyricsRequest.time < 5000) {
-        console.log('⏳ 最近刚请求过此歌曲，跳过重复请求');
+        Date.now() - this.lastLyricsRequest.time < 2000) {
+        console.log('⏳ 最近 2 秒內剛請求過此歌曲，跳過重複請求');
         return;
     }
     
     this.isLoadingLyrics = true;
+    const currentLoadingId = this.currentTrack.id;
     this.lastLyricsRequest = {
         trackKey: trackKey,
         time: Date.now()
@@ -3812,7 +3816,14 @@ async loadLyrics() {
         }
         
         const data = await response.json();
-        console.log('歌词 API 回应:', data);
+        
+        // 🚨 關鍵校驗：獲取結果後，確認歌曲是否還是同一首
+        if (!this.currentTrack || this.currentTrack.id !== currentLoadingId) {
+            this.log('⚠️ 歌詞返回時歌曲已換，捨棄此結果');
+            return;
+        }
+        
+        this.log('歌詞 API 回應:', data);
 
         if (data.success && data.lyrics && Array.isArray(data.lyrics) && data.lyrics.length > 0) {
             const validLyrics = data.lyrics.filter(line => {
@@ -5140,19 +5151,20 @@ showOffsetMessage() {
             return;
         }
         
-        // 檢查是否最近剛請求過 (缩短到3秒)
+        // 檢查是否最近剛請求過 (縮短到 2 秒，且只在 trackKey 相同時)
         const trackKey = this.currentTrack ? `${this.currentTrack.id}-${this.currentTrack.name}-${this.currentTrack.artist}` : null;
         if (this.lastLyricsRequest && 
             this.lastLyricsRequest.trackKey === trackKey && 
-            Date.now() - this.lastLyricsRequest.time < 3000) {
-            this.log('⏳ 最近剛請求過此歌曲且未超過3秒，跳過重複請求');
+            Date.now() - this.lastLyricsRequest.time < 2000) {
+            this.log('⏳ 最近 2 秒內剛請求過此歌曲，跳過重複請求');
             return;
         }
         
-        // 對於新歌曲，我們稍微等待一下給 Spotify API 穩定時間，但不需要 2 秒那麼久
-        const delay = 800; 
+        // 如果是新歌曲 (this.currentLyricsTrackId 為空)，我們應該降低延遲
+        const isNewForLyrics = this.currentLyricsTrackId !== (this.currentTrack ? this.currentTrack.id : null);
+        const delay = isNewForLyrics ? 300 : 800; 
         
-        this.log(`⏰ 安排在 ${delay}ms 後載入歌詞`);
+        this.log(`⏰ 安排在 ${delay}ms 後載入歌詞 (是否為新歌: ${isNewForLyrics})`);
         this.lyricsLoadTimeout = setTimeout(() => {
             if (this.currentTrack && !this.isLoadingLyrics) {
                 this.log('🚀 執行延遲的歌詞載入');
