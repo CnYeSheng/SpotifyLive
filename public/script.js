@@ -3356,11 +3356,17 @@ async initializeStorage() {
         const isNewTrack = !this.currentTrack || 
                           this.currentTrack.id !== data.id ||
                           this.currentTrack.name !== data.name;
+        
+        // 🚨 新增：檢查播放狀態是否從暫停變為播放
+        const isResumed = this.currentTrack && !this.currentTrack.isPlaying && data.isPlaying;
 
-        this.log(`🔄 歌曲狀態: ${isNewTrack ? '新歌曲' : '相同歌曲'}`);
+        this.log(`🔄 歌曲狀態: ${isNewTrack ? '新歌曲' : '相同歌曲'}, 恢復播放: ${isResumed}`);
 
         // 更新 currentTrack
         this.currentTrack = data;
+        // 🚨 確保每次獲取數據都更新時間基準，這對進度計算至關重要
+        this.currentTrack.lastUpdated = Date.now(); 
+        
         this.log(`🎵 歌曲數據已更新: ${data.name || 'Unknown'} - ${data.artist || 'Unknown Artist'}`);
 
         try {
@@ -3447,7 +3453,6 @@ async initializeStorage() {
             this.lastLyricsRequest = null; // 重置请求记录
             
             // 立即隐藏预览并重置状态
-            this.log('🔄 新歌曲：立即隐藏下一首预览');
             this.isNextSongPreviewShown = false;
             if (this.nextSongPreview) {
                 this.nextSongPreview.style.display = 'none';
@@ -3470,6 +3475,12 @@ async initializeStorage() {
             this.safeLyricsLoad();
         } else {
             this.log('🔄 相同歌曲，確保UI正確顯示');
+            // 🚨 如果是從暫停恢復，強制重啟進度追蹤
+            if (isResumed) {
+                this.log('▶️ 偵測到恢復播放，強制重啟進度追蹤循環');
+                this.updateProgress();
+            }
+            
             // 检查歌词是否需要重新加载
             const needsLyricsReload = !this.lyrics || this.lyrics.length === 0 || 
                                     this.currentLyricsTrackId !== this.currentTrack.id;
@@ -3485,9 +3496,16 @@ async initializeStorage() {
         // 更新下一首預覽（使用一次性獲取的數據）
         this.updateNextTrackPreview();
         
+        // 如果是從暫停恢復，強制重啟進度追蹤
+        if (isResumed || isNewTrack) {
+            this.log(`▶️ 重啟進度追蹤 (原因: ${isResumed ? '恢復' : '新歌'})`);
+            this.updateProgress();
+        }
+        
         // 每次都需要更新的內容
         this.updatePlayerControls();
-        this.updateProgress();
+        // 移除這裡的重複呼叫，因為上面已經處理了
+        // this.updateProgress(); 
         this.updateStatus('spotify', true);
         
         // 強制確保播放器始終可見（無論播放或暫停）
@@ -3702,16 +3720,25 @@ async initializeStorage() {
 
             let elapsedTime;
             if (this.currentTrack.isPlaying) {
-                elapsedTime = (Date.now() - this.currentTrack.lastUpdated) + this.currentTrack.progress;
+                // 使用更精確的計算：(現在時間 - 數據更新時間) + Spotify 報告的進度
+                const timeDiff = Date.now() - this.currentTrack.lastUpdated;
+                elapsedTime = timeDiff + this.currentTrack.progress;
+                
+                // 守衛：如果計算出的時間遠大於歌曲長度，鎖定在長度值
+                if (elapsedTime > this.currentTrack.duration) {
+                    elapsedTime = this.currentTrack.duration;
+                }
             } else {
                 elapsedTime = this.currentTrack.progress;
             }
             
-            const progress = (elapsedTime / this.currentTrack.duration) * 100;
-            this.progressFill.style.width = `${Math.min(100, progress)}%`;
-            this.currentTime.textContent = this.formatTime(elapsedTime);
-
-            this.updateLyricsHighlight(elapsedTime + this.lyricsTimeOffset);
+            // 每秒同步一次進度，防止累積誤差 (除了 requestAnimationFrame 以外的守衛)
+            if (this.currentTrack.isPlaying) {
+                const progress = (elapsedTime / this.currentTrack.duration) * 100;
+                this.progressFill.style.width = `${Math.min(100, progress)}%`;
+                this.currentTime.textContent = this.formatTime(elapsedTime);
+                this.updateLyricsHighlight(elapsedTime + this.lyricsTimeOffset);
+            }
 
             const remainingTime = this.currentTrack.duration - elapsedTime;
             if (remainingTime <= 5000 && remainingTime > 0 && this.currentTrack.isPlaying) {
@@ -3795,27 +3822,32 @@ async loadLyrics() {
     // 设置载入超时保护
     const loadingTimeout = setTimeout(() => {
         if (this.isLoadingLyrics) {
-            console.log('⚠️ 歌词载入超时，重置状态');
+            this.log('⚠️ 歌词载入超时，重置状态');
             this.isLoadingLyrics = false;
-            if (this.lyricsLoadTimeout) {
-                clearTimeout(this.lyricsLoadTimeout);
-                this.lyricsLoadTimeout = null;
-            }
         }
-    }, 40000);
+    }, 30000);
 
     this.updateStatus('lyrics', null);
-    this.showLyricsPlaceholder('🎵 正在载入歌词...');
 
     try {
         const proxyUrl = `/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}`;
         const response = await fetch(proxyUrl);
         
         if (!response.ok) {
-            throw new Error(`API 响应错误: ${response.status} ${response.statusText}`);
+            throw new Error(`API 响应错误: ${response.status}`);
         }
         
         const data = await response.json();
+        
+        // 🚨 關鍵校驗：獲取結果後，確認歌曲是否還是同一首
+        if (!this.currentTrack || this.currentTrack.id !== currentLoadingId) {
+            this.log('⚠️ 歌詞返回時歌曲已換，捨棄結果');
+            this.isLoadingLyrics = false;
+            clearTimeout(loadingTimeout);
+            return;
+        }
+        
+        this.log('歌詞 API 回應成功');
         
         // 🚨 關鍵校驗：獲取結果後，確認歌曲是否還是同一首
         if (!this.currentTrack || this.currentTrack.id !== currentLoadingId) {
