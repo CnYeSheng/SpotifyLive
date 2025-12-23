@@ -2548,6 +2548,24 @@ app.get('/api/kv/time-offset/:trackId/:trackName/:artist', enhancedLyricsEndpoin
 app.delete('/api/kv/cleanup-cache', enhancedLyricsEndpoints.cleanupExpiredCache);
 
 // 獲取緩存統計
+// 導出之前添加健康檢查端點
+app.get('/api/health', async (req, res) => {
+    try {
+        const session = await getUserSession(req);
+        res.json({ 
+            status: 'OK', 
+            spotify: !!(session && session.accessToken),
+            timestamp: new Date().toISOString() 
+        });
+    } catch (error) {
+        res.json({ 
+            status: 'OK', 
+            spotify: false, 
+            error: error.message 
+        });
+    }
+});
+
 app.get('/api/kv/cache-stats', enhancedLyricsEndpoints.getCacheStats);
 
 module.exports = app;

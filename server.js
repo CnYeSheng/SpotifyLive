@@ -2164,8 +2164,32 @@ app.put('/api/player/transfer', async (req, res) => {
 });
 
 // Health check endpoint
-app.get('/api/health', (req, res) => {
-    res.json({ status: 'OK', timestamp: new Date().toISOString() });
+app.get('/api/health', async (req, res) => {
+    try {
+        const sessionId = req.headers['x-session-id'];
+        let spotifyConnected = false;
+        
+        if (sessionId) {
+            const session = await kvStorage.getSession(sessionId);
+            if (session && session.accessToken) {
+                // 簡單檢查：如果 accessToken 存在即視為已連線
+                // 在實際生產環境中，可能需要進一步驗證 token 有效性
+                spotifyConnected = true;
+            }
+        }
+        
+        res.json({ 
+            status: 'OK', 
+            spotify: spotifyConnected,
+            timestamp: new Date().toISOString() 
+        });
+    } catch (error) {
+        res.json({ 
+            status: 'OK', 
+            spotify: false, 
+            error: error.message 
+        });
+    }
 });
 
 // Serve the main page
