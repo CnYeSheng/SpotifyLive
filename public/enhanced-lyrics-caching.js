@@ -95,7 +95,7 @@ function initEnhancedLyricsCaching() {
         
         // 1. 檢查永久保存的歌詞
         const permanentLyrics = this.savedLyrics.get(cacheKey);
-        if (permanentLyrics) {
+        if (permanentLyrics && Array.isArray(permanentLyrics.lyrics) && permanentLyrics.lyrics.length > 0) {
             this.log(`💎 從永久緩存載入: ${track.name}`);
             return permanentLyrics;
         }
@@ -103,8 +103,15 @@ function initEnhancedLyricsCaching() {
         // 2. 檢查30天緩存
         const cached = this.enhancedLyricsCache.get(cacheKey);
         if (cached && (Date.now() - cached.timestamp) < this.extendedLyricsCacheExpiry) {
-            this.log(`📚 從30天緩存載入: ${track.name}`);
-            return cached;
+            // 🚨 關鍵校驗：確保緩存的歌詞有效且不為空
+            if (Array.isArray(cached.lyrics) && cached.lyrics.length > 0) {
+                this.log(`📚 從30天緩存載入: ${track.name}`);
+                return cached;
+            } else {
+                this.log(`⚠️ 緩存歌詞為空，將重新抓取: ${track.name}`);
+                // 可選：從緩存中移除無效條目
+                this.enhancedLyricsCache.delete(cacheKey);
+            }
         }
         
         return null;
@@ -112,7 +119,8 @@ function initEnhancedLyricsCaching() {
     
     // 緩存歌詞到增強緩存 (30天)
     SpotifyLyricsPlayer.prototype.cacheEnhancedLyrics = function(track, lyrics, lyricsType, source = 'auto') {
-        if (!track || !lyrics || !Array.isArray(lyrics)) return;
+        // 🚨 關鍵校驗：只緩存有效的非空歌詞
+        if (!track || !lyrics || !Array.isArray(lyrics) || lyrics.length === 0) return;
         
         const cacheKey = this.generateTrackCacheKey(track);
         const cacheData = {
