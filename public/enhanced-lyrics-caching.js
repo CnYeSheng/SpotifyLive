@@ -61,8 +61,14 @@ function initEnhancedLyricsCaching() {
         // 先檢查增強緩存
         const cachedLyrics = this.getEnhancedCachedLyrics(this.currentTrack);
         if (cachedLyrics) {
-            this.displayLyrics(cachedLyrics.lyrics, cachedLyrics.lyricsType);
+            // ⚠️ 重要修正：必須先設置實例屬性，因为 displayLyrics 不接受參數
+            this.lyrics = cachedLyrics.lyrics;
+            this.lyricsType = cachedLyrics.lyricsType;
+            this.currentLyricsTrackId = this.currentTrack.id; // 確保ID匹配
+            
+            this.displayLyrics(); // 調用無參數版本
             this.log(`⚡ 從增強緩存載入歌詞: ${this.currentTrack.name}`);
+            this.updateStatus('lyrics', true); // 更新狀態指示器
             return;
         }
         
