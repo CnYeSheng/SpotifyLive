@@ -107,58 +107,207 @@ SpotifyLyricsPlayer.prototype.displaySearchResults = function(results) {
     const searchResults = document.getElementById('search-results');
     const resultsContainer = document.getElementById('results-container');
     
+    // 注入自定義樣式
+    if (!document.getElementById('lyrics-search-styles')) {
+        const style = document.createElement('style');
+        style.id = 'lyrics-search-styles';
+        style.textContent = `
+            .result-item {
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px;
+                padding: 16px;
+                margin-bottom: 12px;
+                transition: all 0.2s ease;
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+            }
+            .result-item:hover {
+                background: rgba(255, 255, 255, 0.1);
+                border-color: var(--accent-color, #1db954);
+                transform: translateY(-2px);
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            }
+            .result-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .provider-badge {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 12px;
+                font-weight: 600;
+                padding: 4px 8px;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 4px;
+                color: #ddd;
+            }
+            .type-badge {
+                font-size: 11px;
+                padding: 2px 8px;
+                border-radius: 10px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            .type-synced {
+                background: rgba(29, 185, 84, 0.2);
+                color: #1db954;
+                border: 1px solid rgba(29, 185, 84, 0.3);
+            }
+            .type-plain {
+                background: rgba(255, 255, 255, 0.1);
+                color: #ccc;
+            }
+            .result-content {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+            }
+            .result-title {
+                font-size: 16px;
+                font-weight: 700;
+                color: white;
+            }
+            .result-artist {
+                font-size: 14px;
+                color: #bbb;
+            }
+            .result-preview {
+                font-size: 13px;
+                color: #888;
+                font-style: italic;
+                margin-top: 8px;
+                padding: 8px;
+                background: rgba(0, 0, 0, 0.2);
+                border-radius: 6px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .result-actions {
+                display: flex;
+                gap: 10px;
+                margin-top: 4px;
+            }
+            .action-btn {
+                flex: 1;
+                padding: 8px;
+                border: none;
+                border-radius: 6px;
+                font-size: 13px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: background 0.2s;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+            }
+            .use-btn {
+                background: var(--accent-color, #1db954);
+                color: white;
+            }
+            .use-btn:hover {
+                background: #1ed760;
+            }
+            .lock-btn {
+                background: rgba(255, 255, 255, 0.1);
+                color: white;
+            }
+            .lock-btn:hover {
+                background: rgba(255, 255, 255, 0.2);
+            }
+            .failed-section {
+                margin-top: 20px;
+                border-top: 1px solid rgba(255, 255, 255, 0.1);
+                padding-top: 15px;
+            }
+            .failed-item {
+                opacity: 0.6;
+                font-size: 13px;
+                color: #ff6b6b;
+                padding: 8px 0;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
     resultsContainer.innerHTML = '';
     
     // 分離成功和失敗的結果
     const successResults = results.filter(r => r.success !== false);
     const failedResults = results.filter(r => r.success === false);
     
+    if (successResults.length === 0 && failedResults.length === 0) {
+        this.displayNoResults();
+        return;
+    }
+
     // 顯示成功的結果
     successResults.forEach((result, index) => {
         const resultElement = document.createElement('div');
-        resultElement.className = 'result-item success';
+        resultElement.className = 'result-item';
         
         // 生成歌詞預覽
         let preview = result.lyricsPreview || '點擊查看歌詞';
         if (!result.lyricsPreview && result.lyrics && result.lyrics.length > 0) {
-            const firstFewLines = result.lyrics.slice(0, 3)
+            const firstFewLines = result.lyrics.slice(0, 2)
                 .map(line => typeof line === 'string' ? line : line.text || '')
                 .filter(line => line.trim() !== '')
                 .join(' / ');
-            preview = firstFewLines.length > 100 ? firstFewLines.substring(0, 100) + '...' : firstFewLines;
+            preview = firstFewLines.length > 80 ? firstFewLines.substring(0, 80) + '...' : firstFewLines;
         }
+
+        // 供應商圖標/名稱
+        const providerName = result.provider || result.source || 'Unknown';
+        const isSynced = result.type === 'synced' || (result.lyrics && result.lyrics[0] && result.lyrics[0].time);
         
         resultElement.innerHTML = `
             <div class="result-header">
-                <div class="result-provider">✅ ${this.escapeHtml(result.provider || result.source || 'Unknown')}</div>
-                <div class="result-type">${result.type === 'synced' ? '同步歌詞' : '普通歌詞'}</div>
+                <div class="provider-badge">
+                    <span>${this.getProviderIcon(providerName)}</span>
+                    ${this.escapeHtml(providerName)}
+                </div>
+                <div class="type-badge ${isSynced ? 'type-synced' : 'type-plain'}">
+                    ${isSynced ? '⚡ 同步歌詞' : '📄 純文本'}
+                </div>
             </div>
-            <div class="result-title">${this.escapeHtml(result.title || result.artist)}</div>
-            <div class="result-artist">${this.escapeHtml(result.artist || '未知歌手')}</div>
-            <div class="result-preview">${this.escapeHtml(preview)}</div>
+            
+            <div class="result-content">
+                <div class="result-title">${this.escapeHtml(result.title || result.artist)}</div>
+                <div class="result-artist">${this.escapeHtml(result.artist || '未知歌手')}</div>
+            </div>
+            
+            <div class="result-preview">"${this.escapeHtml(preview)}"</div>
+            
             <div class="result-actions">
-                <button class="use-lyrics-btn" data-index="${index}">使用此歌詞</button>
-                <button class="lock-provider-btn" data-provider="${result.provider}" data-artist="${result.artist}" data-title="${result.title}">鎖定供應商</button>
+                <button class="action-btn use-btn" data-index="${index}">
+                    <span>▶</span> 使用此歌詞
+                </button>
+                <button class="action-btn lock-btn" data-provider="${result.provider}" data-artist="${result.artist}" data-title="${result.title}">
+                    <span>🔒</span> 鎖定來源
+                </button>
             </div>
         `;
         
         resultsContainer.appendChild(resultElement);
     });
     
-    // 顯示失敗的結果
+    // 顯示失敗的結果 (摺疊式或簡化顯示)
     if (failedResults.length > 0) {
         const failedSection = document.createElement('div');
-        failedSection.className = 'failed-results-section';
-        failedSection.innerHTML = '<h4 style="color: #666; margin: 20px 0 10px 0;">❌ 未找到歌詞的供應商</h4>';
+        failedSection.className = 'failed-section';
+        failedSection.innerHTML = '<h4 style="color: #888; font-size: 13px; margin-bottom: 10px; font-weight: 500;">未找到歌詞的來源:</h4>';
         
         failedResults.forEach(result => {
             const failedElement = document.createElement('div');
-            failedElement.className = 'result-item failed';
+            failedElement.className = 'failed-item';
             failedElement.innerHTML = `
-                <div class="result-header">
-                    <div class="result-provider">❌ ${this.escapeHtml(result.provider || 'Unknown')}</div>
-                </div>
-                <div class="result-error">${this.escapeHtml(result.error || '無法獲取歌詞')}</div>
+                <span style="display:inline-block; width: 100px;">❌ ${this.escapeHtml(result.provider || 'Unknown')}</span>
+                <span>${this.escapeHtml(result.error || '無法獲取')}</span>
             `;
             failedSection.appendChild(failedElement);
         });
@@ -167,25 +316,38 @@ SpotifyLyricsPlayer.prototype.displaySearchResults = function(results) {
     }
     
     // 綁定按鈕事件
-    resultsContainer.querySelectorAll('.use-lyrics-btn').forEach(btn => {
+    resultsContainer.querySelectorAll('.use-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const index = parseInt(e.target.dataset.index);
+            const index = parseInt(e.currentTarget.dataset.index);
             this.selectLyricsResult(successResults[index]);
         });
     });
     
-    resultsContainer.querySelectorAll('.lock-provider-btn').forEach(btn => {
+    resultsContainer.querySelectorAll('.lock-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const provider = e.target.dataset.provider;
-            const artist = e.target.dataset.artist;
-            const title = e.target.dataset.title;
-            this.lockProvider(provider, artist, title, e.target);
+            const target = e.currentTarget;
+            const provider = target.dataset.provider;
+            const artist = target.dataset.artist;
+            const title = target.dataset.title;
+            this.lockProvider(provider, artist, title, target);
         });
     });
     
     searchResults.style.display = 'block';
+};
+
+// 輔助方法：獲取供應商圖標
+SpotifyLyricsPlayer.prototype.getProviderIcon = function(provider) {
+    const p = provider.toLowerCase();
+    if (p.includes('spotify')) return '🟢';
+    if (p.includes('apple') || p.includes('music')) return '🍎';
+    if (p.includes('musixmatch')) return '🟧';
+    if (p.includes('netease') || p.includes('163')) return '🔴';
+    if (p.includes('qq') || p.includes('kugou')) return '🔵';
+    if (p.includes('lrclib')) return '📚';
+    return '🎵';
 };
 
 SpotifyLyricsPlayer.prototype.displayNoResults = function() {

@@ -1487,7 +1487,7 @@ app.post('/api/kv/user-lyrics', async (req, res) => {
             return res.status(401).json({ success: false, error: '未认证' });
         }
 
-        const { trackInfo, lyrics, lyricsType, source } = req.body;
+        const { trackInfo, lyrics, lyricsType, source, trackKey } = req.body;
         
         if (!trackInfo || !lyrics) {
             return res.status(400).json({ 
@@ -1510,7 +1510,11 @@ app.post('/api/kv/user-lyrics', async (req, res) => {
             token: process.env.KV_REST_API_TOKEN
         });
 
-        const key = `lyrics:${trackInfo.id}:${trackInfo.name}:${trackInfo.artist}`;
+        // ⚠️ 关键修正：优先使用客户端提供的标准化 trackKey
+        // 如果没有提供 trackKey (旧版客户端)，则回退到 raw key 生成
+        const keySuffix = trackKey || `${trackInfo.id}:${trackInfo.name}:${trackInfo.artist}`;
+        const key = `lyrics:${keySuffix}`;
+        
         const data = {
             trackInfo,
             lyrics,
@@ -1735,24 +1739,46 @@ app.get('/api/kv/user-lyrics/:trackKey', async (req, res) => {
         const trackInfo = req.headers['x-track-info'] ? 
             JSON.parse(req.headers['x-track-info']) : null;
 
-        if (!trackInfo) {
-            return res.status(400).json({ 
-                success: false, 
-                error: '缺少歌曲信息' 
-            });
+        // 如果没有 trackInfo，我们仍然可以使用 trackKey 尝试获取
+        // if (!trackInfo) { ... } // 移除强制检查，让 trackKey 单独也能工作
+
+        if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
+             return res.json({ success: false, message: 'KV 未配置' });
         }
 
-        const key = `lyrics:${trackInfo.id}:${trackInfo.name}:${trackInfo.artist}`;
+        const { Redis } = require('@upstash/redis');
+        const redis = new Redis({
+            url: process.env.KV_REST_API_URL,
+            token: process.env.KV_REST_API_TOKEN
+        });
+
+        // ⚠️ 关键修正：直接使用客户端传来的 trackKey
+        const key = `lyrics:${trackKey}`;
         const data = await redis.get(key);
 
         if (data) {
             console.log(`✅ 读取歌词: ${key}`);
             res.json({ 
                 success: true, 
-                data: JSON.parse(data),
+                data: typeof data === 'string' ? JSON.parse(data) : data,
                 expiry: 'never'
             });
         } else {
+            // 兼容性尝试：如果没有找到，尝试旧的 key 格式 (如果有 trackInfo)
+            if (trackInfo) {
+                const oldKey = `lyrics:${trackInfo.id}:${trackInfo.name}:${trackInfo.artist}`;
+                const oldData = await redis.get(oldKey);
+                if (oldData) {
+                    console.log(`⚠️ 使用旧 Key 格式读取成功: ${oldKey}`);
+                     res.json({ 
+                        success: true, 
+                        data: typeof oldData === 'string' ? JSON.parse(oldData) : oldData,
+                        expiry: 'never'
+                    });
+                    return;
+                }
+            }
+
             res.json({ 
                 success: false, 
                 message: '未找到歌词' 
