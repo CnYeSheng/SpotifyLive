@@ -1121,87 +1121,89 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
         // 情境一：自動載入（無 ?p=）
         // ======================
         if (!providersParam) {
-            const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`;
-            console.log(`🔍 自動載入歌詞 URL: ${apiUrl}`);
+            // 優先順序嘗試列表
+            const providers = ['Musixmatch', 'Lrclib', 'NetEase', 'Kugou'];
+            console.log(`🔍 自動載入歌詞: ${artist} - ${title} (將嘗試: ${providers.join(', ')})`);
             
-            try {
-                const response = await axios.get(apiUrl, { 
-                    timeout: 15000,
-                    headers: {
-                        'User-Agent': 'Spotify-Lyrics-Player/1.0'
-                    }
-                });
-                
-                // 检查响应数据
-                if (!response.data) {
-                    throw new Error('API 返回空數據');
-                }
-                
-                // 解析歌词数据
-                let lyrics = [];
-                let lyricsType = 'plain';
-                
-                if (Array.isArray(response.data)) {
-                    const lrcResult = parseLrcFormat(response.data.join('\n'));
-                    if (lrcResult.isLrc) {
-                        lyrics = lrcResult.lyrics;
-                        lyricsType = 'synced';
-                    } else {
-                        lyrics = response.data.filter(line => line && line.trim() !== '');
-                    }
-                } else if (response.data.lyrics) {
-                    if (Array.isArray(response.data.lyrics)) {
-                        lyrics = response.data.lyrics;
-                        lyricsType = response.data.type || 'plain';
-                    } else if (typeof response.data.lyrics === 'string') {
-                        const lrcResult = parseLrcFormat(response.data.lyrics);
+            for (const provider of providers) {
+                try {
+                    const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
+                    // console.log(`Attempting ${provider}: ${apiUrl}`);
+                    
+                    const response = await axios.get(apiUrl, { 
+                        timeout: 8000, // 設定較短的 timeout 以便快速切換
+                        headers: {
+                            'User-Agent': 'Spotify-Lyrics-Player/1.0'
+                        }
+                    });
+                    
+                    // 解析歌词数据 (重用邏輯)
+                    let lyrics = [];
+                    let lyricsType = 'plain';
+                    
+                    if (!response.data) continue;
+
+                    if (Array.isArray(response.data)) {
+                        const lrcResult = parseLrcFormat(response.data.join('\n'));
                         if (lrcResult.isLrc) {
                             lyrics = lrcResult.lyrics;
                             lyricsType = 'synced';
                         } else {
-                            lyrics = response.data.lyrics.split('\n').filter(line => line && line.trim() !== '');
+                            lyrics = response.data.filter(line => line && line.trim() !== '');
                         }
-                    }
-                } else if (typeof response.data === 'string') {
-                    const lrcResult = parseLrcFormat(response.data);
-                    if (lrcResult.isLrc) {
-                        lyrics = lrcResult.lyrics;
-                        lyricsType = 'synced';
-                    } else {
-                        lyrics = response.data.split('\n').filter(line => line && line.trim() !== '');
-                    }
-                } else {
-                    // 尝试其他可能的结构
-                    if (response.data.syncedLyrics) {
-                        const lrcResult = parseLrcFormat(response.data.syncedLyrics);
+                    } else if (response.data.lyrics) {
+                        if (Array.isArray(response.data.lyrics)) {
+                            lyrics = response.data.lyrics;
+                            lyricsType = response.data.type || 'plain';
+                        } else if (typeof response.data.lyrics === 'string') {
+                            const lrcResult = parseLrcFormat(response.data.lyrics);
+                            if (lrcResult.isLrc) {
+                                lyrics = lrcResult.lyrics;
+                                lyricsType = 'synced';
+                            } else {
+                                lyrics = response.data.lyrics.split('\n').filter(line => line && line.trim() !== '');
+                            }
+                        }
+                    } else if (typeof response.data === 'string') {
+                        const lrcResult = parseLrcFormat(response.data);
                         if (lrcResult.isLrc) {
                             lyrics = lrcResult.lyrics;
                             lyricsType = 'synced';
+                        } else {
+                            lyrics = response.data.split('\n').filter(line => line && line.trim() !== '');
                         }
-                    } else if (response.data.plainLyrics) {
-                        lyrics = response.data.plainLyrics.split('\n').filter(line => line && line.trim() !== '');
+                    } else {
+                        // 尝试其他可能的结构
+                        if (response.data.syncedLyrics) {
+                            const lrcResult = parseLrcFormat(response.data.syncedLyrics);
+                            if (lrcResult.isLrc) {
+                                lyrics = lrcResult.lyrics;
+                                lyricsType = 'synced';
+                            }
+                        } else if (response.data.plainLyrics) {
+                            lyrics = response.data.plainLyrics.split('\n').filter(line => line && line.trim() !== '');
+                        }
                     }
+                    
+                    if (lyrics && lyrics.length > 0) {
+                        console.log(`✅ 自動載入成功 (${provider}): ${lyrics.length} 行歌詞`);
+                        return res.json({ 
+                            success: true, 
+                            lyrics, 
+                            type: lyricsType, 
+                            source: provider.toLowerCase()
+                        });
+                    }
+                } catch (err) {
+                    // console.log(`ℹ️ ${provider} 失敗 (繼續嘗試下一項)`);
                 }
-                
-                if (lyrics && lyrics.length > 0) {
-                    console.log(`✅ 自動載入成功: ${lyrics.length} 行歌詞`);
-                    return res.json({ 
-                        success: true, 
-                        lyrics, 
-                        type: lyricsType,
-                        source: 'wmcc'
-                    });
-                } else {
-                    throw new Error('沒有找到歌詞');
-                }
-            } catch (apiError) {
-                console.error('❌ 歌詞 API 請求失敗:', apiError.message);
-                // 返回错误信息而不是抛出异常
-                return res.status(200).json({
-                    success: false,
-                    error: apiError.message
-                });
             }
+
+            console.log('ℹ️ 自動模式：所有來源均未找到歌詞');
+            return res.status(200).json({
+                success: false,
+                error: '沒有找到歌詞'
+            });
         }
 
         // ======================
