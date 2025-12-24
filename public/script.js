@@ -3960,7 +3960,9 @@ async loadLyrics() {
                             text = convertToTraditional(text);
                         }
                     } catch (e) {}
-                    return `<span class="lyric-word" data-time="${w.time}">${this.escapeHtml(text)}</span>`;
+                    // 添加 duration 屬性，默認為 0
+                    const duration = w.duration || 0;
+                    return `<span class="lyric-word" data-time="${w.time}" data-duration="${duration}">${this.escapeHtml(text)}</span>`;
                 }).join('');
             } else {
                 // 普通行歌詞
@@ -4068,16 +4070,36 @@ async loadLyrics() {
             if (currentLine) {
                 currentLine.classList.add('current');
                 
-                // 逐字歌詞高亮邏輯
+                // 逐字歌詞高亮與填充邏輯
                 const words = currentLine.querySelectorAll('.lyric-word');
                 if (words.length > 0) {
                     words.forEach(word => {
                         const wordTime = parseInt(word.dataset.time);
-                        // 如果當前時間超過字的時間，就高亮
+                        const duration = parseInt(word.dataset.duration) || 0;
+                        
                         if (currentTime >= wordTime) {
                             word.classList.add('active');
+                            
+                            // 計算填充百分比
+                            if (duration > 0) {
+                                const elapsed = currentTime - wordTime;
+                                const percentage = Math.min(100, Math.max(0, (elapsed / duration) * 100));
+                                word.style.setProperty('--word-progress', `${percentage}%`);
+                                
+                                // 如果完全填充，添加 finished 類 (可選)
+                                if (percentage >= 100) {
+                                    word.classList.add('finished');
+                                } else {
+                                    word.classList.remove('finished');
+                                }
+                            } else {
+                                // 如果沒有持續時間，直接設為 100%
+                                word.style.setProperty('--word-progress', '100%');
+                                word.classList.add('finished');
+                            }
                         } else {
-                            word.classList.remove('active');
+                            word.classList.remove('active', 'finished');
+                            word.style.setProperty('--word-progress', '0%');
                         }
                     });
                 }

@@ -410,8 +410,9 @@ function initLyricsManager() {
             }
 
             // 2. 檢查 LRC 格式 (包含標準、[] 增強版、<> 增強版)
-            // [mm:ss.xx]
-            const timeMatch = trimmedLine.match(/^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/);
+            // 允許時間戳周圍有空格，允許 . 或 : 作為秒和毫秒的分隔符
+            const timeMatch = trimmedLine.match(/^\[\s*(\d{1,2})\s*:\s*(\d{2})\s*(?:[\.:]\s*(\d{1,3}))?\s*\]/);
+            
             if (timeMatch) {
                 const minutes = parseInt(timeMatch[1]);
                 const seconds = parseInt(timeMatch[2]);
@@ -419,16 +420,19 @@ function initLyricsManager() {
                 const timeMs = minutes * 60000 + seconds * 1000 + milliseconds;
                 
                 // 移除行首時間戳，獲取剩餘內容
-                const textContent = trimmedLine.replace(/^\[\d{1,2}:\d{2}(?:\.\d{1,3})?\]/, '').trim();
+                const textContent = trimmedLine.replace(/^\[\s*\d{1,2}\s*:\s*\d{2}\s*(?:[\.:]\s*\d{1,3})?\s*\]/, '').trim();
                 
                 let words = [];
                 let hasInternalTimestamps = false;
 
                 // 2a. 檢查 [] 增強版: [mm:ss.xx]Word
-                const bracketMatches = Array.from(textContent.matchAll(/\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]([^\[]*)/g));
+                const bracketMatches = Array.from(textContent.matchAll(/\[\s*(\d{1,2})\s*:\s*(\d{2})\s*(?:[\.:]\s*(\d{1,3}))?\s*\]([^\[]*)/g));
+                
+                // 2b. 檢查 <> 增強版: <mm:ss.xx>Word
+                const angleMatches = Array.from(textContent.matchAll(/<\s*(\d{1,2})\s*:\s*(\d{2})\s*(?:[\.:]\s*(\d{1,3}))?\s*>([^<]*)/g));
+
                 if (bracketMatches.length > 0) {
                     hasInternalTimestamps = true;
-                    // 處理行首文字
                     const firstMatchIndex = textContent.indexOf(bracketMatches[0][0]);
                     if (firstMatchIndex > 0) {
                          words.push({
@@ -442,26 +446,34 @@ function initLyricsManager() {
                             text: match[4]
                         });
                     });
-                } 
-                // 2b. 檢查 <> 增強版: <mm:ss.xx>Word
-                else {
-                    const angleMatches = Array.from(textContent.matchAll(/<(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?>([^<]*)/g));
-                    if (angleMatches.length > 0) {
-                        hasInternalTimestamps = true;
-                        // 處理行首文字
-                        const firstMatchIndex = textContent.indexOf(angleMatches[0][0]);
-                        if (firstMatchIndex > 0) {
-                             words.push({
-                                time: timeMs,
-                                text: textContent.substring(0, firstMatchIndex)
-                             });
-                        }
-                        angleMatches.forEach(match => {
-                            words.push({
-                                time: this.parseTimeParts(match[1], match[2], match[3]),
-                                text: match[4]
-                            });
+                } else if (angleMatches.length > 0) {
+                    hasInternalTimestamps = true;
+                    const firstMatchIndex = textContent.indexOf(angleMatches[0][0]);
+                    if (firstMatchIndex > 0) {
+                         words.push({
+                            time: timeMs,
+                            text: textContent.substring(0, firstMatchIndex)
+                         });
+                    }
+                    angleMatches.forEach(match => {
+                        words.push({
+                            time: this.parseTimeParts(match[1], match[2], match[3]),
+                            text: match[4]
                         });
+                    });
+                }
+
+                // 計算單詞持續時間 (Duration)
+                if (hasInternalTimestamps && words.length > 0) {
+                    for (let i = 0; i < words.length; i++) {
+                        if (i < words.length - 1) {
+                            words[i].duration = words[i+1].time - words[i].time;
+                        } else {
+                            // 最後一個字的持續時間
+                            // 如果最後一個 "字" 其實是結束標記（空文本），則前一個字的持續時間是正確的
+                            // 如果這個字有文本，我們給一個默認值或保持 undefined
+                            words[i].duration = 0; 
+                        }
                     }
                 }
 
@@ -504,17 +516,13 @@ function initLyricsManager() {
     // 輔助函數：解析 ASS/SSA 行
     SpotifyLyricsPlayer.prototype.parseAssLine = function(line) {
         // Dialogue: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-        // 例子: Dialogue: 0,00:00:39.55,00:00:42.01,orig,,0,0,0,,{\kf18}大{\kf43}展...
-        
-        // 簡單分割，找到 Text 部分 (第9個逗號之後)
         const parts = line.split(',');
         if (parts.length < 10) return null;
 
-        const startTimeStr = parts[1]; // 00:00:39.55
-        const textPart = parts.slice(9).join(','); // 重新組合 Text 部分，以防 Text 內有逗號
+        const startTimeStr = parts[1];
+        const textPart = parts.slice(9).join(',');
 
-        // 解析開始時間 (h:mm:ss.cs)
-        const timeParts = startTimeStr.match(/(\d+):(\d{2}):(\d{2})\.(\d{2})/);
+        const timeParts = startTimeStr.match(/(\d+):(\d{2}):(\d{2})[\.:](\d{2})/);
         if (!timeParts) return null;
 
         const startH = parseInt(timeParts[1]);
@@ -524,8 +532,6 @@ function initLyricsManager() {
         
         const startTimeMs = startH * 3600000 + startM * 60000 + startS * 1000 + startCs * 10;
         
-        // 解析卡拉OK標籤 {\kXX} 或 {\kfXX} 或 {\KXX}
-        // XX 是持續時間 (centiseconds)
         const words = [];
         let currentTime = startTimeMs;
         let cleanText = '';
@@ -534,13 +540,13 @@ function initLyricsManager() {
         let match;
         let hasKaraoke = false;
 
-        // 處理開頭沒有標籤的情況 (極少見，但以防萬一)
         const firstTagIndex = textPart.indexOf('{');
         if (firstTagIndex > 0) {
             const preText = textPart.substring(0, firstTagIndex);
             words.push({
                 time: currentTime,
-                text: preText
+                text: preText,
+                duration: 0 // 行首無標籤文本，持續時間未知
             });
             cleanText += preText;
         }
@@ -548,20 +554,24 @@ function initLyricsManager() {
         while ((match = tagRegex.exec(textPart)) !== null) {
             hasKaraoke = true;
             const durationCs = parseInt(match[1]);
+            const durationMs = durationCs * 10;
             const wordText = match[2];
             
             if (wordText) {
                 words.push({
                     time: currentTime,
-                    text: wordText
+                    text: wordText,
+                    duration: durationMs
                 });
                 cleanText += wordText;
+            } else {
+                // 空文本標籤通常只佔用時間，或作為前一個字的延長? 
+                // 在 ASS 中 {\k10} 表示接下來的時間流逝。如果沒有文字，通常不顯示。
             }
             
-            currentTime += durationCs * 10; // 增加時間
+            currentTime += durationMs;
         }
         
-        // 如果沒有卡拉OK標籤，但有 ASS 格式，清除所有 {...} 標籤作為普通文本
         if (!hasKaraoke) {
             cleanText = textPart.replace(/{[^}]*}/g, '');
             return {
