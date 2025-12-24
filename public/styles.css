@@ -3399,3 +3399,16 @@ input:checked + .slider:before {
 }
 
 @media (max-width: 767px) { .sync-modal { width: 95vw; max-width: 400px; } .info-grid { grid-template-columns: 1fr; gap: 12px; } .action-buttons { grid-template-columns: 1fr; gap: 8px; } }
+
+/* Fix: Further reduce overlap risk for English words */
+.lyrics-line .lyric-word {
+    margin: 0 4px; /* Increased margin to 4px (8px total gap) */
+    /* Ensure no weird line-height issues */
+    vertical-align: middle;
+}
+
+.lyrics-line.current .lyric-word.active {
+    transform: scale(1.02); /* Reduced scale to minimal pop */
+    /* Ensure z-index doesn't cause weird stacking contexts */
+    z-index: 10;
+}
