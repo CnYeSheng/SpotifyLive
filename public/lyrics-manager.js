@@ -399,7 +399,7 @@ function initLyricsManager() {
             const trimmedLine = line.trim();
             if (!trimmedLine) continue;
             
-            // 檢查 LRC 時間戳格式
+            // 檢查 LRC 時間戳格式 [mm:ss.xx]
             const timeMatch = trimmedLine.match(/^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/);
             if (timeMatch) {
                 isLrc = true;
@@ -408,12 +408,51 @@ function initLyricsManager() {
                 const milliseconds = timeMatch[3] ? parseInt(timeMatch[3].padEnd(3, '0')) : 0;
                 
                 const timeMs = minutes * 60000 + seconds * 1000 + milliseconds;
-                const text = trimmedLine.replace(/^\[\d{1,2}:\d{2}(?:\.\d{1,3})?\]/, '').trim();
+                const textContent = trimmedLine.replace(/^\[\d{1,2}:\d{2}(?:\.\d{1,3})?\]/, '').trim();
                 
-                if (text) {
+                // 檢查是否包含逐字歌詞時間戳
+                const wordMatches = Array.from(textContent.matchAll(/\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]([^\[]*)/g));
+                
+                if (wordMatches.length > 0) {
+                    // 處理逐字歌詞
+                    const words = [];
+                    // 處理行首文字 (如果有，且在第一個內部時間戳之前)
+                    const firstMatchIndex = textContent.indexOf(wordMatches[0][0]);
+                    if (firstMatchIndex > 0) {
+                         words.push({
+                            time: timeMs,
+                            text: textContent.substring(0, firstMatchIndex)
+                         });
+                    }
+
+                    wordMatches.forEach(match => {
+                        const wMin = parseInt(match[1]);
+                        const wSec = parseInt(match[2]);
+                        const wMs = match[3] ? parseInt(match[3].padEnd(3, '0')) : 0;
+                        const wTime = wMin * 60000 + wSec * 1000 + wMs;
+                        const wText = match[4]; // 時間戳後的文字
+                        
+                        if (wText) { // 即使是空字串也可能代表一個時間點(例如結尾)，但通常我們只需要顯示有文字的部分，或者處理空文字作為結束標記
+                            words.push({
+                                time: wTime,
+                                text: wText
+                            });
+                        }
+                    });
+                    
+                    // 組合純文本用於顯示（移除所有標籤）
+                    const cleanText = words.map(w => w.text).join('');
+                    
                     lyrics.push({
                         time: timeMs,
-                        text: text
+                        text: cleanText,
+                        words: words
+                    });
+                } else if (textContent) {
+                    // 普通同步歌詞
+                    lyrics.push({
+                        time: timeMs,
+                        text: textContent
                     });
                 }
             } else if (!isLrc && trimmedLine) {

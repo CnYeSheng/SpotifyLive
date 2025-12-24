@@ -3949,16 +3949,34 @@ async loadLyrics() {
         if (!this.lyrics || this.lyrics.length === 0) return;
 
         const lyricsHTML = this.lyrics.map((line, index) => {
-            let text = this.lyricsType === 'synced' ? line.text : (line.text || line);
-            try {
-                if (typeof convertToTraditional === 'function') {
-                    text = convertToTraditional(text);
+            let lineContent = '';
+            
+            if (line.words && line.words.length > 0) {
+                // 渲染逐字歌詞
+                lineContent = line.words.map(w => {
+                    let text = w.text;
+                    try {
+                        if (typeof convertToTraditional === 'function') {
+                            text = convertToTraditional(text);
+                        }
+                    } catch (e) {}
+                    return `<span class="lyric-word" data-time="${w.time}">${this.escapeHtml(text)}</span>`;
+                }).join('');
+            } else {
+                // 普通行歌詞
+                let text = this.lyricsType === 'synced' ? line.text : (line.text || line);
+                try {
+                    if (typeof convertToTraditional === 'function') {
+                        text = convertToTraditional(text);
+                    }
+                } catch (err) {
+                    console.warn('繁體轉換失敗:', err);
                 }
-            } catch (err) {
-                console.warn('繁體轉換失敗:', err);
+                lineContent = this.escapeHtml(text);
             }
+
             const timeAttr = this.lyricsType === 'synced' && line.time ? `data-time="${line.time}"` : '';
-            return `<div class="lyrics-line" data-index="${index}" ${timeAttr}>${this.escapeHtml(text)}</div>`;
+            return `<div class="lyrics-line" data-index="${index}" ${timeAttr}>${lineContent}</div>`;
         }).join('');
 
         this.lyricsContent.innerHTML = lyricsHTML;
@@ -4049,6 +4067,20 @@ async loadLyrics() {
             const currentLine = this.lyricsContent.querySelector(`[data-index="${this.currentLyricIndex}"]`);
             if (currentLine) {
                 currentLine.classList.add('current');
+                
+                // 逐字歌詞高亮邏輯
+                const words = currentLine.querySelectorAll('.lyric-word');
+                if (words.length > 0) {
+                    words.forEach(word => {
+                        const wordTime = parseInt(word.dataset.time);
+                        // 如果當前時間超過字的時間，就高亮
+                        if (currentTime >= wordTime) {
+                            word.classList.add('active');
+                        } else {
+                            word.classList.remove('active');
+                        }
+                    });
+                }
                 
                 if (this.autoScroll) {
                     currentLine.scrollIntoView({

@@ -1126,7 +1126,7 @@ body {
     height: 100%;
     background: rgba(0, 0, 0, 0.5);
     backdrop-filter: blur(5px);
-    display: none;
+    display: flex;
     align-items: center;
     justify-content: center;
     z-index: 1000;
@@ -1140,282 +1140,6 @@ body {
     width: 90%;
     text-align: center;
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-}
-
-/* 增強的同步 Modal 樣式 - Dark Theme */
-.sync-modal {
-    max-width: 550px;
-    width: 95%;
-    margin: auto;
-    background: #1e1e1e;
-    border-radius: 24px;
-    padding: 0;
-    overflow: hidden;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-    text-align: left;
-    color: #ffffff;
-    border: 1px solid #333;
-}
-
-/* Modal 標題區域 */
-.sync-modal h3 {
-    margin: 0;
-    padding: 24px 32px;
-    background: #282828;
-    border-bottom: 1px solid #333;
-    font-size: 1.25rem;
-    color: #ffffff;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-/* 狀態區域 */
-.sync-status-section {
-    padding: 24px 32px;
-    background: #1e1e1e;
-    border-bottom: 1px solid #333;
-}
-
-.sync-status-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-}
-
-.sync-status-label {
-    font-weight: 600;
-    color: #ffffff;
-    font-size: 1rem;
-}
-
-.sync-status {
-    display: inline-flex;
-    align-items: center;
-    padding: 6px 12px;
-    border-radius: 20px;
-    background: #2c2c2e;
-    font-size: 0.9rem;
-    font-weight: 500;
-    transition: all 0.3s ease;
-}
-
-.sync-status.active {
-    background: rgba(29, 185, 84, 0.2);
-    color: #1db954;
-}
-
-.sync-status.inactive {
-    background: rgba(255, 255, 255, 0.1);
-    color: #aaa;
-}
-
-.sync-status.error {
-    background: rgba(255, 71, 87, 0.2);
-    color: #ff4757;
-}
-
-.sync-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: currentColor;
-    margin-right: 8px;
-    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.2);
-}
-
-/* 設定區域 */
-.sync-settings-section {
-    padding: 24px 32px;
-    background: #1e1e1e;
-}
-
-.setting-group {
-    margin-bottom: 20px;
-}
-
-.setting-group:last-child {
-    margin-bottom: 0;
-}
-
-.setting-label {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-weight: 500;
-    color: #ffffff;
-    margin-bottom: 8px;
-}
-
-.setting-description {
-    font-size: 0.85rem;
-    color: #b3b3b3;
-    margin: 4px 0 0 0;
-    line-height: 1.4;
-}
-
-/* 開關樣式 */
-.switch {
-    position: relative;
-    display: inline-block;
-    width: 44px;
-    height: 24px;
-}
-
-.switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-
-.slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: #535353;
-    transition: .3s;
-    border-radius: 24px;
-}
-
-.slider:before {
-    position: absolute;
-    content: "";
-    height: 18px;
-    width: 18px;
-    left: 3px;
-    bottom: 3px;
-    background-color: white;
-    transition: .3s;
-    border-radius: 50%;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-}
-
-input:checked + .slider {
-    background-color: #1db954;
-}
-
-input:focus + .slider {
-    box-shadow: 0 0 1px #1db954;
-}
-
-input:checked + .slider:before {
-    transform: translateX(20px);
-}
-
-/* 下拉選單樣式 - Dark Mode */
-.setting-select {
-    width: 100%;
-    padding: 10px 12px;
-    border-radius: 8px;
-    border: 1px solid #404040;
-    background-color: #333333; /* 深色背景 */
-    font-size: 0.95rem;
-    color: #ffffff; /* 白色文字 */
-    outline: none;
-    transition: border-color 0.2s;
-    appearance: none;
-    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23ffffff%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
-    background-repeat: no-repeat;
-    background-position: right 12px top 50%;
-    background-size: 10px auto;
-}
-
-.setting-select:focus {
-    border-color: #1db954;
-}
-
-/* 操作按鈕區域 */
-.sync-actions-section {
-    padding: 20px 32px;
-    background: #282828;
-    border-top: 1px solid #333;
-    border-bottom: 1px solid #333;
-}
-
-.action-buttons {
-    display: flex;
-    gap: 12px;
-}
-
-.action-btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 10px 16px;
-    border-radius: 8px;
-    border: none;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
-    font-size: 0.9rem;
-}
-
-.action-btn.primary {
-    background-color: #1db954;
-    color: white;
-}
-
-.action-btn.primary:hover {
-    background-color: #1ed760;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(29, 185, 84, 0.2);
-}
-
-.action-btn.danger {
-    background-color: transparent;
-    color: #ff4757;
-    border: 1px solid #ff4757;
-}
-
-.action-btn.danger:hover {
-    background-color: rgba(255, 71, 87, 0.1);
-}
-
-/* 資訊區域 */
-.sync-info-section {
-    padding: 24px 32px;
-    background: #1e1e1e;
-}
-
-.info-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 16px;
-}
-
-.info-item {
-    background: #282828;
-    padding: 12px 16px;
-    border-radius: 12px;
-    border: 1px solid #333;
-}
-
-.info-label {
-    display: block;
-    font-size: 0.8rem;
-    color: #b3b3b3;
-    margin-bottom: 4px;
-}
-
-.info-value {
-    display: block;
-    font-size: 1rem;
-    font-weight: 600;
-    color: #ffffff;
-}
-
-/* 底部按鈕修正 */
-.sync-modal .modal-actions {
-    padding: 20px 32px;
-    background: #1e1e1e;
-    text-align: right;
-    border-top: 1px solid #333;
 }
 
 .modal-content h3 {
@@ -1447,7 +1171,6 @@ input:checked + .slider:before {
     background: rgba(29, 185, 84, 0.1);
     color: #1db954;
 }
-
 
 .close-btn {
     background: #f5f5f5;
@@ -3091,7 +2814,7 @@ input:checked + .slider:before {
 
 /* 所有动态背景CSS已完全移除 */
 
-/* �q���W�ǼҺA�ؼ˦� */
+/* �q���W�ǼҺA�ؼ˦� */
 .lyrics-upload-modal {
     max-width: 700px;
     max-height: 90vh;
@@ -3193,157 +2916,6 @@ input:checked + .slider:before {
     background: #c82333;
 }
 
-/* 美化设置下拉选择器 */
-.setting-select {
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--text-primary);
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    min-width: 120px;
-    appearance: none;
-    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3e%3cpath d='M7 10l5 5 5-5z'/%3e%3c/svg%3e");
-    background-repeat: no-repeat;
-    background-position: right 12px center;
-    background-size: 16px;
-    padding-right: 36px;
-}
-
-.setting-select:hover {
-    background-color: rgba(255, 255, 255, 0.2);
-    border-color: rgba(255, 255, 255, 0.3);
-}
-
-.setting-select:focus {
-    outline: none;
-    border-color: var(--accent-color);
-    box-shadow: 0 0 0 2px rgba(29, 185, 84, 0.3);
-}
-
-/* 美化操作按钮 */
-.action-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 10px 16px;
-    border-radius: 8px;
-    font-weight: 500;
-    font-size: 14px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    border: 1px solid transparent;
-}
-
-.action-btn.primary {
-    background: linear-gradient(135deg, #1db954, #1ed760);
-    color: white;
-}
-
-.action-btn.primary:hover {
-    background: linear-gradient(135deg, #1ed760, #1db954);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(29, 185, 84, 0.3);
-}
-
-.action-btn.danger {
-    background: linear-gradient(135deg, #e74c3c, #c0392b);
-    color: white;
-}
-
-.action-btn.danger:hover {
-    background: linear-gradient(135deg, #c0392b, #e74c3c);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
-}
-
-.action-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
-.action-btn:active {
-    transform: translateY(0);
-}
-
-/* 美化复选框 */
-.switch {
-    position: relative;
-    display: inline-block;
-    width: 50px;
-    height: 24px;
-}
-
-.switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-
-.slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: #ccc;
-    transition: .4s;
-    border-radius: 24px;
-}
-
-.slider:before {
-    position: absolute;
-    content: "";
-    height: 16px;
-    width: 16px;
-    left: 4px;
-    bottom: 4px;
-    background-color: white;
-    transition: .4s;
-    border-radius: 50%;
-}
-
-input:checked + .slider {
-    background: linear-gradient(135deg, #1db954, #1ed760);
-}
-
-input:checked + .slider:before {
-    transform: translateX(26px);
-}
-
-input:focus + .slider {
-    box-shadow: 0 0 0 2px rgba(29, 185, 84, 0.3);
-}
-
-/* 美化歌词文件输入框 */
-#lyrics-file-input {
-    padding: 12px;
-    border-radius: 8px;
-    border: 2px dashed rgba(255, 255, 255, 0.2);
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--text-primary);
-    font-size: 14px;
-    transition: all 0.2s ease;
-    width: 100%;
-    cursor: pointer;
-}
-
-#lyrics-file-input:hover {
-    border-color: rgba(255, 255, 255, 0.4);
-    background: rgba(255, 255, 255, 0.1);
-}
-
-#lyrics-file-input:focus {
-    outline: none;
-    border-color: var(--accent-color);
-    box-shadow: 0 0 0 2px rgba(29, 185, 84, 0.3);
-}
-
 .upload-preview {
     margin-top: 20px;
     padding: 15px;
@@ -3365,7 +2937,7 @@ input:focus + .slider {
     color: var(--text-primary);
 }
 
-/* �q���s��ҺA�ؼ˦� */
+/* �q���s��ҺA�ؼ˦� */
 .lyrics-edit-modal {
     max-width: 900px;
     max-height: 90vh;
@@ -3499,4 +3071,30 @@ input:focus + .slider {
 .line-action-btn:hover {
     background: var(--hover-bg);
     color: var(--text-primary);
+}
+
+/* ?��?歌�?�?? - Word-by-word sync styles */
+.lyrics-line .lyric-word {
+    display: inline-block;
+    border-radius: 4px;
+    transition: all 0.1s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    margin: 0 1px;
+    position: relative;
+    z-index: 1;
+}
+
+/* 確�??�通�?字�??��?認樣�?*/
+.lyrics-line.current .lyric-word {
+    opacity: 0.7;
+    transform: scale(1);
+}
+
+/* 激活�??��?�?? */
+.lyrics-line.current .lyric-word.active {
+    opacity: 1;
+    color: #1ed760; /* Spotify Green */
+    transform: scale(1.1);
+    text-shadow: 0 0 15px rgba(30, 215, 96, 0.6);
+    font-weight: 700;
+    z-index: 2;
 }
