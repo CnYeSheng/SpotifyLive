@@ -74,9 +74,12 @@ SpotifyLyricsPlayer.prototype.performLyricsSearch = async function() {
     document.getElementById('search-results').style.display = 'none';
     
     try {
+        const isWbw = document.getElementById('wbw-checkbox')?.checked;
+        const wbwParam = isWbw ? '?wbw' : '';
+        
         // ✅ 改用多供應商端點
         const response = await fetch(
-            `${this.apiBase}/api/lyrics-search-multi/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`
+            `${this.apiBase}/api/lyrics-search-multi/${encodeURIComponent(artist)}/${encodeURIComponent(title)}${wbwParam}`
         );
         
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -246,8 +249,17 @@ SpotifyLyricsPlayer.prototype.displaySearchResults = function(results) {
         return;
     }
 
-    // 顯示成功的結果
-    successResults.forEach((result, index) => {
+    // 將成功結果分為 逐字歌詞 和 非逐字歌詞
+    // 判斷方式：如果 lyrics[0].words 存在，或者 type 為 'wordbyword' 等
+    // 根據外部 API，逐字歌詞通常帶有 words 數組
+    const wbwResults = successResults.filter(r => 
+        r.lyrics && r.lyrics.some(line => line.words && line.words.length > 0)
+    );
+    const nonWbwResults = successResults.filter(r => 
+        !r.lyrics || !r.lyrics.some(line => line.words && line.words.length > 0)
+    );
+
+    const renderResult = (result, index, listOffset) => {
         const resultElement = document.createElement('div');
         resultElement.className = 'result-item';
         
@@ -263,16 +275,21 @@ SpotifyLyricsPlayer.prototype.displaySearchResults = function(results) {
 
         // 供應商圖標/名稱
         const providerName = result.provider || result.source || 'Unknown';
+        const isWbw = result.lyrics && result.lyrics.some(line => line.words && line.words.length > 0);
         const isSynced = result.type === 'synced' || (result.lyrics && result.lyrics[0] && result.lyrics[0].time);
         
+        let typeLabel = '📄 純文本';
+        if (isWbw) typeLabel = '✨ 逐字歌詞';
+        else if (isSynced) typeLabel = '⚡ 同步歌詞';
+
         resultElement.innerHTML = `
             <div class="result-header">
                 <div class="provider-badge">
                     <span>${this.getProviderIcon(providerName)}</span>
                     ${this.escapeHtml(providerName)}
                 </div>
-                <div class="type-badge ${isSynced ? 'type-synced' : 'type-plain'}">
-                    ${isSynced ? '⚡ 同步歌詞' : '📄 純文本'}
+                <div class="type-badge ${isWbw ? 'type-synced' : (isSynced ? 'type-synced' : 'type-plain')}" style="${isWbw ? 'background: rgba(255, 215, 0, 0.2); color: #ffd700; border: 1px solid rgba(255, 215, 0, 0.3);' : ''}">
+                    ${typeLabel}
                 </div>
             </div>
             
@@ -284,7 +301,7 @@ SpotifyLyricsPlayer.prototype.displaySearchResults = function(results) {
             <div class="result-preview">"${this.escapeHtml(preview)}"</div>
             
             <div class="result-actions">
-                <button class="action-btn use-btn" data-index="${index}">
+                <button class="action-btn use-btn" data-type="${isWbw ? 'wbw' : 'normal'}" data-index="${index}">
                     <span>▶</span> 使用此歌詞
                 </button>
                 <button class="action-btn lock-btn" data-provider="${result.provider}" data-artist="${result.artist}" data-title="${result.title}">
@@ -292,9 +309,32 @@ SpotifyLyricsPlayer.prototype.displaySearchResults = function(results) {
                 </button>
             </div>
         `;
+        return resultElement;
+    };
+
+    // 顯示 逐字歌詞 區域
+    if (wbwResults.length > 0) {
+        const header = document.createElement('h4');
+        header.style.cssText = 'color: #ffd700; margin: 15px 0 10px 0; font-size: 14px; display: flex; align-items: center; gap: 5px;';
+        header.innerHTML = '<span>✨</span> 逐字歌詞';
+        resultsContainer.appendChild(header);
         
-        resultsContainer.appendChild(resultElement);
-    });
+        wbwResults.forEach((result, idx) => {
+            resultsContainer.appendChild(renderResult(result, idx, 0));
+        });
+    }
+
+    // 顯示 非逐字歌詞 區域
+    if (nonWbwResults.length > 0) {
+        const header = document.createElement('h4');
+        header.style.cssText = 'color: #1db954; margin: 20px 0 10px 0; font-size: 14px; display: flex; align-items: center; gap: 5px;';
+        header.innerHTML = '<span>📄</span> 非逐字歌詞';
+        resultsContainer.appendChild(header);
+        
+        nonWbwResults.forEach((result, idx) => {
+            resultsContainer.appendChild(renderResult(result, idx, 0));
+        });
+    }
     
     // 顯示失敗的結果 (摺疊式或簡化顯示)
     if (failedResults.length > 0) {
@@ -319,8 +359,10 @@ SpotifyLyricsPlayer.prototype.displaySearchResults = function(results) {
     resultsContainer.querySelectorAll('.use-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
+            const type = e.currentTarget.dataset.type;
             const index = parseInt(e.currentTarget.dataset.index);
-            this.selectLyricsResult(successResults[index]);
+            const targetList = type === 'wbw' ? wbwResults : nonWbwResults;
+            this.selectLyricsResult(targetList[index]);
         });
     });
     

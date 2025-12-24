@@ -1122,14 +1122,20 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
         // ======================
         if (!providersParam) {
             // 優先順序嘗試列表
-            const providers = ['Musixmatch', 'Lrclib', 'NetEase', 'Kugou'];
+            const providers = ['Musixmatch', 'Lrclib', 'NetEase', 'QQMusic', 'Kugou'];
             console.log(`🔍 自動載入歌詞: ${artist} - ${title} (將嘗試: ${providers.join(', ')})`);
             
+            const isWbw = req.query.wbw !== undefined;
+
             for (const provider of providers) {
                 try {
-                    const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
-                    // console.log(`Attempting ${provider}: ${apiUrl}`);
+                    let apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
                     
+                    // 只有指定提供商支持逐字歌詞
+                    if (isWbw && ['NetEase', 'QQMusic', 'Kugou'].includes(provider)) {
+                        apiUrl += '&wbw';
+                    }
+
                     const response = await axios.get(apiUrl, { 
                         timeout: 8000, // 設定較短的 timeout 以便快速切換
                         headers: {
@@ -1160,9 +1166,9 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                             if (lrcResult.isLrc) {
                                 lyrics = lrcResult.lyrics;
                                 lyricsType = 'synced';
-                            } else {
-                                lyrics = response.data.lyrics.split('\n').filter(line => line && line.trim() !== '');
                             }
+                        } else {
+                            lyrics = response.data.lyrics.split('\n').filter(line => line && line.trim() !== '');
                         }
                     } else if (typeof response.data === 'string') {
                         const lrcResult = parseLrcFormat(response.data);
@@ -1211,6 +1217,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
         // ======================
         const results = [];
         const requestedProviders = Array.isArray(providersParam) ? providersParam : [providersParam];
+        const isWbw = req.query.wbw !== undefined;
         
         for (const provider of requestedProviders) {
             let pParam;
@@ -1218,11 +1225,19 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                 case 'musixmatch': pParam = 'Musixmatch'; break;
                 case 'lrclib': pParam = 'Lrclib'; break;
                 case 'netease': pParam = 'NetEase'; break;
+                case 'qm':
+                case 'qqmusic': pParam = 'QQMusic'; break;
                 case 'kugou': pParam = 'Kugou'; break;
                 default: continue;
             }
 
-            const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${pParam}`;
+            let apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${pParam}`;
+            
+            // 只有指定提供商支持逐字歌詞
+            if (isWbw && ['NetEase', 'QQMusic', 'Kugou'].includes(pParam)) {
+                apiUrl += '&wbw';
+            }
+
             console.log(`📡 查詢 ${provider}: ${apiUrl}`);
 
             try {
@@ -1306,6 +1321,16 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
     }
 });
 
+// Alias route for LRC format as requested by user
+app.get('/api/lyrics/lrc/:title/:artist', async (req, res) => {
+    const { title, artist } = req.params;
+    // 重定向或直接調用上面的處理邏輯 (反轉 artist/title)
+    req.url = `/api/lyrics/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`;
+    req.params.artist = artist;
+    req.params.title = title;
+    return app._router.handle(req, res);
+});
+
 // 添加 CORS 處理中間件
 app.use('/api/lyrics', (req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
@@ -1325,12 +1350,19 @@ app.get('/api/lyrics-search-multi/:artist/:title', async (req, res) => {
     try {
         console.log(`🔍 多供應商搜尋: ${artist} - ${title}`);
         
-        const providers = ['Musixmatch', 'Lrclib', 'NetEase', 'Kugou'];
+        const providers = ['Musixmatch', 'Lrclib', 'NetEase', 'QQMusic', 'Kugou'];
+        const isWbw = req.query.wbw !== undefined;
         const results = [];
         
         // 並行請求所有供應商
         const promises = providers.map(async (provider) => {
-            const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
+            let apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
+            
+            // 只有指定提供商支持逐字歌詞
+            if (isWbw && ['NetEase', 'QQMusic', 'Kugou'].includes(provider)) {
+                apiUrl += '&wbw';
+            }
+
             console.log(`📡 請求 ${provider}: ${apiUrl}`);
             
             try {
