@@ -393,69 +393,94 @@ function initLyricsManager() {
     SpotifyLyricsPlayer.prototype.parseLyricsContent = function(content) {
         const lines = content.split('\n');
         const lyrics = [];
-        let isLrc = false;
+        let isSynced = false;
         
         for (const line of lines) {
             const trimmedLine = line.trim();
             if (!trimmedLine) continue;
             
-            // 檢查 LRC 時間戳格式 [mm:ss.xx]
+            // 1. 檢查 ASS/SSA 格式
+            if (trimmedLine.startsWith('Dialogue:')) {
+                const assParsed = this.parseAssLine(trimmedLine);
+                if (assParsed) {
+                    lyrics.push(assParsed);
+                    isSynced = true;
+                }
+                continue;
+            }
+
+            // 2. 檢查 LRC 格式 (包含標準、[] 增強版、<> 增強版)
+            // [mm:ss.xx]
             const timeMatch = trimmedLine.match(/^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/);
             if (timeMatch) {
-                isLrc = true;
                 const minutes = parseInt(timeMatch[1]);
                 const seconds = parseInt(timeMatch[2]);
                 const milliseconds = timeMatch[3] ? parseInt(timeMatch[3].padEnd(3, '0')) : 0;
-                
                 const timeMs = minutes * 60000 + seconds * 1000 + milliseconds;
+                
+                // 移除行首時間戳，獲取剩餘內容
                 const textContent = trimmedLine.replace(/^\[\d{1,2}:\d{2}(?:\.\d{1,3})?\]/, '').trim();
                 
-                // 檢查是否包含逐字歌詞時間戳
-                const wordMatches = Array.from(textContent.matchAll(/\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]([^\[]*)/g));
-                
-                if (wordMatches.length > 0) {
-                    // 處理逐字歌詞
-                    const words = [];
-                    // 處理行首文字 (如果有，且在第一個內部時間戳之前)
-                    const firstMatchIndex = textContent.indexOf(wordMatches[0][0]);
+                let words = [];
+                let hasInternalTimestamps = false;
+
+                // 2a. 檢查 [] 增強版: [mm:ss.xx]Word
+                const bracketMatches = Array.from(textContent.matchAll(/\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]([^\[]*)/g));
+                if (bracketMatches.length > 0) {
+                    hasInternalTimestamps = true;
+                    // 處理行首文字
+                    const firstMatchIndex = textContent.indexOf(bracketMatches[0][0]);
                     if (firstMatchIndex > 0) {
                          words.push({
                             time: timeMs,
                             text: textContent.substring(0, firstMatchIndex)
                          });
                     }
-
-                    wordMatches.forEach(match => {
-                        const wMin = parseInt(match[1]);
-                        const wSec = parseInt(match[2]);
-                        const wMs = match[3] ? parseInt(match[3].padEnd(3, '0')) : 0;
-                        const wTime = wMin * 60000 + wSec * 1000 + wMs;
-                        const wText = match[4]; // 時間戳後的文字
-                        
-                        if (wText) { // 即使是空字串也可能代表一個時間點(例如結尾)，但通常我們只需要顯示有文字的部分，或者處理空文字作為結束標記
-                            words.push({
-                                time: wTime,
-                                text: wText
-                            });
-                        }
+                    bracketMatches.forEach(match => {
+                        words.push({
+                            time: this.parseTimeParts(match[1], match[2], match[3]),
+                            text: match[4]
+                        });
                     });
-                    
-                    // 組合純文本用於顯示（移除所有標籤）
-                    const cleanText = words.map(w => w.text).join('');
-                    
+                } 
+                // 2b. 檢查 <> 增強版: <mm:ss.xx>Word
+                else {
+                    const angleMatches = Array.from(textContent.matchAll(/<(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?>([^<]*)/g));
+                    if (angleMatches.length > 0) {
+                        hasInternalTimestamps = true;
+                        // 處理行首文字
+                        const firstMatchIndex = textContent.indexOf(angleMatches[0][0]);
+                        if (firstMatchIndex > 0) {
+                             words.push({
+                                time: timeMs,
+                                text: textContent.substring(0, firstMatchIndex)
+                             });
+                        }
+                        angleMatches.forEach(match => {
+                            words.push({
+                                time: this.parseTimeParts(match[1], match[2], match[3]),
+                                text: match[4]
+                            });
+                        });
+                    }
+                }
+
+                if (hasInternalTimestamps) {
+                    isSynced = true;
                     lyrics.push({
                         time: timeMs,
-                        text: cleanText,
+                        text: words.map(w => w.text).join(''),
                         words: words
                     });
                 } else if (textContent) {
-                    // 普通同步歌詞
+                    isSynced = true;
                     lyrics.push({
                         time: timeMs,
                         text: textContent
                     });
                 }
-            } else if (!isLrc && trimmedLine) {
+            } else if (!isSynced && trimmedLine) {
+                // 純文本 (只有在確認不是同步歌詞時才當作純文本)
                 lyrics.push({
                     text: trimmedLine
                 });
@@ -463,8 +488,92 @@ function initLyricsManager() {
         }
         
         return {
-            type: isLrc ? 'synced' : 'plain',
+            type: isSynced ? 'synced' : 'plain',
             lyrics: lyrics
+        };
+    };
+
+    // 輔助函數：解析時間部分
+    SpotifyLyricsPlayer.prototype.parseTimeParts = function(minStr, secStr, msStr) {
+        const minutes = parseInt(minStr);
+        const seconds = parseInt(secStr);
+        const milliseconds = msStr ? parseInt(msStr.padEnd(3, '0')) : 0;
+        return minutes * 60000 + seconds * 1000 + milliseconds;
+    };
+
+    // 輔助函數：解析 ASS/SSA 行
+    SpotifyLyricsPlayer.prototype.parseAssLine = function(line) {
+        // Dialogue: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+        // 例子: Dialogue: 0,00:00:39.55,00:00:42.01,orig,,0,0,0,,{\kf18}大{\kf43}展...
+        
+        // 簡單分割，找到 Text 部分 (第9個逗號之後)
+        const parts = line.split(',');
+        if (parts.length < 10) return null;
+
+        const startTimeStr = parts[1]; // 00:00:39.55
+        const textPart = parts.slice(9).join(','); // 重新組合 Text 部分，以防 Text 內有逗號
+
+        // 解析開始時間 (h:mm:ss.cs)
+        const timeParts = startTimeStr.match(/(\d+):(\d{2}):(\d{2})\.(\d{2})/);
+        if (!timeParts) return null;
+
+        const startH = parseInt(timeParts[1]);
+        const startM = parseInt(timeParts[2]);
+        const startS = parseInt(timeParts[3]);
+        const startCs = parseInt(timeParts[4]);
+        
+        const startTimeMs = startH * 3600000 + startM * 60000 + startS * 1000 + startCs * 10;
+        
+        // 解析卡拉OK標籤 {\kXX} 或 {\kfXX} 或 {\KXX}
+        // XX 是持續時間 (centiseconds)
+        const words = [];
+        let currentTime = startTimeMs;
+        let cleanText = '';
+        
+        const tagRegex = /{\\k[fF]?(\d+)}([^{]*)/g;
+        let match;
+        let hasKaraoke = false;
+
+        // 處理開頭沒有標籤的情況 (極少見，但以防萬一)
+        const firstTagIndex = textPart.indexOf('{');
+        if (firstTagIndex > 0) {
+            const preText = textPart.substring(0, firstTagIndex);
+            words.push({
+                time: currentTime,
+                text: preText
+            });
+            cleanText += preText;
+        }
+
+        while ((match = tagRegex.exec(textPart)) !== null) {
+            hasKaraoke = true;
+            const durationCs = parseInt(match[1]);
+            const wordText = match[2];
+            
+            if (wordText) {
+                words.push({
+                    time: currentTime,
+                    text: wordText
+                });
+                cleanText += wordText;
+            }
+            
+            currentTime += durationCs * 10; // 增加時間
+        }
+        
+        // 如果沒有卡拉OK標籤，但有 ASS 格式，清除所有 {...} 標籤作為普通文本
+        if (!hasKaraoke) {
+            cleanText = textPart.replace(/{[^}]*}/g, '');
+            return {
+                time: startTimeMs,
+                text: cleanText
+            };
+        }
+
+        return {
+            time: startTimeMs,
+            text: cleanText,
+            words: words
         };
     };
 
