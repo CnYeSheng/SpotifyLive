@@ -1204,88 +1204,83 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
         // 情境一：自動載入（無 ?p=）
         // ======================
         if (!providersParam) {
-            // 優先順序嘗試列表
-            const providers = ['Musixmatch', 'Lrclib', 'NetEase', 'QQMusic', 'Kugou'];
-            console.log(`🔍 自動載入歌詞: ${artist} - ${title} (將嘗試: ${providers.join(', ')})`);
+            const providers = ['QQMusic', 'Kugou', 'NetEase', 'Lrclib', 'Musixmatch'];
+            console.log(`🔍 自動並行載入歌詞: ${artist} - ${title}`);
             
-            const isWbw = req.query.wbw !== undefined;
-
-            for (const provider of providers) {
+            const searchPromises = providers.map(async (provider) => {
                 try {
-                    let apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
+                    let apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}&wbw`;
                     
-                    // 只有指定提供商支持逐字歌詞
-                    if (isWbw && ['NetEase', 'QQMusic', 'Kugou'].includes(provider)) {
-                        apiUrl += '&wbw';
-                    }
-
                     const response = await axios.get(apiUrl, { 
-                        timeout: 60000, 
-                        headers: {
-                            'User-Agent': 'Spotify-Lyrics-Player/1.0'
-                        }
+                        timeout: 55000, // 給予各供應商充裕時間，但略低於全域 60s
+                        headers: { 'User-Agent': 'Spotify-Lyrics-Player/1.0' }
                     });
                     
-                    // 解析歌词数据 (重用邏輯)
+                    if (!response.data) return null;
+
                     let lyrics = [];
                     let lyricsType = 'plain';
                     
-                    if (!response.data) continue;
-
+                    // 解析邏輯 (同前)
                     if (Array.isArray(response.data)) {
                         const lrcResult = parseLrcFormat(response.data.join('\n'));
-                        if (lrcResult.isLrc) {
-                            lyrics = lrcResult.lyrics;
-                            lyricsType = 'synced';
-                        } else {
-                            lyrics = response.data.filter(line => line && typeof line === 'string' && line.trim() !== '');
-                        }
+                        lyrics = lrcResult.lyrics;
+                        lyricsType = lrcResult.isLrc ? 'synced' : 'plain';
                     } else if (response.data.lyrics) {
                         if (Array.isArray(response.data.lyrics)) {
                             lyrics = response.data.lyrics;
                             lyricsType = response.data.type || 'plain';
                         } else if (typeof response.data.lyrics === 'string') {
                             const lrcResult = parseLrcFormat(response.data.lyrics);
-                            if (lrcResult.isLrc) {
-                                lyrics = lrcResult.lyrics;
-                                lyricsType = 'synced';
-                            }
-                        } else {
-                            lyrics = response.data.lyrics.split('\n').filter(line => line && typeof line === 'string' && line.trim() !== '');
+                            lyrics = lrcResult.lyrics;
+                            lyricsType = lrcResult.isLrc ? 'synced' : 'plain';
                         }
                     } else if (typeof response.data === 'string') {
                         const lrcResult = parseLrcFormat(response.data);
-                        if (lrcResult.isLrc) {
-                            lyrics = lrcResult.lyrics;
-                            lyricsType = 'synced';
-                        } else {
-                            lyrics = response.data.split('\n').filter(line => line && typeof line === 'string' && line.trim() !== '');
-                        }
-                    } else {
-                        // 尝试其他可能的结构
-                        if (response.data.syncedLyrics) {
-                            const lrcResult = parseLrcFormat(response.data.syncedLyrics);
-                            if (lrcResult.isLrc) {
-                                lyrics = lrcResult.lyrics;
-                                lyricsType = 'synced';
-                            }
-                        } else if (response.data.plainLyrics) {
-                            lyrics = response.data.plainLyrics.split('\n').filter(line => line && typeof line === 'string' && line.trim() !== '');
-                        }
+                        lyrics = lrcResult.lyrics;
+                        lyricsType = lrcResult.isLrc ? 'synced' : 'plain';
                     }
-                    
+
                     if (lyrics && lyrics.length > 0) {
-                        console.log(`✅ 自動載入成功 (${provider}): ${lyrics.length} 行歌詞`);
-                        return res.json({ 
-                            success: true, 
-                            lyrics, 
-                            type: lyricsType, 
+                        // 計算「品質分數」：逐字(3) > 同步(2) > 純文字(1)
+                        let score = 1;
+                        if (lyrics.some(line => line.words && line.words.length > 0)) {
+                            score = 3;
+                            lyricsType = 'synced'; // 標記為同步以便前端處理
+                        } else if (lyricsType === 'synced') {
+                            score = 2;
+                        }
+
+                        return {
+                            provider,
+                            lyrics,
+                            type: lyricsType,
+                            score,
                             source: provider.toLowerCase()
-                        });
+                        };
                     }
                 } catch (err) {
-                    // console.log(`ℹ️ ${provider} 失敗 (繼續嘗試下一項)`);
+                    return null;
                 }
+                return null;
+            });
+
+            // 等待所有請求，或至少等到超時
+            const results = await Promise.allSettled(searchPromises);
+            const validResults = results
+                .filter(r => r.status === 'fulfilled' && r.value !== null)
+                .map(r => r.value)
+                .sort((a, b) => b.score - a.score); // 分數高的排前面
+
+            if (validResults.length > 0) {
+                const best = validResults[0];
+                console.log(`✅ 自動載入成功：選用 ${best.provider} (品質分數: ${best.score})`);
+                return res.json({ 
+                    success: true, 
+                    lyrics: best.lyrics, 
+                    type: best.type, 
+                    source: best.source
+                });
             }
 
             console.log('ℹ️ 自動模式：所有來源均未找到歌詞');
