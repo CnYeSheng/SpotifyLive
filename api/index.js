@@ -1242,7 +1242,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
 
             try {
                 const response = await axios.get(apiUrl, { 
-                    timeout: 20000,
+                    timeout: 60000,
                     headers: {
                         'User-Agent': 'Spotify-Lyrics-Player/1.0'
                     }
@@ -1367,7 +1367,7 @@ app.get('/api/lyrics-search-multi/:artist/:title', async (req, res) => {
             
             try {
                 const response = await axios.get(apiUrl, { 
-                    timeout: 20000,
+                    timeout: 60000,
                     headers: {
                         'User-Agent': 'Spotify-Lyrics-Player/1.0',
                         'Accept': 'application/json'
