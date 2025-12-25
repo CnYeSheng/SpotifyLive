@@ -3724,6 +3724,13 @@ async initializeStorage() {
                 const timeDiff = Date.now() - this.currentTrack.lastUpdated;
                 elapsedTime = timeDiff + this.currentTrack.progress;
                 
+                // 🚨 關鍵修復：檢測進度異常 (如回跳或手動拖動)
+                // 如果計算時間比 Spotify 報告的進度快了超過 5 秒，或者倒退了，則強制同步
+                if (elapsedTime > this.currentTrack.progress + 15000 || elapsedTime < this.currentTrack.progress - 2000) {
+                    elapsedTime = this.currentTrack.progress;
+                    this.currentTrack.lastUpdated = Date.now();
+                }
+
                 // 守衛：如果計算出的時間遠大於歌曲長度，鎖定在長度值
                 if (elapsedTime > this.currentTrack.duration) {
                     elapsedTime = this.currentTrack.duration;
@@ -3968,6 +3975,53 @@ async loadLyrics() {
         return normalCount >= text.length * 0.5;
     }
 
+    // ✨ 新增：全局歌詞數據標準化工具
+    standardizeLyrics(lyrics) {
+        if (!Array.isArray(lyrics)) return [];
+        
+        return lyrics.map(line => {
+            let processedLine = { ...line };
+            
+            // 1. 強力清洗文本中的所有標籤 (含 unicode 轉義)
+            if (typeof processedLine.text === 'string') {
+                processedLine.text = processedLine.text
+                    .replace(/\\u003C/g, '<')
+                    .replace(/\\u003E/g, '>')
+                    .replace(/<[^>]*>/g, '')
+                    .trim();
+            }
+            
+            // 2. 標準化逐字數據
+            if (processedLine.words && Array.isArray(processedLine.words)) {
+                processedLine.words = processedLine.words.map(w => {
+                    let word = { ...w };
+                    // 映射 start/end -> time/duration
+                    if (word.start !== undefined && word.time === undefined) {
+                        word.time = word.start;
+                    }
+                    if (word.end !== undefined && word.duration === undefined) {
+                        word.duration = word.end - (word.start || word.time || 0);
+                    }
+                    // 清洗字詞文本
+                    if (typeof word.text === 'string') {
+                        word.text = word.text
+                            .replace(/\\u003C/g, '<')
+                            .replace(/\\u003E/g, '>')
+                            .replace(/<[^>]*>/g, '');
+                    }
+                    return word;
+                });
+                
+                // 如果文字欄位異常，重新構建文字
+                if (!processedLine.text || processedLine.text.includes('<')) {
+                    processedLine.text = processedLine.words.map(w => w.text).join('').trim();
+                }
+            }
+            
+            return processedLine;
+        });
+    }
+
     showLyricsPlaceholder(text) {
         this.lyricsContent.innerHTML = `
             <div class="lyrics-placeholder">
@@ -3983,6 +4037,9 @@ async loadLyrics() {
 
     displayLyrics() {
         if (!this.lyrics || this.lyrics.length === 0) return;
+
+        // ✨ 核心優化：渲染前強制標準化
+        this.lyrics = this.standardizeLyrics(this.lyrics);
 
         const lyricsHTML = this.lyrics.map((line, index) => {
             let lineContent = '';
