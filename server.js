@@ -1329,19 +1329,28 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                     console.log(`🔍 自動模式嘗試 ${p}: ${apiUrl}`);
                     
                     const response = await axios.get(apiUrl, {
-                        timeout: 15000,
+                        timeout: 12000,
                         headers: { 'User-Agent': 'Spotify-Lyrics-Player/1.0' }
                     });
 
                     // 檢查是否成功取得有效歌詞
                     if (response.data?.success && Array.isArray(response.data.lyrics) && response.data.lyrics.length > 0) {
-                        console.log(`✅ 自動模式從 ${p} 成功取得歌詞`);
-                        return res.json({
-                            success: true,
-                            lyrics: response.data.lyrics,
-                            type: response.data.type || 'plain',
-                            provider: p
+                        // 額外過濾確保每行歌詞都是有效的，且處理可能的非字串
+                        const safeLyrics = response.data.lyrics.filter(line => {
+                            if (!line) return false;
+                            const text = typeof line === 'string' ? line : (line.text || '');
+                            return typeof text === 'string' && text.trim() !== '';
                         });
+
+                        if (safeLyrics.length > 0) {
+                            console.log(`✅ 自動模式從 ${p} 成功取得歌詞`);
+                            return res.json({
+                                success: true,
+                                lyrics: safeLyrics,
+                                type: response.data.type || 'plain',
+                                provider: p
+                            });
+                        }
                     }
                 } catch (error) {
                     console.error(`⚠️ 自動模式 ${p} 失敗:`, error.message);
@@ -1380,18 +1389,27 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
             console.log(`📡 指定來源 ${provider}: ${apiUrl}`);
             
             const response = await axios.get(apiUrl, {
-                timeout: 15000,
+                timeout: 20000,
                 headers: { 'User-Agent': 'Spotify-Lyrics-Player/1.0' }
             });
 
             if (response.data?.success && Array.isArray(response.data.lyrics) && response.data.lyrics.length > 0) {
-                console.log(`✅ 指定來源 ${provider} 成功取得歌詞`);
-                return res.json({
-                    success: true,
-                    lyrics: response.data.lyrics,
-                    type: response.data.type || 'plain',
-                    provider: provider
+                // 額外過濾確保每行歌詞都是有效的
+                const safeLyrics = response.data.lyrics.filter(line => {
+                    if (!line) return false;
+                    const text = typeof line === 'string' ? line : (line.text || '');
+                    return typeof text === 'string' && text.trim() !== '';
                 });
+
+                if (safeLyrics.length > 0) {
+                    console.log(`✅ 指定來源 ${provider} 成功取得歌詞`);
+                    return res.json({
+                        success: true,
+                        lyrics: safeLyrics,
+                        type: response.data.type || 'plain',
+                        provider: provider
+                    });
+                }
             } else {
                 console.log(`ℹ️ 指定來源 ${provider} 未找到歌詞`);
                 return res.status(404).json({
@@ -1447,16 +1465,16 @@ app.get('/api/lyrics-search-multi/:artist/:title', async (req, res) => {
             }
 
             try {
-                const response = await axios.get(apiUrl, { timeout: 10000 });
+                const response = await axios.get(apiUrl, { timeout: 20000 });
                 let lyrics = [];
                 if (Array.isArray(response.data)) {
                     const lrcResult = parseLrcFormat(response.data.join('\n'));
-                    lyrics = lrcResult.isLrc ? lrcResult.lyrics : response.data.filter(l => l?.trim());
+                    lyrics = lrcResult.isLrc ? lrcResult.lyrics : response.data.filter(l => l && typeof l === 'string' && l.trim());
                 } else if (response.data?.lyrics) {
                     lyrics = Array.isArray(response.data.lyrics) ? response.data.lyrics : [response.data.lyrics];
                 } else if (typeof response.data === 'string') {
                     const lrcResult = parseLrcFormat(response.data);
-                    lyrics = lrcResult.isLrc ? lrcResult.lyrics : response.data.split('\n').filter(l => l?.trim());
+                    lyrics = lrcResult.isLrc ? lrcResult.lyrics : response.data.split('\n').filter(l => l && typeof l === 'string' && l.trim());
                 }
                 if (lyrics.length > 0) {
                     return {

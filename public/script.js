@@ -3825,7 +3825,7 @@ async loadLyrics() {
             this.log('⚠️ 歌词载入超时，重置状态');
             this.isLoadingLyrics = false;
         }
-    }, 30000);
+    }, 60000);
 
     this.updateStatus('lyrics', null);
 
@@ -3859,7 +3859,21 @@ async loadLyrics() {
 
         if (data.success && data.lyrics && Array.isArray(data.lyrics) && data.lyrics.length > 0) {
             const validLyrics = data.lyrics.filter(line => {
-                const text = line.text || line;
+                // 安全獲取文本內容，防止非字符串調用 trim 導致崩潰
+                let text = '';
+                if (line) {
+                    if (typeof line === 'string') {
+                        text = line;
+                    } else if (typeof line === 'object') {
+                        text = line.text || '';
+                    } else {
+                        text = String(line);
+                    }
+                }
+                
+                // 確保 text 是字符串
+                if (typeof text !== 'string') text = '';
+                
                 return text && text.trim() !== '' && this.isValidText(text);
             });
 

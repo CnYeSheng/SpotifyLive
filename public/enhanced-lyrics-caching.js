@@ -183,7 +183,7 @@ function initEnhancedLyricsCaching() {
                 if (currentEntry && currentEntry.text) {
                     lyrics.push({
                         time: currentEntry.startTime,
-                        text: currentEntry.text.trim()
+                        text: (typeof currentEntry.text === 'string' ? currentEntry.text.trim() : String(currentEntry.text || ''))
                     });
                 }
                 currentEntry = null;
@@ -222,7 +222,7 @@ function initEnhancedLyricsCaching() {
         if (currentEntry && currentEntry.text) {
             lyrics.push({
                 time: currentEntry.startTime,
-                text: currentEntry.text.trim()
+                text: (typeof currentEntry.text === 'string' ? currentEntry.text.trim() : String(currentEntry.text || ''))
             });
         }
         

@@ -1020,7 +1020,7 @@ app.get('/api/search-lyrics/:query', async (req, res) => {
                     lyrics = lrcResult.lyrics;
                     lyricsType = 'synced';
                 } else {
-                    lyrics = response.data.filter(line => line && line.trim() !== '');
+                    lyrics = response.data.filter(line => line && typeof line === 'string' && line.trim() !== '');
                 }
             } else if (response.data.lyrics) {
                 if (Array.isArray(response.data.lyrics)) {
@@ -1032,7 +1032,7 @@ app.get('/api/search-lyrics/:query', async (req, res) => {
                         lyrics = lrcResult.lyrics;
                         lyricsType = 'synced';
                     } else {
-                        lyrics = response.data.lyrics.split('\n').filter(line => line && line.trim() !== '');
+                        lyrics = response.data.lyrics.split('\n').filter(line => line && typeof line === 'string' && line.trim() !== '');
                     }
                 }
             } else if (typeof response.data === 'string') {
@@ -1041,7 +1041,7 @@ app.get('/api/search-lyrics/:query', async (req, res) => {
                     lyrics = lrcResult.lyrics;
                     lyricsType = 'synced';
                 } else {
-                    lyrics = response.data.split('\n').filter(line => line && line.trim() !== '');
+                    lyrics = response.data.split('\n').filter(line => line && typeof line === 'string' && line.trim() !== '');
                 }
             } else {
                 // 尝试其他可能的结构
@@ -1052,7 +1052,7 @@ app.get('/api/search-lyrics/:query', async (req, res) => {
                         lyricsType = 'synced';
                     }
                 } else if (response.data.plainLyrics) {
-                    lyrics = response.data.plainLyrics.split('\n').filter(line => line && line.trim() !== '');
+                    lyrics = response.data.plainLyrics.split('\n').filter(line => line && typeof line === 'string' && line.trim() !== '');
                 }
             }
             
@@ -1137,7 +1137,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                     }
 
                     const response = await axios.get(apiUrl, { 
-                        timeout: 8000, // 設定較短的 timeout 以便快速切換
+                        timeout: 12000, // 設定較長的 timeout
                         headers: {
                             'User-Agent': 'Spotify-Lyrics-Player/1.0'
                         }
@@ -1155,7 +1155,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                             lyrics = lrcResult.lyrics;
                             lyricsType = 'synced';
                         } else {
-                            lyrics = response.data.filter(line => line && line.trim() !== '');
+                            lyrics = response.data.filter(line => line && typeof line === 'string' && line.trim() !== '');
                         }
                     } else if (response.data.lyrics) {
                         if (Array.isArray(response.data.lyrics)) {
@@ -1168,7 +1168,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                                 lyricsType = 'synced';
                             }
                         } else {
-                            lyrics = response.data.lyrics.split('\n').filter(line => line && line.trim() !== '');
+                            lyrics = response.data.lyrics.split('\n').filter(line => line && typeof line === 'string' && line.trim() !== '');
                         }
                     } else if (typeof response.data === 'string') {
                         const lrcResult = parseLrcFormat(response.data);
@@ -1176,7 +1176,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                             lyrics = lrcResult.lyrics;
                             lyricsType = 'synced';
                         } else {
-                            lyrics = response.data.split('\n').filter(line => line && line.trim() !== '');
+                            lyrics = response.data.split('\n').filter(line => line && typeof line === 'string' && line.trim() !== '');
                         }
                     } else {
                         // 尝试其他可能的结构
@@ -1187,7 +1187,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                                 lyricsType = 'synced';
                             }
                         } else if (response.data.plainLyrics) {
-                            lyrics = response.data.plainLyrics.split('\n').filter(line => line && line.trim() !== '');
+                            lyrics = response.data.plainLyrics.split('\n').filter(line => line && typeof line === 'string' && line.trim() !== '');
                         }
                     }
                     
@@ -1242,7 +1242,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
 
             try {
                 const response = await axios.get(apiUrl, { 
-                    timeout: 15000,
+                    timeout: 20000,
                     headers: {
                         'User-Agent': 'Spotify-Lyrics-Player/1.0'
                     }
@@ -1258,7 +1258,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                         lyrics = lrcResult.lyrics;
                         lyricsType = 'synced';
                     } else {
-                        lyrics = response.data.filter(line => line && line.trim() !== '');
+                        lyrics = response.data.filter(line => line && typeof line === 'string' && line.trim() !== '');
                     }
                 } else if (response.data && response.data.lyrics) {
                     if (Array.isArray(response.data.lyrics)) {
@@ -1270,7 +1270,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                             lyrics = lrcResult.lyrics;
                             lyricsType = 'synced';
                         } else {
-                            lyrics = response.data.lyrics.split('\n').filter(line => line && line.trim() !== '');
+                            lyrics = response.data.lyrics.split('\n').filter(line => line && typeof line === 'string' && line.trim() !== '');
                         }
                     }
                 } else if (typeof response.data === 'string') {
@@ -1279,7 +1279,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                         lyrics = lrcResult.lyrics;
                         lyricsType = 'synced';
                     } else {
-                        lyrics = response.data.split('\n').filter(line => line && line.trim() !== '');
+                        lyrics = response.data.split('\n').filter(line => line && typeof line === 'string' && line.trim() !== '');
                     }
                 }
                 
@@ -1367,7 +1367,7 @@ app.get('/api/lyrics-search-multi/:artist/:title', async (req, res) => {
             
             try {
                 const response = await axios.get(apiUrl, { 
-                    timeout: 10000,
+                    timeout: 20000,
                     headers: {
                         'User-Agent': 'Spotify-Lyrics-Player/1.0',
                         'Accept': 'application/json'
@@ -1384,7 +1384,7 @@ app.get('/api/lyrics-search-multi/:artist/:title', async (req, res) => {
                         lyrics = lrcResult.lyrics;
                         lyricsType = 'synced';
                     } else {
-                        lyrics = response.data.filter(line => line && line.trim() !== '');
+                        lyrics = response.data.filter(line => line && typeof line === 'string' && line.trim() !== '');
                     }
                 } else if (response.data && response.data.lyrics) {
                     if (Array.isArray(response.data.lyrics)) {
@@ -1396,7 +1396,7 @@ app.get('/api/lyrics-search-multi/:artist/:title', async (req, res) => {
                             lyrics = lrcResult.lyrics;
                             lyricsType = 'synced';
                         } else {
-                            lyrics = response.data.lyrics.split('\n').filter(line => line && line.trim() !== '');
+                            lyrics = response.data.lyrics.split('\n').filter(line => line && typeof line === 'string' && line.trim() !== '');
                         }
                     }
                 } else if (typeof response.data === 'string') {
@@ -1405,7 +1405,7 @@ app.get('/api/lyrics-search-multi/:artist/:title', async (req, res) => {
                         lyrics = lrcResult.lyrics;
                         lyricsType = 'synced';
                     } else {
-                        lyrics = response.data.split('\n').filter(line => line && line.trim() !== '');
+                        lyrics = response.data.split('\n').filter(line => line && typeof line === 'string' && line.trim() !== '');
                     }
                 }
                 
