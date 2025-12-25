@@ -1137,7 +1137,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                     }
 
                     const response = await axios.get(apiUrl, { 
-                        timeout: 12000, // 設定較長的 timeout
+                        timeout: 60000, 
                         headers: {
                             'User-Agent': 'Spotify-Lyrics-Player/1.0'
                         }
