@@ -1097,22 +1097,49 @@ function parseLrcFormat(lrcString) {
         const trimmedLine = line.trim();
         if (!trimmedLine) continue;
         
-        // Check for LRC time format [mm:ss.xx] or [mm:ss]
-        const timeMatch = trimmedLine.match(/^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/);
-        if (timeMatch) {
+        // 檢查是否為逐字歌詞格式 (一行中包含多個時間戳)
+        const wordLevelRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]([^\[]*)/g;
+        let matches = [];
+        let match;
+        
+        while ((match = wordLevelRegex.exec(trimmedLine)) !== null) {
+            const mins = parseInt(match[1]);
+            const secs = parseInt(match[2]);
+            const ms = match[3] ? parseInt(match[3].padEnd(3, '0')) : 0;
+            const time = (mins * 60 + secs) * 1000 + ms;
+            const text = match[4];
+            matches.push({ time, text });
+        }
+
+        if (matches.length > 0) {
             isLrc = true;
-            const minutes = parseInt(timeMatch[1]);
-            const seconds = parseInt(timeMatch[2]);
-            const milliseconds = timeMatch[3] ? parseInt(timeMatch[3].padEnd(3, '0')) : 0;
-            
-            const timeMs = minutes * 60000 + seconds * 1000 + milliseconds;
-            const text = trimmedLine.replace(/^\[\d{1,2}:\d{2}(?:\.\d{1,3})?\]/, '').trim();
-            
-            if (text) {
-                lyrics.push({
-                    time: timeMs,
-                    text: text
+            if (matches.length > 1) {
+                // 逐字歌詞處理
+                const lineStartTime = matches[0].time;
+                const lineText = matches.map(m => m.text).join('');
+                const words = matches.map((m, idx) => {
+                    const nextTime = matches[idx + 1] ? matches[idx + 1].time : m.time + 500;
+                    return {
+                        time: m.time,
+                        text: m.text,
+                        duration: Math.max(0, nextTime - m.time)
+                    };
                 });
+
+                lyrics.push({
+                    time: lineStartTime,
+                    text: lineText.trim(),
+                    words: words
+                });
+            } else {
+                // 普通單時間戳行
+                const entry = matches[0];
+                if (entry.text && entry.text.trim().length > 0) {
+                    lyrics.push({
+                        time: entry.time,
+                        text: entry.text.trim()
+                    });
+                }
             }
         } else if (!isLrc && trimmedLine) {
             // If no time stamps found, treat as plain lyrics
@@ -1329,7 +1356,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                     console.log(`🔍 自動模式嘗試 ${p}: ${apiUrl}`);
                     
                     const response = await axios.get(apiUrl, {
-                        timeout: 12000,
+                        timeout: 60000,
                         headers: { 'User-Agent': 'Spotify-Lyrics-Player/1.0' }
                     });
 
@@ -1842,7 +1869,7 @@ app.get('/api/lyrics-legacy/:artist/:title', async (req, res) => {
 
                 console.log(`📡 查詢 ${provider}: ${apiUrl}`);
                 const response = await axios.get(apiUrl, {
-                    timeout: 15000,
+                    timeout: 60000,
                     headers: {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                         'Accept': 'application/json, text/plain, */*'
@@ -1939,44 +1966,55 @@ function parseLrcFormat(lrcText) {
         }
         
         try {
-            // 檢查 LRC 時間戳格式 [mm:ss.xx] 或 [mm:ss]
-            const timeMatch = trimmedLine.match(/^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\](.*)/);
+            // 檢查是否為逐字歌詞格式 (一行中包含多個時間戳)
+            const wordLevelRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]([^\[]*)/g;
+            let matches = [];
+            let match;
             
-            if (timeMatch) {
+            while ((match = wordLevelRegex.exec(trimmedLine)) !== null) {
+                const mins = parseInt(match[1]);
+                const secs = parseInt(match[2]);
+                const ms = match[3] ? parseInt(match[3].padEnd(3, '0')) : 0;
+                const time = (mins * 60 + secs) * 1000 + ms;
+                const text = match[4];
+                matches.push({ time, text });
+            }
+
+            if (matches.length > 0) {
                 hasTimeStamps = true;
-                const minutes = parseInt(timeMatch[1]);
-                const seconds = parseInt(timeMatch[2]);
-                const milliseconds = timeMatch[3] ? parseInt(timeMatch[3].padEnd(3, '0')) : 0;
-                const text = timeMatch[4].trim();
-                
-                // 驗證時間數據的有效性
-                if (isValidTimeData(minutes, seconds, milliseconds)) {
-                    const timeMs = (minutes * 60 + seconds) * 1000 + milliseconds;
-                    
-                    if (text && text.length > 0) {
-                        lyrics.push({
-                            time: timeMs,
-                            text: text,
-                            originalLine: line,
-                            lineNumber: i + 1
-                        });
-                        successfulParses++;
-                    } else {
-                        console.log(`⚠️ LRC 解析：第 ${i + 1} 行時間戳有效但文本為空`);
-                        parseErrors++;
-                    }
+                if (matches.length > 1) {
+                    // 逐字歌詞處理
+                    const lineStartTime = matches[0].time;
+                    const lineText = matches.map(m => m.text).join('');
+                    const words = matches.map((m, idx) => {
+                        const nextTime = matches[idx + 1] ? matches[idx + 1].time : m.time + 500;
+                        return {
+                            time: m.time,
+                            text: m.text,
+                            duration: Math.max(0, nextTime - m.time)
+                        };
+                    });
+
+                    lyrics.push({
+                        time: lineStartTime,
+                        text: lineText.trim(),
+                        words: words,
+                        originalLine: line,
+                        lineNumber: i + 1
+                    });
                 } else {
-                    console.log(`⚠️ LRC 解析：第 ${i + 1} 行無效的時間數據 [${minutes}:${seconds}.${milliseconds}]`);
-                    parseErrors++;
-                    // 嘗試作為普通文本處理
-                    if (text && text.length > 0) {
+                    // 普通單時間戳行
+                    const entry = matches[0];
+                    if (entry.text && entry.text.trim().length > 0) {
                         lyrics.push({
-                            text: text,
+                            time: entry.time,
+                            text: entry.text.trim(),
                             originalLine: line,
                             lineNumber: i + 1
                         });
                     }
                 }
+                successfulParses++;
             } else {
                 // 非時間戳行，可能是純文本歌詞或元數據
                 if (!trimmedLine.startsWith('[') || !trimmedLine.includes(']')) {

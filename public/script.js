@@ -4631,44 +4631,57 @@ showOffsetMessage() {
             }
             
             try {
-                // 檢查 LRC 時間戳格式 [mm:ss.xx] 或 [mm:ss]
-                const timeMatch = trimmedLine.match(/^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\](.*)/);
+                // 檢查是否為逐字歌詞格式 (一行中包含多個時間戳)
+                const wordLevelRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]([^\[]*)/g;
+                let matches = [];
+                let match;
                 
-                if (timeMatch) {
+                while ((match = wordLevelRegex.exec(trimmedLine)) !== null) {
+                    const mins = parseInt(match[1]);
+                    const secs = parseInt(match[2]);
+                    const ms = match[3] ? parseInt(match[3].padEnd(3, '0')) : 0;
+                    const time = (mins * 60 + secs) * 1000 + ms;
+                    const text = match[4]; // 不需要 trim，保留空格
+                    matches.push({ time, text });
+                }
+
+                if (matches.length > 0) {
                     hasTimeStamps = true;
-                    const minutes = parseInt(timeMatch[1]);
-                    const seconds = parseInt(timeMatch[2]);
-                    const milliseconds = timeMatch[3] ? parseInt(timeMatch[3].padEnd(3, '0')) : 0;
-                    const text = timeMatch[4].trim();
-                    
-                    // 驗證時間數據的有效性
-                    if (this.isValidTimeData(minutes, seconds, milliseconds)) {
-                        const timeMs = (minutes * 60 + seconds) * 1000 + milliseconds;
+                    if (matches.length > 1) {
+                        // 逐字歌詞處理
+                        const lineStartTime = matches[0].time;
+                        const lineText = matches.map(m => m.text).join('');
                         
-                        if (text && text.length > 0) {
-                            lyrics.push({
-                                time: timeMs,
-                                text: text,
-                                originalLine: line,
-                                lineNumber: i + 1
-                            });
-                            successfulParses++;
-                        } else {
-                            this.log(`⚠️ LRC 解析：第 ${i + 1} 行時間戳有效但文本為空`);
-                            parseErrors++;
-                        }
+                        // 計算每個詞的持續時間 (duration)
+                        const words = matches.map((m, idx) => {
+                            const nextTime = matches[idx + 1] ? matches[idx + 1].time : m.time + 500;
+                            return {
+                                time: m.time,
+                                text: m.text,
+                                duration: Math.max(0, nextTime - m.time)
+                            };
+                        });
+
+                        lyrics.push({
+                            time: lineStartTime,
+                            text: lineText.trim(),
+                            words: words,
+                            originalLine: line,
+                            lineNumber: i + 1
+                        });
                     } else {
-                        this.log(`⚠️ LRC 解析：第 ${i + 1} 行無效的時間數據 [${minutes}:${seconds}.${milliseconds}]`);
-                        parseErrors++;
-                        // 嘗試作為普通文本處理
-                        if (text && text.length > 0) {
+                        // 普通單時間戳行
+                        const entry = matches[0];
+                        if (entry.text && entry.text.trim().length > 0) {
                             lyrics.push({
-                                text: text,
+                                time: entry.time,
+                                text: entry.text.trim(),
                                 originalLine: line,
                                 lineNumber: i + 1
                             });
                         }
                     }
+                    successfulParses++;
                 } else {
                     // 非時間戳行，可能是純文本歌詞或元數據
                     if (!trimmedLine.startsWith('[') || !trimmedLine.includes(']')) {

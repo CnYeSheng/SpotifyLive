@@ -931,19 +931,50 @@ function parseLrcFormat(lrcText) {
     for (const line of lines) {
         const trimmedLine = line.trim();
         if (!trimmedLine) continue;
-        const timeMatch = trimmedLine.match(/^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\](.*)/);
-        if (timeMatch) {
+        
+        // 檢查是否為逐字歌詞格式 (一行中包含多個時間戳)
+        const wordLevelRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]([^\[]*)/g;
+        let matches = [];
+        let match;
+        
+        while ((match = wordLevelRegex.exec(trimmedLine)) !== null) {
+            const mins = parseInt(match[1]);
+            const secs = parseInt(match[2]);
+            const ms = match[3] ? parseInt(match[3].padEnd(3, '0')) : 0;
+            const time = (mins * 60 + secs) * 1000 + ms;
+            const text = match[4];
+            matches.push({ time, text });
+        }
+
+        if (matches.length > 0) {
             hasTimeStamps = true;
-            const minutes = parseInt(timeMatch[1]);
-            const seconds = parseInt(timeMatch[2]);
-            const milliseconds = timeMatch[3] ? parseInt(timeMatch[3].padEnd(3, '0')) : 0;
-            const text = timeMatch[4].trim();
-            const timeMs = (minutes * 60 + seconds) * 1000 + milliseconds;
-            if (text) {
-                lyrics.push({
-                    time: timeMs,
-                    text: text
+            if (matches.length > 1) {
+                // 逐字歌詞處理
+                const lineStartTime = matches[0].time;
+                const lineText = matches.map(m => m.text).join('');
+                const words = matches.map((m, idx) => {
+                    const nextTime = matches[idx + 1] ? matches[idx + 1].time : m.time + 500;
+                    return {
+                        time: m.time,
+                        text: m.text,
+                        duration: Math.max(0, nextTime - m.time)
+                    };
                 });
+
+                lyrics.push({
+                    time: lineStartTime,
+                    text: lineText.trim(),
+                    words: words
+                });
+            } else {
+                // 普通單時間戳行
+                const entry = matches[0];
+                if (entry.text && entry.text.trim().length > 0) {
+                    lyrics.push({
+                        time: entry.time,
+                        text: entry.text.trim()
+                    });
+                }
             }
         } else {
             if (!trimmedLine.startsWith('[') || !trimmedLine.includes(']')) {
