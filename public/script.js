@@ -3858,22 +3858,44 @@ async loadLyrics() {
         this.log('歌詞 API 回應:', data);
 
         if (data.success && data.lyrics && Array.isArray(data.lyrics) && data.lyrics.length > 0) {
-            const validLyrics = data.lyrics.filter(line => {
-                // 安全獲取文本內容，防止非字符串調用 trim 導致崩潰
-                let text = '';
-                if (line) {
-                    if (typeof line === 'string') {
-                        text = line;
-                    } else if (typeof line === 'object') {
-                        text = line.text || '';
-                    } else {
-                        text = String(line);
+            // ✨ 核心優化：標準化與清理歌詞數據
+            const sanitizedLyrics = data.lyrics.map(line => {
+                let processedLine = { ...line };
+                
+                // 1. 清理主文本中的標籤 (處理轉義和原始符號)
+                if (typeof processedLine.text === 'string') {
+                    processedLine.text = processedLine.text.replace(/<[^>]*>/g, '').trim();
+                }
+                
+                // 2. 處理逐字數據 (相容 start/end 或 time/duration)
+                if (processedLine.words && Array.isArray(processedLine.words)) {
+                    processedLine.words = processedLine.words.map(w => {
+                        let word = { ...w };
+                        // 統一時間欄位 (有些 API 回傳 start/end 而非 time/duration)
+                        if (word.start !== undefined && word.time === undefined) word.time = word.start;
+                        if (word.end !== undefined && word.duration === undefined) {
+                            word.duration = word.end - (word.start || word.time || 0);
+                        }
+                        
+                        // 清理單個字的標籤
+                        if (typeof word.text === 'string') {
+                            word.text = word.text.replace(/<[^>]*>/g, '');
+                        }
+                        return word;
+                    });
+                    
+                    // 如果 text 為空或包含未清理標籤，重新從 words 構建純淨文本
+                    if (!processedLine.text || processedLine.text.includes('<') || processedLine.text.includes('\u003C')) {
+                        processedLine.text = processedLine.words.map(w => w.text).join('').trim();
                     }
                 }
                 
-                // 確保 text 是字符串
-                if (typeof text !== 'string') text = '';
-                
+                return processedLine;
+            });
+
+            const validLyrics = sanitizedLyrics.filter(line => {
+                // 安全獲取文本內容
+                let text = line.text || '';
                 return text && text.trim() !== '' && this.isValidText(text);
             });
 

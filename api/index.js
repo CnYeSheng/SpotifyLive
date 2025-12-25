@@ -1007,19 +1007,21 @@ function parseLrcFormat(lrcText) {
             if (matches.length > 1) {
                 // 標準 [time]A[time]B 逐字
                 const lineStartTime = matches[0].time;
-                const words = matches.map((m, idx) => {
-                    const nextTime = matches[idx + 1] ? matches[idx + 1].time : m.time + 500;
-                    return {
-                        time: m.time,
-                        text: m.text,
-                        duration: Math.max(0, nextTime - m.time)
-                    };
-                });
-                lyrics.push({
-                    time: lineStartTime,
-                    text: matches.map(m => m.text).join('').trim(),
-                    words: words
-                });
+                                const words = matches.map((m, idx) => {
+                                    const nextTime = matches[idx + 1] ? matches[idx + 1].time : m.time + 500;
+                                    const cleanWordText = m.text.replace(/<[^>]*>/g, '');
+                                    return {
+                                        time: m.time,
+                                        text: cleanWordText,
+                                        duration: Math.max(0, nextTime - m.time)
+                                    };
+                                });
+                
+                                lyrics.push({
+                                    time: lineStartTime,
+                                    text: words.map(w => w.text).join('').trim(),
+                                    words: words
+                                });
             } else {
                 // 單時間戳行
                 const entry = matches[0];
