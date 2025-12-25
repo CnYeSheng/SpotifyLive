@@ -1558,13 +1558,9 @@ app.get('/api/lyrics-search-multi/:artist/:title', async (req, res) => {
         const isWbw = req.query.wbw !== undefined;
         const results = [];
         const promises = providers.map(async (provider) => {
-            let apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
+            let apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}&wbw`;
             
             // 只有指定提供商支持逐字歌詞
-            if (isWbw && ['NetEase', 'QQMusic', 'Kugou'].includes(provider)) {
-                apiUrl += '&wbw';
-            }
-
             try {
                 const response = await axios.get(apiUrl, { timeout: 60000 });
                 let lyrics = [];
@@ -1927,14 +1923,14 @@ app.get('/api/lyrics-legacy/:artist/:title', async (req, res) => {
                         apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Lrclib`;
                         break;
                     case 'netease':
-                        apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=NetEase${wbwParam}`;
+                        apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=NetEase&wbw`;
                         break;
                     case 'qm':
                     case 'qqmusic':
-                        apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=QQMusic${wbwParam}`;
+                        apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=QQMusic&wbw`;
                         break;
                     case 'kugou':
-                        apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Kougou${wbwParam}`;
+                        apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Kougou&wbw`;
                         break;
                     default:
                         console.log(`⚠️ 不支援的提供商: ${provider}`);
