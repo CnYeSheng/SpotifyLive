@@ -1097,8 +1097,9 @@ function parseLrcFormat(lrcString) {
         const trimmedLine = line.trim();
         if (!trimmedLine) continue;
         
-        // 檢查是否為逐字歌詞格式 (一行中包含多個時間戳)
+        // 1. 提取 [mm:ss.xx] 標籤
         const wordLevelRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]([^\[]*)/g;
+        const tagWordRegex = /<(\d+),(\d+),\d+>([^<]*)/g;
         let matches = [];
         let match;
         
@@ -1111,12 +1112,65 @@ function parseLrcFormat(lrcString) {
             matches.push({ time, text });
         }
 
+        // 2. 處理解析結果
+        if (matches.length === 0 && tagWordRegex.test(trimmedLine)) {
+            // 純 <off,dur,0> 格式
+            let allWords = [];
+            tagWordRegex.lastIndex = 0;
+            while ((match = tagWordRegex.exec(trimmedLine)) !== null) {
+                allWords.push({
+                    time: parseInt(match[1]),
+                    duration: parseInt(match[2]),
+                    text: match[3]
+                });
+            }
+            if (allWords.length > 0) {
+                isLrc = true;
+                lyrics.push({
+                    time: allWords[0].time,
+                    text: allWords.map(w => w.text).join('').trim(),
+                    words: allWords
+                });
+                continue;
+            }
+        }
+
         if (matches.length > 0) {
             isLrc = true;
-            if (matches.length > 1) {
-                // 逐字歌詞處理
+            
+            // 檢查是否包含逐字標籤 <off,dur,0>
+            if (tagWordRegex.test(trimmedLine)) {
                 const lineStartTime = matches[0].time;
-                const lineText = matches.map(m => m.text).join('');
+                let allWords = [];
+                matches.forEach(m => {
+                    let subMatch;
+                    let foundSub = false;
+                    tagWordRegex.lastIndex = 0;
+                    while ((subMatch = tagWordRegex.exec(m.text)) !== null) {
+                        allWords.push({
+                            time: m.time + parseInt(subMatch[1]),
+                            duration: parseInt(subMatch[2]),
+                            text: subMatch[3]
+                        });
+                        foundSub = true;
+                    }
+                    if (!foundSub && m.text.trim()) {
+                        allWords.push({ time: m.time, text: m.text, duration: 500 });
+                    }
+                });
+                if (allWords.length > 0) {
+                    lyrics.push({
+                        time: lineStartTime,
+                        text: allWords.map(w => w.text).join('').trim(),
+                        words: allWords
+                    });
+                    continue;
+                }
+            }
+
+            if (matches.length > 1) {
+                // 標準 [time]A[time]B 逐字
+                const lineStartTime = matches[0].time;
                 const words = matches.map((m, idx) => {
                     const nextTime = matches[idx + 1] ? matches[idx + 1].time : m.time + 500;
                     return {
@@ -1125,27 +1179,25 @@ function parseLrcFormat(lrcString) {
                         duration: Math.max(0, nextTime - m.time)
                     };
                 });
-
                 lyrics.push({
                     time: lineStartTime,
-                    text: lineText.trim(),
+                    text: matches.map(m => m.text).join('').trim(),
                     words: words
                 });
             } else {
-                // 普通單時間戳行
+                // 單時間戳行
                 const entry = matches[0];
-                if (entry.text && entry.text.trim().length > 0) {
-                    lyrics.push({
-                        time: entry.time,
-                        text: entry.text.trim()
-                    });
+                const cleanText = entry.text.replace(/<[^>]*>/g, '').trim();
+                if (cleanText) {
+                    lyrics.push({ time: entry.time, text: cleanText });
                 }
             }
         } else if (!isLrc && trimmedLine) {
-            // If no time stamps found, treat as plain lyrics
-            lyrics.push({
-                text: trimmedLine
-            });
+            // 無時間戳行
+            const cleanText = trimmedLine.replace(/<[^>]*>/g, '').trim();
+            if (cleanText) {
+                lyrics.push({ text: cleanText });
+            }
         }
     }
     
@@ -1966,8 +2018,9 @@ function parseLrcFormat(lrcText) {
         }
         
         try {
-            // 檢查是否為逐字歌詞格式 (一行中包含多個時間戳)
+            // 1. 提取 [mm:ss.xx] 標籤
             const wordLevelRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]([^\[]*)/g;
+            const tagWordRegex = /<(\d+),(\d+),\d+>([^<]*)/g;
             let matches = [];
             let match;
             
@@ -1980,12 +2033,71 @@ function parseLrcFormat(lrcText) {
                 matches.push({ time, text });
             }
 
+            // 2. 處理解析結果
+            if (matches.length === 0 && tagWordRegex.test(trimmedLine)) {
+                // 純 <off,dur,0> 格式
+                let allWords = [];
+                tagWordRegex.lastIndex = 0;
+                while ((match = tagWordRegex.exec(trimmedLine)) !== null) {
+                    allWords.push({
+                        time: parseInt(match[1]),
+                        duration: parseInt(match[2]),
+                        text: match[3]
+                    });
+                }
+                if (allWords.length > 0) {
+                    hasTimeStamps = true;
+                    lyrics.push({
+                        time: allWords[0].time,
+                        text: allWords.map(w => w.text).join('').trim(),
+                        words: allWords,
+                        originalLine: line,
+                        lineNumber: i + 1
+                    });
+                    successfulParses++;
+                    continue;
+                }
+            }
+
             if (matches.length > 0) {
                 hasTimeStamps = true;
-                if (matches.length > 1) {
-                    // 逐字歌詞處理
+                
+                // 檢查是否包含逐字標籤 <off,dur,0>
+                if (tagWordRegex.test(trimmedLine)) {
                     const lineStartTime = matches[0].time;
-                    const lineText = matches.map(m => m.text).join('');
+                    let allWords = [];
+                    matches.forEach(m => {
+                        let subMatch;
+                        let foundSub = false;
+                        tagWordRegex.lastIndex = 0;
+                        while ((subMatch = tagWordRegex.exec(m.text)) !== null) {
+                            allWords.push({
+                                time: m.time + parseInt(subMatch[1]),
+                                duration: parseInt(subMatch[2]),
+                                text: subMatch[3]
+                            });
+                            foundSub = true;
+                        }
+                        if (!foundSub && m.text.trim()) {
+                            allWords.push({ time: m.time, text: m.text, duration: 500 });
+                        }
+                    });
+                    if (allWords.length > 0) {
+                        lyrics.push({
+                            time: lineStartTime,
+                            text: allWords.map(w => w.text).join('').trim(),
+                            words: allWords,
+                            originalLine: line,
+                            lineNumber: i + 1
+                        });
+                        successfulParses++;
+                        continue;
+                    }
+                }
+
+                if (matches.length > 1) {
+                    // 標準 [time]A[time]B 逐字
+                    const lineStartTime = matches[0].time;
                     const words = matches.map((m, idx) => {
                         const nextTime = matches[idx + 1] ? matches[idx + 1].time : m.time + 500;
                         return {
@@ -1994,21 +2106,21 @@ function parseLrcFormat(lrcText) {
                             duration: Math.max(0, nextTime - m.time)
                         };
                     });
-
                     lyrics.push({
                         time: lineStartTime,
-                        text: lineText.trim(),
+                        text: matches.map(m => m.text).join('').trim(),
                         words: words,
                         originalLine: line,
                         lineNumber: i + 1
                     });
                 } else {
-                    // 普通單時間戳行
+                    // 單時間戳行
                     const entry = matches[0];
-                    if (entry.text && entry.text.trim().length > 0) {
+                    const cleanText = entry.text.replace(/<[^>]*>/g, '').trim();
+                    if (cleanText) {
                         lyrics.push({
                             time: entry.time,
-                            text: entry.text.trim(),
+                            text: cleanText,
                             originalLine: line,
                             lineNumber: i + 1
                         });

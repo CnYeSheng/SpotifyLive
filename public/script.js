@@ -4631,8 +4631,9 @@ showOffsetMessage() {
             }
             
             try {
-                // 檢查是否為逐字歌詞格式 (一行中包含多個時間戳)
+                // 1. 提取所有 [mm:ss.xx] 標籤及其後的文本
                 const wordLevelRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]([^\[]*)/g;
+                const tagWordRegex = /<(\d+),(\d+),\d+>([^<]*)/g;
                 let matches = [];
                 let match;
                 
@@ -4641,18 +4642,82 @@ showOffsetMessage() {
                     const secs = parseInt(match[2]);
                     const ms = match[3] ? parseInt(match[3].padEnd(3, '0')) : 0;
                     const time = (mins * 60 + secs) * 1000 + ms;
-                    const text = match[4]; // 不需要 trim，保留空格
+                    const text = match[4]; 
                     matches.push({ time, text });
+                }
+
+                // 2. 處理解析結果
+                if (matches.length === 0 && tagWordRegex.test(trimmedLine)) {
+                    // 特殊情況：行首無 [time] 但包含 <off,dur,0> 標籤
+                    let allWords = [];
+                    tagWordRegex.lastIndex = 0;
+                    while ((match = tagWordRegex.exec(trimmedLine)) !== null) {
+                        allWords.push({
+                            time: parseInt(match[1]),
+                            duration: parseInt(match[2]),
+                            text: match[3]
+                        });
+                    }
+                    if (allWords.length > 0) {
+                        hasTimeStamps = true;
+                        lyrics.push({
+                            time: allWords[0].time,
+                            text: allWords.map(w => w.text).join('').trim(),
+                            words: allWords,
+                            originalLine: line,
+                            lineNumber: i + 1
+                        });
+                        successfulParses++;
+                        continue;
+                    }
                 }
 
                 if (matches.length > 0) {
                     hasTimeStamps = true;
-                    if (matches.length > 1) {
-                        // 逐字歌詞處理
+                    
+                    // 檢查是否包含逐字標籤 <off,dur,0>
+                    if (tagWordRegex.test(trimmedLine)) {
                         const lineStartTime = matches[0].time;
-                        const lineText = matches.map(m => m.text).join('');
+                        let allWords = [];
                         
-                        // 計算每個詞的持續時間 (duration)
+                        matches.forEach(m => {
+                            let subMatch;
+                            let foundSubInBlock = false;
+                            tagWordRegex.lastIndex = 0;
+                            while ((subMatch = tagWordRegex.exec(m.text)) !== null) {
+                                allWords.push({
+                                    time: m.time + parseInt(subMatch[1]),
+                                    duration: parseInt(subMatch[2]),
+                                    text: subMatch[3]
+                                });
+                                foundSubInBlock = true;
+                            }
+                            // 如果該區塊沒有 <...> 標籤但有文字，當作普通片段
+                            if (!foundSubInBlock && m.text.trim()) {
+                                allWords.push({
+                                    time: m.time,
+                                    text: m.text,
+                                    duration: 500
+                                });
+                            }
+                        });
+
+                        if (allWords.length > 0) {
+                            lyrics.push({
+                                time: lineStartTime,
+                                text: allWords.map(w => w.text).join('').trim(),
+                                words: allWords,
+                                originalLine: line,
+                                lineNumber: i + 1
+                            });
+                            successfulParses++;
+                            continue;
+                        }
+                    }
+
+                    // 處理標準逐字格式 [time]A[time]B
+                    if (matches.length > 1) {
+                        const lineStartTime = matches[0].time;
                         const words = matches.map((m, idx) => {
                             const nextTime = matches[idx + 1] ? matches[idx + 1].time : m.time + 500;
                             return {
@@ -4664,18 +4729,19 @@ showOffsetMessage() {
 
                         lyrics.push({
                             time: lineStartTime,
-                            text: lineText.trim(),
+                            text: matches.map(m => m.text).join('').trim(),
                             words: words,
                             originalLine: line,
                             lineNumber: i + 1
                         });
                     } else {
-                        // 普通單時間戳行
+                        // 普通單時間戳行 (清理可能殘留的標籤)
                         const entry = matches[0];
-                        if (entry.text && entry.text.trim().length > 0) {
+                        const cleanText = entry.text.replace(/<[^>]*>/g, '').trim();
+                        if (cleanText.length > 0) {
                             lyrics.push({
                                 time: entry.time,
-                                text: entry.text.trim(),
+                                text: cleanText,
                                 originalLine: line,
                                 lineNumber: i + 1
                             });
