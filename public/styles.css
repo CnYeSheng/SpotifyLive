@@ -1407,17 +1407,18 @@ body {
     align-items: center;
     gap: 12px;
     margin-top: 16px;
-    padding: 12px;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 12px;
+    padding: 16px;
+    background: linear-gradient(135deg, rgba(29, 185, 84, 0.05), rgba(30, 215, 96, 0.03));
+    border-radius: 20px;
     backdrop-filter: blur(10px);
+    border: 1px solid rgba(29, 185, 84, 0.15);
 }
 
 .volume-slider {
     flex: 1;
-    height: 6px;
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 3px;
+    height: 8px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.25));
+    border-radius: 8px;
     outline: none;
     -webkit-appearance: none;
     appearance: none;
@@ -1426,28 +1427,43 @@ body {
 .volume-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     background: linear-gradient(135deg, #1db954, #1ed760);
     border-radius: 50%;
     cursor: pointer;
-    box-shadow: 0 2px 8px rgba(29, 185, 84, 0.3);
-    transition: all 0.2s ease;
+    box-shadow: 0 3px 12px rgba(29, 185, 84, 0.4);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .volume-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+    box-shadow: 0 5px 20px rgba(29, 185, 84, 0.6);
+}
+
+.volume-slider::-webkit-slider-thumb:active {
     transform: scale(1.1);
-    box-shadow: 0 4px 12px rgba(29, 185, 84, 0.5);
 }
 
 .volume-slider::-moz-range-thumb {
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     background: linear-gradient(135deg, #1db954, #1ed760);
     border-radius: 50%;
     cursor: pointer;
     border: none;
-    box-shadow: 0 2px 8px rgba(29, 185, 84, 0.3);
+    box-shadow: 0 3px 12px rgba(29, 185, 84, 0.4);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.volume-slider::-moz-range-thumb:hover {
+    transform: scale(1.15);
+    box-shadow: 0 5px 20px rgba(29, 185, 84, 0.6);
+}
+
+.volume-slider::-moz-range-track {
+    background: transparent;
+    border: none;
 }
 
 #volume-value {
@@ -1622,12 +1638,76 @@ body {
 /* 手機版歌詞頁面控制 */
 .mobile-lyrics-controls {
     display: none;
-    background: rgba(255, 255, 255, 0.05);
+}
+
+/* 手機版歌詞觸發按鈕 - 浮動右下角 FAB */
+.mobile-lyrics-trigger {
+    display: none;
+    position: fixed;
+    bottom: 100px;
+    right: 20px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #1db954, #1ed760);
+    border: none;
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+    z-index: 1100;
+    box-shadow: 0 4px 16px rgba(29, 185, 84, 0.4);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mobile-lyrics-trigger:active {
+    transform: scale(0.95);
+    box-shadow: 0 2px 8px rgba(29, 185, 84, 0.3);
+}
+
+.mobile-lyrics-trigger:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(29, 185, 84, 0.5);
+}
+
+/* 手機版歌詞面板 */
+.mobile-lyrics-panel {
+    display: none;
+    position: fixed;
+    bottom: 170px;
+    right: 20px;
+    background: rgba(25, 25, 25, 0.95);
+    backdrop-filter: blur(15px);
     border-radius: 16px;
-    padding: 20px;
-    margin-bottom: 24px;
-    backdrop-filter: blur(10px);
+    padding: 16px;
     border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    z-index: 1090;
+    max-width: 300px;
+    animation: slideUpPanel 0.3s ease-out;
+}
+
+.mobile-lyrics-panel.show {
+    display: block;
+}
+
+@keyframes slideUpPanel {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.mobile-lyrics-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
 }
 
 .mobile-track-info {
@@ -1646,6 +1726,75 @@ body {
     margin: 0;
     font-size: 0.9rem;
     color: var(--text-secondary);
+}
+
+/* 手機版歌詞按鈕 */
+.mobile-lyrics-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: none;
+    border-radius: 12px;
+    color: white;
+    padding: 12px 8px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+    touch-action: manipulation;
+}
+
+.mobile-lyrics-btn:active {
+    transform: scale(0.95);
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.mobile-lyrics-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    transform: translateY(-2px);
+}
+
+.mobile-lyrics-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* 手機版同步區塊 */
+.mobile-sync-section {
+    grid-column: 1 / -1;
+    background: rgba(29, 185, 84, 0.1);
+    border-radius: 12px;
+    padding: 12px;
+    border: 1px solid rgba(29, 185, 84, 0.2);
+}
+
+.mobile-sync-toggle {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.mobile-sync-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+}
+
+.sync-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.3);
+    transition: all 0.3s ease;
+}
+
+.sync-dot.active {
+    background: #1db954;
+    box-shadow: 0 0 8px rgba(29, 185, 84, 0.6);
 }
 
 .mobile-player-controls {
@@ -2001,36 +2150,9 @@ body {
         display: none !important;
     }
 
-    /* 新的手機版歌詞控制 FAB - 默認隱藏 (桌面端) */
-    .mobile-fab-btn {
-        display: none; /* 桌面端隱藏 */
-        position: fixed;
-        bottom: 90px;
-        right: 20px;
-        width: 48px;
-        height: 48px;
-        border-radius: 50%;
-        background: rgba(30, 30, 30, 0.8);
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        color: white;
-        font-size: 20px;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        z-index: 1100;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-    }
-
-    .mobile-fab-btn:active {
-        transform: scale(0.95);
-        background: rgba(50, 50, 50, 0.9);
-    }
-
-    /* 手機端樣式 */
+    /* 手機端樣式 - 顯示手機版控制 */
     @media (max-width: 767px) {
-        .mobile-fab-btn {
+        .mobile-lyrics-trigger {
             display: flex; /* 手機端顯示 */
         }
         
