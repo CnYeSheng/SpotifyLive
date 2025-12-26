@@ -25,6 +25,8 @@ class SpotifyLyricsPlayer {
         this.lyrics = [];
         this.lyricsType = 'plain';
         this.currentLyricIndex = 0;
+        this._lastScrolledIndex = -1; // 追蹤上次滾動的歌詞索引，防止重複滾動
+        this._scrollTimeout = null; // 滾動防抖定時器
         this.autoScroll = true;
         this.fontSize = 'medium';
         this.updateInterval = null;
@@ -4080,7 +4082,10 @@ async loadLyrics() {
     displayLyrics() {
         if (!this.lyrics || this.lyrics.length === 0) return;
 
-        // ✨ 核心優化：渲染前強制標準化
+        // 重置滾動索引，避免新歌詞時出現舊的滾動位置
+        this._lastScrolledIndex = -1;
+
+        // ? 新的合並邏輯：統一接納列表或字符串
         this.lyrics = this.standardizeLyrics(this.lyrics);
 
         const lyricsHTML = this.lyrics.map((line, index) => {
@@ -4243,12 +4248,30 @@ async loadLyrics() {
                     });
                 }
                 
-                if (this.autoScroll) {
-                    currentLine.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'center',
-                        inline: 'nearest'
-                    });
+                if (this.autoScroll && this.currentLyricIndex !== this._lastScrolledIndex) {
+                    // 只有當歌詞行真正改變時才滾動，避免重複滾動導致跳動
+                    this._lastScrolledIndex = this.currentLyricIndex;
+                    
+                    // 清除之前的滾動定時器
+                    if (this._scrollTimeout) {
+                        clearTimeout(this._scrollTimeout);
+                    }
+                    
+                    // 使用防抖延遲滾動，避免頻繁滾動導致的抖動
+                    this._scrollTimeout = setTimeout(() => {
+                        try {
+                            if (currentLine && this.lyricsContent.contains(currentLine)) {
+                                currentLine.scrollIntoView({
+                                    behavior: 'smooth',
+                                    block: 'center',
+                                    inline: 'nearest'
+                                });
+                            }
+                        } catch (e) {
+                            // 忽略滾動錯誤
+                        }
+                        this._scrollTimeout = null;
+                    }, 50); // 50ms 防抖延遲
                 }
             }
         }
