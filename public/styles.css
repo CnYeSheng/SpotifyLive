@@ -2001,9 +2001,9 @@ body {
         display: none !important;
     }
 
-    /* 新的手機版歌詞控制 FAB */
+    /* 新的手機版歌詞控制 FAB - 默認隱藏 (桌面端) */
     .mobile-fab-btn {
-        display: flex;
+        display: none; /* 桌面端隱藏 */
         position: fixed;
         bottom: 90px;
         right: 20px;
@@ -2026,6 +2026,26 @@ body {
     .mobile-fab-btn:active {
         transform: scale(0.95);
         background: rgba(50, 50, 50, 0.9);
+    }
+
+    /* 手機端樣式 */
+    @media (max-width: 767px) {
+        .mobile-fab-btn {
+            display: flex; /* 手機端顯示 */
+        }
+        
+        /* 確保歌詞控制面板在手機端正確定位 */
+        .lyrics-controls {
+            right: -300px !important;
+            top: auto !important;
+            bottom: 150px !important;
+            width: auto !important;
+            min-width: 160px;
+        }
+        
+        .lyrics-controls.mobile-visible {
+            right: 20px !important;
+        }
     }
 
     /* 更新歌詞控制面板樣式 - 改為浮動面板 */

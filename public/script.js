@@ -4129,33 +4129,53 @@ async loadLyrics() {
     updateLyricsHighlight(currentTime) {
         if (!this.lyrics || this.lyrics.length === 0) return;
 
+        // 初始化上一幀時間，用於防抖
+        if (this._lastHighlightTime === undefined) {
+            this._lastHighlightTime = 0;
+        }
+
         let targetIndex = -1;
 
         if (currentTime !== undefined) {
+            // 檢測是否為 Seek 操作 (時間跳變超過 1秒)
+            const isSeek = Math.abs(currentTime - this._lastHighlightTime) > 1000;
+            
+            // 如果不是 Seek 且時間倒退 (抖動)，則忽略此次更新
+            if (!isSeek && currentTime < this._lastHighlightTime) {
+                return;
+            }
+            
+            this._lastHighlightTime = currentTime;
+
             if (this.lyricsType === 'synced') {
                 // 更加穩定的同步邏輯：尋找最後一行時間小於等於當前時間的歌詞
-                // 避免跳動問題，移除複雜的容錯和距離計算
-                // 重置 targetIndex 為當前索引，避免不必要的跳回 -1
-                targetIndex = this.currentLyricIndex || -1;
+                targetIndex = this.currentLyricIndex !== undefined ? this.currentLyricIndex : -1;
                 
-                // 從頭開始找，或者從當前索引附近找（為了簡單穩定，這裡從頭遍歷，對於幾十行歌詞性能影響可忽略）
-                let found = -1;
-                for (let i = 0; i < this.lyrics.length; i++) {
-                    const line = this.lyrics[i];
-                    // 給予 200ms 的寬容度，讓顯示更自然
-                    if (line.time !== undefined && line.time <= currentTime + 200) { 
-                        found = i;
-                    } else if (line.time !== undefined && line.time > currentTime + 200) {
-                        // 因為歌詞是按時間排序的，一旦超過當前時間，後面的都不用看了
-                        break;
+                // 只有當前時間大於第一句歌詞時間才開始匹配
+                if (currentTime >= (this.lyrics[0]?.time || 0)) {
+                    // 從當前索引開始向後找，優化性能
+                    let searchStartIndex = Math.max(0, targetIndex);
+                    // 如果 Seek 了，或者時間倒退了(雖然上面防抖了，但邏輯上要嚴謹)，從頭找
+                    if (isSeek || currentTime < (this.lyrics[targetIndex]?.time || 0)) {
+                        searchStartIndex = 0;
                     }
-                }
-                
-                // 只有當找到新的行時才更新
-                if (found !== -1) {
-                    targetIndex = found;
-                } else if (currentTime < (this.lyrics[0]?.time || 0)) {
-                    // 如果時間小於第一行，設為 -1 (或 0，視需求而定，這裡保持 -1 等待開始)
+
+                    // 遍歷尋找最佳匹配
+                    for (let i = searchStartIndex; i < this.lyrics.length; i++) {
+                        const line = this.lyrics[i];
+                        const nextLine = this.lyrics[i + 1];
+                        
+                        // 匹配條件：當前行時間 <= currentTime < 下一行時間 (或沒有下一行)
+                        // 給予 200ms 的提前量，讓顯示更自然
+                        if (line.time !== undefined && line.time <= currentTime + 200) {
+                            if (!nextLine || !nextLine.time || nextLine.time > currentTime + 200) {
+                                targetIndex = i;
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    // 時間還沒到第一句
                     targetIndex = -1;
                 }
                 
@@ -4170,7 +4190,10 @@ async loadLyrics() {
             }
             
             if (this.autoScroll) {
-                this.currentLyricIndex = targetIndex;
+                // 只有當索引真正改變時才更新，減少 DOM 操作
+                if (this.currentLyricIndex !== targetIndex) {
+                    this.currentLyricIndex = targetIndex;
+                }
             }
         }
 
