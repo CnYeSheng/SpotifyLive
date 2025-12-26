@@ -4091,55 +4091,36 @@ async loadLyrics() {
 
         if (currentTime !== undefined) {
             if (this.lyricsType === 'synced') {
-                // 增強的同步歌詞邏輯，添加0秒延遲
-                const delayedTime = currentTime - 0; // 延遲1秒
-                let bestMatch = -1;
-                let minDistance = Infinity;
+                // 更加穩定的同步邏輯：尋找最後一行時間小於等於當前時間的歌詞
+                // 避免跳動問題，移除複雜的容錯和距離計算
+                // 重置 targetIndex 為當前索引，避免不必要的跳回 -1
+                targetIndex = this.currentLyricIndex || -1;
                 
+                // 從頭開始找，或者從當前索引附近找（為了簡單穩定，這裡從頭遍歷，對於幾十行歌詞性能影響可忽略）
+                let found = -1;
                 for (let i = 0; i < this.lyrics.length; i++) {
                     const line = this.lyrics[i];
-                    if (!line.time) continue; // 跳過沒有時間戳的行
-                    
-                    const nextLine = this.lyrics[i + 1];
-                    const tolerance = 300; // 增加容錯範圍到300ms
-                    
-                    // 檢查延遲後的時間是否在這一行的時間範圍內
-                    if (line.time <= delayedTime + tolerance) {
-                        if (!nextLine || !nextLine.time || nextLine.time > delayedTime + tolerance) {
-                            targetIndex = i;
-                            break;
-                        } else {
-                            // 如果在兩行之間，選擇距離更近的
-                            const distanceToCurrent = Math.abs(delayedTime - line.time);
-                            const distanceToNext = Math.abs(delayedTime - nextLine.time);
-                            
-                            if (distanceToCurrent < minDistance) {
-                                minDistance = distanceToCurrent;
-                                bestMatch = i;
-                            }
-                        }
+                    // 給予 200ms 的寬容度，讓顯示更自然
+                    if (line.time !== undefined && line.time <= currentTime + 200) { 
+                        found = i;
+                    } else if (line.time !== undefined && line.time > currentTime + 200) {
+                        // 因為歌詞是按時間排序的，一旦超過當前時間，後面的都不用看了
+                        break;
                     }
                 }
                 
-                // 如果沒有找到精確匹配，使用最佳匹配
-                if (targetIndex === -1 && bestMatch !== -1) {
-                    targetIndex = bestMatch;
+                // 只有當找到新的行時才更新
+                if (found !== -1) {
+                    targetIndex = found;
+                } else if (currentTime < (this.lyrics[0]?.time || 0)) {
+                    // 如果時間小於第一行，設為 -1 (或 0，視需求而定，這裡保持 -1 等待開始)
+                    targetIndex = -1;
                 }
                 
-                // 如果還是沒有找到，使用最後一個已過時間的歌詞行
-                if (targetIndex === -1) {
-                    for (let i = this.lyrics.length - 1; i >= 0; i--) {
-                        const line = this.lyrics[i];
-                        if (line.time && line.time <= delayedTime) {
-                            targetIndex = i;
-                            break;
-                        }
-                    }
-                }
             } else {
-                // 普通歌詞的時間估算邏輯，也添加1.5秒延遲
+                // 普通歌詞的時間估算邏輯
                 if (this.currentTrack && this.currentTrack.duration > 0) {
-                    const timeOffset = 500 + 1000; // 原有500ms + 新增1000ms延遲
+                    const timeOffset = 500; 
                     const adjustedProgress = Math.max(0, (currentTime - timeOffset) / this.currentTrack.duration);
                     targetIndex = Math.floor(adjustedProgress * this.lyrics.length);
                     targetIndex = Math.max(0, Math.min(targetIndex, this.lyrics.length - 1));
@@ -4478,70 +4459,38 @@ showOffsetMessage() {
 
     // 手機版歌詞控制觸發方法
     initMobileLyricsControlsTrigger() {
-        if (this.isMobile) {
-            const lyricsControls = document.querySelector('.lyrics-controls');
-            if (lyricsControls) {
-                // 點擊觸發按鈕顯示/隱藏控制面板
-                lyricsControls.addEventListener('click', (e) => {
-                    // 使用更簡單的觸發機制 - 點擊右側邊緣35px區域
-                    const windowWidth = window.innerWidth;
-                    const clickX = e.clientX;
+        // 新版 FAB 觸發邏輯
+        const mobileToggle = document.getElementById('mobile-lyrics-toggle-btn');
+        if (mobileToggle) {
+            mobileToggle.addEventListener('click', (e) => {
+                e.stopPropagation(); // 防止冒泡
+                const controls = document.querySelector('.lyrics-controls');
+                if (controls) {
+                    controls.classList.toggle('mobile-visible');
                     
-                    // 檢查是否點擊了右側觸發區域
-                    if (clickX >= windowWidth - 35) {
-                        e.preventDefault();
-                        lyricsControls.classList.toggle('mobile-show');
-                        
-                        // 3秒後自動隱藏
+                    // 切換按鈕圖標
+                    const isVisible = controls.classList.contains('mobile-visible');
+                    mobileToggle.innerHTML = isVisible ? '✕' : '⚙️';
+                    
+                    // 如果顯示了，點擊其他地方可以關閉
+                    if (isVisible) {
+                        const closeHandler = (ev) => {
+                            if (!controls.contains(ev.target) && ev.target !== mobileToggle) {
+                                controls.classList.remove('mobile-visible');
+                                mobileToggle.innerHTML = '⚙️';
+                                document.removeEventListener('click', closeHandler);
+                            }
+                        };
+                        // 延遲添加監聽器，避免立即觸發
                         setTimeout(() => {
-                            lyricsControls.classList.remove('mobile-show');
-                        }, 3000);
+                            document.addEventListener('click', closeHandler);
+                        }, 100);
                     }
-                });
-                
-                // 添加全局觸發按鈕點擊監聽
-                document.addEventListener('click', (e) => {
-                    const windowWidth = window.innerWidth;
-                    const windowHeight = window.innerHeight;
-                    const clickX = e.clientX;
-                    const clickY = e.clientY;
-                    
-                    // 檢查是否點擊了圓形觸發按鈕區域 (右側8-56px, 垂直居中±30px)
-                    const buttonCenterX = windowWidth - 32; // 按鈕中心X座標
-                    const buttonCenterY = windowHeight / 2; // 按鈕中心Y座標
-                    const buttonRadius = 30; // 點擊半徑稍微放大
-                    
-                    const distance = Math.sqrt(
-                        Math.pow(clickX - buttonCenterX, 2) + 
-                        Math.pow(clickY - buttonCenterY, 2)
-                    );
-                    
-                    if (distance <= buttonRadius) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        
-                        // 添加點擊動畫效果
-                        const trigger = document.querySelector('.lyrics-controls::before');
-                        
-                        lyricsControls.classList.toggle('mobile-show');
-                        
-                        // 3秒後自動隱藏
-                        setTimeout(() => {
-                            lyricsControls.classList.remove('mobile-show');
-                        }, 3000);
-                    }
-                });
-                
-                // 點擊控制按鈕後隱藏面板
-                const controlBtns = lyricsControls.querySelectorAll('.lyrics-control-btn');
-                controlBtns.forEach(btn => {
-                    btn.addEventListener('click', () => {
-                        setTimeout(() => {
-                            lyricsControls.classList.remove('mobile-show');
-                        }, 500);
-                    });
-                });
-            }
+                }
+            });
+            
+            // 點擊控制按鈕後（如果不是 toggle 類型的），可以在操作後自動關閉（可選）
+            // 這裡暫不自動關閉，因為用戶可能想連續操作（如調整時間）
         }
     }
 
