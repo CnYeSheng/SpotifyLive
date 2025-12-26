@@ -201,11 +201,20 @@ class SpotifyLyricsPlayer {
     initAutoSync() {
         // 從 localStorage 讀取同步間隔設定，預設為 5 分鐘
         this.autoSyncInterval = parseInt(localStorage.getItem('auto_sync_interval')) || 300000; // 5分鐘
-        this.autoSyncEnabled = localStorage.getItem('auto_sync_enabled') !== 'false'; // 預設開啟
+        
+        // ✨ 核心修復：正確讀取布爾值，確保狀態持久化
+        const storedEnabled = localStorage.getItem('auto_sync_enabled');
+        this.autoSyncEnabled = storedEnabled === null ? true : storedEnabled === 'true';
         this.lastSyncTime = parseInt(localStorage.getItem('last_sync_time')) || 0;
         
         this.log(`🔄 自動同步設定 - 間隔: ${this.autoSyncInterval/1000}秒, 啟用: ${this.autoSyncEnabled}`);
         
+        // ✨ 核心修復：同步 UI 狀態
+        const toggleBtn = document.getElementById('auto-sync-toggle');
+        if (toggleBtn) {
+            toggleBtn.checked = this.autoSyncEnabled;
+        }
+
         if (this.autoSyncEnabled) {
             this.startAutoSync();
         }
@@ -259,10 +268,12 @@ class SpotifyLyricsPlayer {
         }
 
         this.log('🔄 開始自動同步...');
+        let syncedCount = 0;
         
         try {
             // 1. 同步歌詞數據 (雙向同步)
-            await this.syncLyricsData();
+            const lyricsCount = await this.syncLyricsData();
+            syncedCount += (lyricsCount || 0);
             
             // 2. 同步時間調整數據 (雙向同步)
             await this.syncTimeAdjustments();
@@ -274,6 +285,19 @@ class SpotifyLyricsPlayer {
             }
             
             this.log('✅ 自動同步完成');
+
+            // ✨ 新增：顯示同步成功通知 (如果有新數據)
+            if (syncedCount > 0) {
+                const timeStr = new Date().toLocaleTimeString();
+                this.showSuccessMessage(`🔄 [${timeStr}] 已同步 ${syncedCount} 首歌詞`);
+            }
+
+            // ✨ 新增：刷新用戶自定義歌詞管理界面 (如果已打開)
+            if (document.getElementById('user-lyrics-manager-modal')?.style.display !== 'none') {
+                if (typeof this.populateUserLyricsManagerContent === 'function') {
+                     this.populateUserLyricsManagerContent();
+                }
+            }
             
         } catch (error) {
             this.log(`❌ 自動同步失敗: ${error.message}`);
@@ -309,10 +333,10 @@ class SpotifyLyricsPlayer {
                 headers: { 'X-Session-Id': this.sessionId }
             });
             
+            let newCount = 0;
             if (downloadResponse.ok) {
                 const data = await downloadResponse.json();
                 if (data.data && Array.isArray(data.data)) {
-                    let newCount = 0;
                     data.data.forEach(lyricData => {
                         const cacheKey = this.generateTrackCacheKey(lyricData.trackInfo);
                         if (!this.savedLyrics.has(cacheKey)) {
@@ -327,8 +351,10 @@ class SpotifyLyricsPlayer {
                     }
                 }
             }
+            return newCount; // ✨ 新增：返回下載數量
         } catch (error) {
             this.log(`❌ 歌詞同步失敗: ${error.message}`);
+            return 0;
         }
     }
 
@@ -3786,26 +3812,42 @@ async loadLyrics() {
     const trackKey = `${this.currentTrack.id}-${this.currentTrack.name}-${this.currentTrack.artist}`;
     console.log(`🎤 请求歌词: ${this.currentTrack.artist} - ${this.currentTrack.name}`);
     
-    // 检查是否已有该歌曲的歌词
+    // ✨ 核心优化：立即检查缓存和保存的歌词
+    // 优先检查保存的歌词 (KV Storage / Local Storage)
+    if (window.lyricsStorageManager) {
+        try {
+            // 同步检查内存缓存或快速本地存储
+            const savedLyrics = await window.lyricsStorageManager.getUserLyrics(this.currentTrack);
+            if (savedLyrics) {
+                this.lyrics = savedLyrics.lyrics;
+                this.lyricsType = savedLyrics.lyricsType;
+                this.currentLyricsTrackId = this.currentTrack.id;
+                
+                // 载入时间偏移
+                const savedOffset = await window.lyricsStorageManager.getLyricsTimeOffset(this.currentTrack);
+                if (savedOffset !== 0) {
+                    this.lyricsTimeOffset = savedOffset;
+                }
+                
+                this.displayLyrics();
+                this.updateStatus('lyrics', true);
+                console.log(`✅ [Instant Load] 已立即使用保存的歌词: ${savedLyrics.source}`);
+                return; // 直接返回，不进行 API 请求
+            }
+        } catch (e) {
+            console.warn('快速读取歌词失败:', e);
+        }
+    }
+
+    // 检查是否已有该歌曲的歌词 (内存中)
     if (this.lyrics && this.lyrics.length > 0 && 
         this.currentLyricsTrackId === this.currentTrack.id &&
         this.currentLyricsTrackId !== null) {
-        console.log('✅ 歌词已存在，跳过载入');
-        
-        // ✨ 关键：载入保存的时间偏移
-        if (window.lyricsStorageManager) {
-            const savedOffset = await window.lyricsStorageManager
-                .getLyricsTimeOffset(this.currentTrack);
-            if (savedOffset !== 0) {
-                this.lyricsTimeOffset = savedOffset;
-                console.log(`✅ 已载入保存的时间偏移: ${savedOffset}ms`);
-            }
-        }
-        
+        console.log('✅ [Memory] 歌词已在内存中，跳过载入');
         return;
     }
     
-    this.log(`🎤 开始载入歌词: ${this.currentTrack.name} - ${this.currentTrack.artist}`);
+    this.log(`🎤 开始载入歌词 (API): ${this.currentTrack.name} - ${this.currentTrack.artist}`);
 
     if (this.isLoadingLyrics) {
         console.log('⏳ 歌词载入中，跳过重复请求');

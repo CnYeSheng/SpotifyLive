@@ -688,6 +688,64 @@ function initLyricsManager() {
         }
     });
 
+    // 批量調整歌詞時間
+    SpotifyLyricsPlayer.prototype.shiftLyrics = function(offsetMs) {
+        const toggle = document.getElementById('edit-mode-toggle');
+        const currentMode = toggle.dataset.mode; // 'visual' or 'text'
+        
+        if (currentMode === 'visual') {
+            // 視覺模式調整
+            const lines = document.querySelectorAll('.lyric-line-editor');
+            lines.forEach(line => {
+                const timeInput = line.querySelector('.timestamp-input');
+                if (timeInput && timeInput.value) {
+                    let time = this.parseTimeString(timeInput.value);
+                    if (time !== undefined) {
+                        time = Math.max(0, time + offsetMs);
+                        timeInput.value = this.formatTime(time);
+                    }
+                }
+            });
+        } else {
+            // 文本模式調整
+            const textEditor = document.getElementById('text-lyrics-editor');
+            if (!textEditor) return;
+            
+            const content = textEditor.value;
+            const lines = content.split('\n');
+            const newLines = lines.map(line => {
+                // 匹配 [mm:ss.xx] 格式
+                return line.replace(/\[(\d{1,2}):(\d{2})(?:[\.:](\d{1,3}))?\]/g, (match, m, s, ms) => {
+                    const minutes = parseInt(m);
+                    const seconds = parseInt(s);
+                    const milliseconds = ms ? parseInt(ms.padEnd(3, '0')) : 0;
+                    let timeMs = minutes * 60000 + seconds * 1000 + milliseconds;
+                    
+                    timeMs = Math.max(0, timeMs + offsetMs);
+                    
+                    const newMin = Math.floor(timeMs / 60000);
+                    const newSec = Math.floor((timeMs % 60000) / 1000);
+                    const newMs = Math.floor((timeMs % 1000) / 10);
+                    
+                    return `[${newMin.toString().padStart(2, '0')}:${newSec.toString().padStart(2, '0')}.${newMs.toString().padStart(2, '0')}]`;
+                });
+            });
+            
+            textEditor.value = newLines.join('\n');
+        }
+        
+        this.showSuccessMessage(`已將所有時間戳${offsetMs > 0 ? '延後' : '提前'} ${Math.abs(offsetMs/1000)}秒`);
+    };
+
+    // 事件綁定 (續)
+    document.getElementById('shift-lyrics-back')?.addEventListener('click', () => {
+        if (window.player) window.player.shiftLyrics(-500);
+    });
+
+    document.getElementById('shift-lyrics-forward')?.addEventListener('click', () => {
+        if (window.player) window.player.shiftLyrics(500);
+    });
+
     // 模態框背景點擊關閉
     document.getElementById('lyrics-upload-modal')?.addEventListener('click', (e) => {
         if (e.target.id === 'lyrics-upload-modal' && window.player) {

@@ -515,23 +515,28 @@
             
             <div class="edit-section">
                 <div class="edit-toolbar">
-                    <button id="edit-mode-toggle" class="mode-toggle-btn" data-mode="visual">視覺編輯</button>
-                    <button id="add-timestamp-btn" class="toolbar-btn" title="添加時間戳">⏱️</button>
-                    <button id="sync-with-playback-btn" class="toolbar-btn" title="與播放同步">🎵</button>
-                    <button id="clear-timestamps-btn" class="toolbar-btn" title="清除所有時間戳">🗑️</button>
+                    <button id="edit-mode-toggle" class="mode-toggle-btn" data-mode="text">切換模式</button>
+                    <div class="shift-controls">
+                        <span class="toolbar-label">整體偏移:</span>
+                        <button id="shift-lyrics-back" class="toolbar-btn" title="整體提前 0.5s">⏪ -0.5s</button>
+                        <button id="shift-lyrics-forward" class="toolbar-btn" title="整體延後 0.5s">⏩ +0.5s</button>
+                    </div>
                 </div>
                 
-                <div id="visual-edit-container" class="edit-container">
+                <div id="visual-edit-container" class="edit-container" style="display: none;">
                     <div id="visual-lyrics-editor" class="visual-editor"></div>
                 </div>
                 
-                <div id="text-edit-container" class="edit-container" style="display: none;">
-                    <textarea id="text-lyrics-editor" class="text-editor"></textarea>
+                <div id="text-edit-container" class="edit-container" style="display: block;">
+                    <textarea id="text-lyrics-editor" class="text-editor" placeholder="在此貼上 LRC 格式歌詞..."></textarea>
+                    <div class="editor-help">
+                        支持格式: [mm:ss.xx]歌詞內容
+                    </div>
                 </div>
                 
                 <div class="edit-actions">
                     <button id="save-edited-lyrics" class="save-btn">保存並套用</button>
-                    <button id="export-edited-lyrics" class="export-btn">導出</button>
+                    <button id="export-edited-lyrics" class="export-btn">導出 .lrc</button>
                     <button id="reset-lyrics-edit" class="reset-btn">重置</button>
                 </div>
             </div>
