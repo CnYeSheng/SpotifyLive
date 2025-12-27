@@ -3214,7 +3214,15 @@ async initializeStorage() {
                 headers['X-Session-Id'] = this.sessionId;
             }
             
-            const response = await fetch(`${this.apiBase}/api/current-track`, { headers });
+            // 添加超時控制
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            
+            const response = await fetch(`${this.apiBase}/api/current-track`, { 
+                headers,
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
             
             // 處理認證錯誤
             if (response.status === 401) {
@@ -3522,16 +3530,28 @@ async initializeStorage() {
 
         // ✨ 穩定進度處理：防止 API 延遲導致的進度回跳
         let finalProgress = data.progress;
+        
+        // 🚀 延遲補償：如果伺服器提供了數據採樣時的時間戳
+        if (data.timestamp && data.isPlaying) {
+            const latency = Date.now() - data.timestamp;
+            if (latency > 0 && latency < 15000) { // 忽略超過 15 秒的極端延遲
+                data.progress += latency;
+                this.log(`⏱️ 延遲補償: 偵測到 ${latency}ms 網絡/伺服器延遲，已自動校準進度`);
+            }
+        }
+
         if (!isNewTrack && data.isPlaying && this.currentTrack) {
             const currentEstimatedTime = (Date.now() - this.currentTrack.lastUpdated) + this.currentTrack.progress;
             const diff = data.progress - currentEstimatedTime;
             
-            // 如果 API 回報的進度與本地估算相差小於 3 秒，則保留本地估算，避免抖動
-            if (Math.abs(diff) < 3000) {
+            // 如果 API 回報的進度與本地估算相差小於 5 秒，則保留本地估算，避免抖動
+            // 由於已經做了延遲補償，這裡的 diff 應該會非常小
+            if (Math.abs(diff) < 5000) {
                 this.log(`🛡️ 偵測到微小進度抖動 (${Math.round(diff)}ms)，維持本地估算`);
                 finalProgress = currentEstimatedTime;
             } else {
                 this.log(`⏩ 偵測到較大進度跳變 (${Math.round(diff)}ms)，套用 API 進度`);
+                finalProgress = data.progress;
             }
         }
 
@@ -3904,14 +3924,6 @@ async initializeStorage() {
                 const timeDiff = Date.now() - this.currentTrack.lastUpdated;
                 elapsedTime = timeDiff + this.currentTrack.progress;
                 
-                // 🚨 關鍵修復：檢測進度異常 (如回跳或手動拖動)
-                // 如果本地估算與 API 回報差距過大 (> 5秒)，則強制同步
-                if (Math.abs(elapsedTime - this.currentTrack.progress) > 5000) {
-                    this.log(`🔄 進度偏離過大 (${Math.round(elapsedTime - this.currentTrack.progress)}ms)，強制同步`);
-                    elapsedTime = this.currentTrack.progress;
-                    this.currentTrack.lastUpdated = Date.now();
-                }
-
                 // 守衛：如果計算出的時間遠大於歌曲長度，鎖定在長度值
                 if (elapsedTime > this.currentTrack.duration) {
                     elapsedTime = this.currentTrack.duration;

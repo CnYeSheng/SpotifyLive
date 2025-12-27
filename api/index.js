@@ -346,6 +346,7 @@ app.get('/api/current-track', checkSessionValidity, async (req, res) => {
             image: track.album.images[0]?.url,
             duration: track.duration_ms,
             progress: data.progress_ms,
+            timestamp: data.timestamp || Date.now(),
             id: track.id,
             shuffle_state: data.shuffle_state,
             repeat_state: data.repeat_state,
