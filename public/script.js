@@ -36,6 +36,7 @@ class SpotifyLyricsPlayer {
         this.nextTrackPreviewTimeout = null;
         this.currentLyricsTrackId = null;
         this.isLoadingLyrics = false;
+        this.isLyricsOverridden = false;
         this.lastExtractedImageUrl = null;
         this.lastLyricsRequest = null; // 記錄最後一次歌詞請求
         this.lyricsLoadTimeout = null; // 歌詞載入超時控制
@@ -3519,12 +3520,28 @@ async initializeStorage() {
 
         this.log(`🔄 歌曲狀態: ${isNewTrack ? '新歌曲' : '相同歌曲'}, 恢復播放: ${isResumed}`);
 
+        // ✨ 穩定進度處理：防止 API 延遲導致的進度回跳
+        let finalProgress = data.progress;
+        if (!isNewTrack && data.isPlaying && this.currentTrack) {
+            const currentEstimatedTime = (Date.now() - this.currentTrack.lastUpdated) + this.currentTrack.progress;
+            const diff = data.progress - currentEstimatedTime;
+            
+            // 如果 API 回報的進度與本地估算相差小於 3 秒，則保留本地估算，避免抖動
+            if (Math.abs(diff) < 3000) {
+                this.log(`🛡️ 偵測到微小進度抖動 (${Math.round(diff)}ms)，維持本地估算`);
+                finalProgress = currentEstimatedTime;
+            } else {
+                this.log(`⏩ 偵測到較大進度跳變 (${Math.round(diff)}ms)，套用 API 進度`);
+            }
+        }
+
         // 更新 currentTrack
         this.currentTrack = data;
+        this.currentTrack.progress = finalProgress; // 使用處理後的進度
         // 🚨 確保每次獲取數據都更新時間基準，這對進度計算至關重要
         this.currentTrack.lastUpdated = Date.now(); 
         
-        this.log(`🎵 歌曲數據已更新: ${data.name || 'Unknown'} - ${data.artist || 'Unknown Artist'}`);
+        this.log(`🎵 歌曲數據已更新: ${data.name || 'Unknown'} - ${data.artist || 'Unknown Artist'} (進度: ${Math.round(finalProgress)}ms)`);
 
         try {
             if (data.user_id !== undefined || data.is_premium !== undefined) {
@@ -3605,6 +3622,7 @@ async initializeStorage() {
         // 歌词处理逻辑
         if (isNewTrack) {
             this.log('🎵 新歌曲，重置歌詞狀態並立即清理 UI');
+            this.isLyricsOverridden = false;
             // 立即清理界面，防止看到上一首
             this.lyrics = [];
             this.displayLyrics(); // 這會清空當前列表
@@ -3644,8 +3662,8 @@ async initializeStorage() {
             }
             
             // 检查歌词是否需要重新加载
-            const needsLyricsReload = !this.lyrics || this.lyrics.length === 0 || 
-                                    this.currentLyricsTrackId !== this.currentTrack.id;
+            const needsLyricsReload = !this.isLyricsOverridden && (!this.lyrics || this.lyrics.length === 0 || 
+                                    this.currentLyricsTrackId !== this.currentTrack.id);
             
             if (needsLyricsReload) {
                 this.log('🎵 需要重新載入歌詞');
@@ -3887,8 +3905,9 @@ async initializeStorage() {
                 elapsedTime = timeDiff + this.currentTrack.progress;
                 
                 // 🚨 關鍵修復：檢測進度異常 (如回跳或手動拖動)
-                // 如果計算時間比 Spotify 報告的進度快了超過 5 秒，或者倒退了，則強制同步
-                if (elapsedTime > this.currentTrack.progress + 15000 || elapsedTime < this.currentTrack.progress - 2000) {
+                // 如果本地估算與 API 回報差距過大 (> 5秒)，則強制同步
+                if (Math.abs(elapsedTime - this.currentTrack.progress) > 5000) {
+                    this.log(`🔄 進度偏離過大 (${Math.round(elapsedTime - this.currentTrack.progress)}ms)，強制同步`);
                     elapsedTime = this.currentTrack.progress;
                     this.currentTrack.lastUpdated = Date.now();
                 }
@@ -4059,6 +4078,12 @@ async loadLyrics() {
         // 🚨 關鍵校驗：獲取結果後，確認歌曲是否還是同一首
         if (!this.currentTrack || this.currentTrack.id !== currentLoadingId) {
             this.log('⚠️ 歌詞返回時歌曲已換，捨棄此結果');
+            return;
+        }
+
+        // ✨ 優先級保護：如果此時歌詞已經被其他途徑（如預加載或手動搜索）填寫，且 ID 匹配，則不再覆蓋
+        if (this.lyrics && this.lyrics.length > 0 && this.currentLyricsTrackId === currentLoadingId) {
+            this.log('✅ 歌詞已由其他來源成功載入，保持原樣以確保穩定');
             return;
         }
         
@@ -4298,8 +4323,8 @@ async loadLyrics() {
         let targetIndex = -1;
 
         if (currentTime !== undefined) {
-            // 檢測是否為 Seek 操作 (時間跳變超過 1秒)
-            const isSeek = Math.abs(currentTime - this._lastHighlightTime) > 1000;
+            // 檢測是否為 Seek 操作 (時間跳變超過 3秒，放寬閾值以增加穩定性)
+            const isSeek = Math.abs(currentTime - this._lastHighlightTime) > 3000;
             
             // 如果不是 Seek 且時間倒退 (抖動)，則忽略此次更新
             if (!isSeek && currentTime < this._lastHighlightTime) {
