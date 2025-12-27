@@ -884,10 +884,23 @@ class LyricsStorageManager {
     async getUserLyrics(trackInfo) {
         const trackKey = this.generateTrackKey(trackInfo);
 
+        // 1️⃣ 首先查 localStorage (本地/快取) - 優先權最高且響應最快
         try {
-            // 1️⃣ 查 Redis（服务端）
-            // 注意：headers 必须是 ASCII/ISO-8859-1 编码，不能包含中文字符
-            // 将 trackInfo 通过 URL 查询参数传递，而不是 header
+            const localData = this.getFromLocalStorageBackup(trackKey);
+            if (localData) {
+                console.log(`✅ [Local/Cache] 找到本地歌詞: ${trackInfo.artist} - ${trackInfo.name}`);
+                
+                // 背景異步刷新雲端數據，確保同步 (不阻塞 UI)
+                this._syncWithCloudBackground(trackKey, trackInfo, localData);
+                
+                return localData;
+            }
+        } catch (error) {
+            console.warn('⚠️ 本地讀取失敗:', error);
+        }
+
+        // 2️⃣ 若本地無數據，再查 Redis (雲端)
+        try {
             const trackInfoEncoded = encodeURIComponent(JSON.stringify(trackInfo));
             const response = await fetch(`${this.apiBase}/api/kv/user-lyrics/${trackKey}?info=${trackInfoEncoded}`, {
                 headers: { 'Content-Type': 'application/json' }
@@ -896,31 +909,58 @@ class LyricsStorageManager {
             if (response.ok) {
                 const data = await response.json();
                 if (data.data) {
-                    console.log(`✅ 从 Redis 读取歌词: ${trackInfo.artist} - ${trackInfo.name}`);
+                    console.log(`✅ [Cloud] 從 Redis 獲取歌詞: ${trackInfo.artist} - ${trackInfo.name}`);
                     
-                    // 更新最后使用时间（刷新 30 天计时器）
+                    // 同步回本地以便下次快速讀取
+                    this.saveToLocalStorageBackup(trackKey, data.data);
+                    
+                    // 更新最後使用時間
                     this.refreshLyricsExpiry(trackKey);
                     
                     return data.data;
                 }
             }
         } catch (error) {
-            console.warn('⚠️ Redis 读取失败，尝试本地:', error.message);
+            console.warn('⚠️ Redis 讀取失敗:', error.message);
         }
 
-        // 2️⃣ 再查 localStorage（本地备份）
-        try {
-            const backup = this.getFromLocalStorageBackup(trackKey);
-            if (backup) {
-                console.log(`✅ 从本地备份读取歌词: ${trackInfo.artist} - ${trackInfo.name}`);
-                return backup;
-            }
-        } catch (error) {
-            console.warn('⚠️ 本地备份读取失败:', error);
-        }
-
-        console.log(`❌ 未找到歌词: ${trackInfo.artist} - ${trackInfo.name}`);
+        console.log(`❌ 所有儲存源均未找到歌詞: ${trackInfo.artist} - ${trackInfo.name}`);
         return null;
+    }
+
+    // ✨ 內部私有方法：背景同步
+    async _syncWithCloudBackground(trackKey, trackInfo, localData) {
+        if (!navigator.onLine) return;
+        
+        try {
+            const trackInfoEncoded = encodeURIComponent(JSON.stringify(trackInfo));
+            const response = await fetch(`${this.apiBase}/api/kv/user-lyrics/${trackKey}?info=${trackInfoEncoded}`);
+            
+            if (response.ok) {
+                const cloudResult = await response.json();
+                if (cloudResult.data) {
+                    const cloudData = cloudResult.data;
+                    
+                    // 比較時間戳，如果雲端更晚更新，則更新本地
+                    if (cloudData.lastModified > (localData.lastModified || localData.timestamp || 0)) {
+                        console.log(`🔄 [Sync] 偵測到雲端有更新版本，正在同步到本地...`);
+                        this.saveToLocalStorageBackup(trackKey, cloudData);
+                        // 注意：這裡不主動刷新當前 UI，待下次加載生效，或由開發者決定是否觸發重新渲染
+                    } 
+                    // 如果本地更晚更新，則推送到雲端
+                    else if ((localData.lastModified || localData.timestamp || 0) > cloudData.lastModified) {
+                        console.log(`🔄 [Sync] 本地版本較新，正在推送到雲端...`);
+                        this.saveUserLyrics(trackInfo, localData.lyrics, localData.lyricsType, localData.source);
+                    }
+                } else {
+                    // 雲端無此數據，但本地有，則推送到雲端
+                    console.log(`🔄 [Sync] 雲端缺失數據，正在同步本地版本到雲端...`);
+                    this.saveUserLyrics(trackInfo, localData.lyrics, localData.lyricsType, localData.source);
+                }
+            }
+        } catch (e) {
+            // 靜默失敗，不影響用戶
+        }
     }
 
     // ✨ 新功能：刷新歌词过期时间（防止过期）

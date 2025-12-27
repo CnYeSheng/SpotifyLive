@@ -3979,40 +3979,17 @@ async loadLyrics() {
     const trackKey = `${this.currentTrack.id}-${this.currentTrack.name}-${this.currentTrack.artist}`;
     console.log(`🎤 请求歌词: ${this.currentTrack.artist} - ${this.currentTrack.name}`);
     
-    // ✨ 檢查是否已經預加載了該歌詞（切換歌曲時）
-    const currentTrackId = this.currentTrack.id || `${this.currentTrack.name}-${this.currentTrack.artist}`;
-    if (this.lastPreloadedTrackId === currentTrackId && this.nextSongLyrics && this.nextSongLyrics.length > 0) {
-        this.log(`⚡ 使用預加載的下一首歌詞: ${this.currentTrack.name}`);
-        this.lyrics = this.nextSongLyrics;
-        this.lyricsType = this.nextSongLyricsType;
-        this.currentLyricsTrackId = this.currentTrack.id;
-        this.displayLyrics();
-        this.updateStatus('lyrics', true);
-        
-        // 清空預加載數據後立即觸發下一首預加載
-        // 注意：不立即清空，因為用戶可能會跳回相同的歌
-        this.nextSongLyrics = null;
-        this.nextSongLyricsType = null;
-        // this.lastPreloadedTrackId = null; // 保留以便再次播放同一首時還能使用
-        
-        // 不用等待，立即開始準備下一首
-        this.preloadNextSongLyrics();
-        console.log(`⚡ [Preload Hit] 使用預加載的下一首歌詞`);
-        return;
-    }
-    
-    // ✨ 核心优化：立即检查缓存和保存的歌词
-    // 优先检查保存的歌词 (KV Storage / Local Storage)
+    // 🏆 [Priority 1] 核心優先權：檢查本地儲存與雲端同步 (StorageManager)
+    // 包含用戶手動編輯的歌詞，優先權最高
     if (window.lyricsStorageManager) {
         try {
-            // 同步检查内存缓存或快速本地存储
             const savedLyrics = await window.lyricsStorageManager.getUserLyrics(this.currentTrack);
             if (savedLyrics) {
                 this.lyrics = savedLyrics.lyrics;
                 this.lyricsType = savedLyrics.lyricsType;
                 this.currentLyricsTrackId = this.currentTrack.id;
                 
-                // 载入时间偏移
+                // 載入時間偏移
                 const savedOffset = await window.lyricsStorageManager.getLyricsTimeOffset(this.currentTrack);
                 if (savedOffset !== 0) {
                     this.lyricsTimeOffset = savedOffset;
@@ -4020,23 +3997,49 @@ async loadLyrics() {
                 
                 this.displayLyrics();
                 this.updateStatus('lyrics', true);
-                console.log(`✅ [Instant Load] 已立即使用保存的歌词: ${savedLyrics.source}`);
-                return; // 直接返回，不进行 API 请求
+                console.log(`✅ [Storage] 已加載本地/雲端保存的歌詞: ${savedLyrics.source}`);
+                
+                // 如果是預加載命中的，也清理掉預加載緩存
+                const currentTrackId = this.currentTrack.id || `${this.currentTrack.name}-${this.currentTrack.artist}`;
+                if (this.lastPreloadedTrackId === currentTrackId) {
+                    this.nextSongLyrics = null;
+                    this.nextSongLyricsType = null;
+                }
+                
+                return; 
             }
         } catch (e) {
-            console.warn('快速读取歌词失败:', e);
+            console.warn('讀取儲存歌詞失敗:', e);
         }
     }
 
-    // 检查是否已有该歌曲的歌词 (内存中)
-    if (this.lyrics && this.lyrics.length > 0 && 
-        this.currentLyricsTrackId === this.currentTrack.id &&
-        this.currentLyricsTrackId !== null) {
-        console.log('✅ [Memory] 歌词已在内存中，跳过载入');
+    // ⚡ [Priority 2] 預加載命中的歌詞 (API 快取)
+    const currentTrackId = this.currentTrack.id || `${this.currentTrack.name}-${this.currentTrack.artist}`;
+    if (this.lastPreloadedTrackId === currentTrackId && this.nextSongLyrics && this.nextSongLyrics.length > 0) {
+        this.log(`⚡ 使用預加載的 API 歌詞: ${this.currentTrack.name}`);
+        this.lyrics = this.nextSongLyrics;
+        this.lyricsType = this.nextSongLyricsType;
+        this.currentLyricsTrackId = this.currentTrack.id;
+        this.displayLyrics();
+        this.updateStatus('lyrics', true);
+        
+        this.nextSongLyrics = null;
+        this.nextSongLyricsType = null;
+        
+        this.preloadNextSongLyrics();
         return;
     }
     
-    this.log(`🎤 开始载入歌词 (API): ${this.currentTrack.name} - ${this.currentTrack.artist}`);
+    // 🧠 [Priority 3] 記憶體快取 (Memory Cache)
+    if (this.lyrics && this.lyrics.length > 0 && 
+        this.currentLyricsTrackId === this.currentTrack.id &&
+        this.currentLyricsTrackId !== null) {
+        console.log('✅ [Memory] 歌詞已在記憶體中，跳過載入');
+        return;
+    }
+    
+    // 🌐 [Priority 4] API 加載 (最後手段)
+    this.log(`🎤 開始載入歌詞 (API): ${this.currentTrack.name} - ${this.currentTrack.artist}`);
 
     if (this.isLoadingLyrics) {
         console.log('⏳ 歌词载入中，跳过重复请求');
