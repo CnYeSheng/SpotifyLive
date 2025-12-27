@@ -1209,7 +1209,12 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
             
             const searchPromises = providers.map(async (provider) => {
                 try {
-                    let apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}&wbw`;
+                    let apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
+                    
+                    // 對支援逐字的供應商添加 wbw 參數
+                    if (['NetEase', 'QQMusic', 'Kugou'].includes(provider)) {
+                        apiUrl += '&wbw';
+                    }
                     
                     const response = await axios.get(apiUrl, { 
                         timeout: 55000, // 給予各供應商充裕時間，但略低於全域 60s
@@ -1309,7 +1314,12 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                 default: continue;
             }
 
-            let apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${pParam}&wbw`;
+            let apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${pParam}`;
+            
+            // 只有指定提供商支持逐字歌詞
+            if (isWbw && ['NetEase', 'QQMusic', 'Kugou'].includes(pParam)) {
+                apiUrl += '&wbw';
+            }
             
             console.log(`📡 查詢 ${provider}: ${apiUrl}`);
 
