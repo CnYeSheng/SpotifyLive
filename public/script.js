@@ -1835,6 +1835,12 @@ async initializeStorage() {
     // 預加載下一首歌詞
     async preloadNextSongLyrics() {
         try {
+            // 清除之前的預加載定時器
+            if (this.nextLyricsPreloadTimeout) {
+                clearTimeout(this.nextLyricsPreloadTimeout);
+                this.nextLyricsPreloadTimeout = null;
+            }
+
             // 檢查是否有下一首歌曲信息
             if (!this.nextSongData || !this.nextSongData.name) {
                 this.log('⏭️ 無下一首歌曲信息，跳過預加載歌詞');
@@ -1843,28 +1849,16 @@ async initializeStorage() {
 
             // 檢查是否已經預加載過同一首歌
             const nextTrackId = this.nextSongData.id || `${this.nextSongData.name}-${this.nextSongData.artists?.[0]?.name || 'Unknown'}`;
-            if (this.lastPreloadedTrackId === nextTrackId && this.nextSongLyrics) {
+            
+            // 只在真正相同的歌且歌詞確實存在時才跳過
+            if (this.lastPreloadedTrackId === nextTrackId && this.nextSongLyrics && this.nextSongLyrics.length > 0) {
                 this.log('✅ 下一首歌詞已預加載，跳過重複加載');
                 return;
             }
 
-            // 清除之前的預加載定時器
-            if (this.nextLyricsPreloadTimeout) {
-                clearTimeout(this.nextLyricsPreloadTimeout);
-                this.nextLyricsPreloadTimeout = null;
-            }
-
-            // 如果已經在預加載，則不重複預加載
-            if (this.isPreloadingNextLyrics) {
-                this.log('🔄 正在預加載下一首歌詞，跳過重複請求');
-                return;
-            }
-
-            // 延遲預加載，給當前歌詞加載一些時間
-            this.nextLyricsPreloadTimeout = setTimeout(async () => {
-                await this._performNextLyricsPreload(nextTrackId);
-                this.nextLyricsPreloadTimeout = null;
-            }, 2000); // 2秒後開始預加載，避免影響當前歌詞加載
+            // 如果歌曲 ID 改變了，則開始新的預加載
+            this.log(`🔄 開始預加載新的下一首歌詞 (ID: ${nextTrackId})`);
+            await this._performNextLyricsPreload(nextTrackId);
 
         } catch (error) {
             this.log(`❌ 預加載下一首歌詞時出錯: ${error.message}`);
@@ -1878,8 +1872,6 @@ async initializeStorage() {
                 this.log('⏭️ 下一首歌曲數據已丟失，取消預加載');
                 return;
             }
-
-            this.isPreloadingNextLyrics = true;
 
             const artist = this.nextSongData.artists?.[0]?.name || this.nextSongData.artist || 'Unknown';
             const name = this.nextSongData.name;
@@ -1900,7 +1892,6 @@ async initializeStorage() {
                         this.nextSongLyricsType = savedLyrics.lyricsType;
                         this.lastPreloadedTrackId = nextTrackId;
                         this.log(`✅ 從保存中加載下一首歌詞: ${name}`);
-                        this.isPreloadingNextLyrics = false;
                         return;
                     }
                 } catch (e) {
@@ -1917,7 +1908,6 @@ async initializeStorage() {
 
                 if (!response.ok) {
                     this.log(`⚠️ 預加載歌詞 API 返回 ${response.status}`);
-                    this.isPreloadingNextLyrics = false;
                     return;
                 }
 
@@ -1958,11 +1948,8 @@ async initializeStorage() {
                 this.log(`⚠️ 預加載下一首歌詞 API 請求失敗: ${error.message}`);
             }
 
-            this.isPreloadingNextLyrics = false;
-
         } catch (error) {
             this.log(`❌ 預加載下一首歌詞操作失敗: ${error.message}`);
-            this.isPreloadingNextLyrics = false;
         }
     }
 
@@ -3557,16 +3544,19 @@ async initializeStorage() {
         // 並行獲取下一首歌曲的信息和歌詞，儘管可能會丟失歌詞信息，至少預加載下一首歌曲的歌詞
         // 每當歌曲變更或開始播放時，就會觸發這個操作。這樣在播放下一首歌曲時就已經有了歌詞
         this.nextSongData = null; // 重置預加載
+        
+        // 立即開始預加載下一首歌詞（無需等待隊列 API）
+        // 在獲取隊列信息的同時進行預加載
+        this.preloadNextSongLyrics();
+        
         this.fetchNextSongData().then((success) => {
             if (success) {
                 this.log('🎵 下一首歌曲信息加載成功，已準備好');
-                // 嘗試預加載下一首歌詞
+                // 再次嘗試預加載（隊列信息已更新）
                 this.preloadNextSongLyrics();
                 this.scheduleNextSongPreview();
             } else {
                 this.log('⏭️ 下一首歌曲信息加載失敗或暫無下一首');
-                // 無論如何還是要準備好預加載下一首歌詞
-                this.preloadNextSongLyrics();
                 this.scheduleNextSongPreview();
             }
         });
@@ -3956,6 +3946,28 @@ async loadLyrics() {
 
     const trackKey = `${this.currentTrack.id}-${this.currentTrack.name}-${this.currentTrack.artist}`;
     console.log(`🎤 请求歌词: ${this.currentTrack.artist} - ${this.currentTrack.name}`);
+    
+    // ✨ 檢查是否已經預加載了該歌詞（切換歌曲時）
+    const currentTrackId = this.currentTrack.id || `${this.currentTrack.name}-${this.currentTrack.artist}`;
+    if (this.lastPreloadedTrackId === currentTrackId && this.nextSongLyrics && this.nextSongLyrics.length > 0) {
+        this.log(`⚡ 使用預加載的下一首歌詞: ${this.currentTrack.name}`);
+        this.lyrics = this.nextSongLyrics;
+        this.lyricsType = this.nextSongLyricsType;
+        this.currentLyricsTrackId = this.currentTrack.id;
+        this.displayLyrics();
+        this.updateStatus('lyrics', true);
+        
+        // 清空預加載數據後立即觸發下一首預加載
+        // 注意：不立即清空，因為用戶可能會跳回相同的歌
+        this.nextSongLyrics = null;
+        this.nextSongLyricsType = null;
+        // this.lastPreloadedTrackId = null; // 保留以便再次播放同一首時還能使用
+        
+        // 不用等待，立即開始準備下一首
+        this.preloadNextSongLyrics();
+        console.log(`⚡ [Preload Hit] 使用預加載的下一首歌詞`);
+        return;
+    }
     
     // ✨ 核心优化：立即检查缓存和保存的歌词
     // 优先检查保存的歌词 (KV Storage / Local Storage)
