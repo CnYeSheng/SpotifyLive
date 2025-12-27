@@ -885,9 +885,12 @@ class LyricsStorageManager {
         const trackKey = this.generateTrackKey(trackInfo);
 
         try {
-            // 1️⃣ 先查 Redis（云端）
-            const response = await fetch(`${this.apiBase}/api/kv/user-lyrics/${trackKey}`, {
-                headers: { 'X-Track-Info': JSON.stringify(trackInfo) }
+            // 1️⃣ 查 Redis（服务端）
+            // 注意：headers 必须是 ASCII/ISO-8859-1 编码，不能包含中文字符
+            // 将 trackInfo 通过 URL 查询参数传递，而不是 header
+            const trackInfoEncoded = encodeURIComponent(JSON.stringify(trackInfo));
+            const response = await fetch(`${this.apiBase}/api/kv/user-lyrics/${trackKey}?info=${trackInfoEncoded}`, {
+                headers: { 'Content-Type': 'application/json' }
             });
 
             if (response.ok) {

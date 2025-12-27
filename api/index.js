@@ -1836,8 +1836,23 @@ app.post('/api/kv/save-time-offset', async (req, res) => {
 app.get('/api/kv/user-lyrics/:trackKey', async (req, res) => {
     try {
         const { trackKey } = req.params;
-        const trackInfo = req.headers['x-track-info'] ? 
-            JSON.parse(req.headers['x-track-info']) : null;
+        // 從查詢參數中讀取 trackInfo，避免 headers 中文字符編碼問題
+        let trackInfo = null;
+        if (req.query.info) {
+            try {
+                trackInfo = JSON.parse(decodeURIComponent(req.query.info));
+            } catch (e) {
+                console.warn('查詢參數 trackInfo 解析失敗');
+            }
+        }
+        // 回退到 headers（用於向後相容性）
+        if (!trackInfo && req.headers['x-track-info']) {
+            try {
+                trackInfo = JSON.parse(req.headers['x-track-info']);
+            } catch (e) {
+                console.warn('Headers trackInfo 解析失敗');
+            }
+        }
 
         // 如果没有 trackInfo，我们仍然可以使用 trackKey 尝试获取
         // if (!trackInfo) { ... } // 移除强制检查，让 trackKey 单独也能工作
@@ -1934,12 +1949,25 @@ app.get('/api/kv/get-time-offset/:trackKey', async (req, res) => {
 
 
 
-// 刷新歌词过期时间
+// 更新歌詞過期時間
 app.post('/api/kv/refresh-expiry/:trackKey', async (req, res) => {
     try {
         const { trackKey } = req.params;
-        const trackInfo = req.headers['x-track-info'] ? 
-            JSON.parse(req.headers['x-track-info']) : null;
+        // 從查詢參數或 body 中讀取 trackInfo，避免 headers 中文字符編碼問題
+        let trackInfo = null;
+        if (req.query.info) {
+            try {
+                trackInfo = JSON.parse(decodeURIComponent(req.query.info));
+            } catch (e) {}
+        }
+        if (!trackInfo && req.body && req.body.trackInfo) {
+            trackInfo = req.body.trackInfo;
+        }
+        if (!trackInfo && req.headers['x-track-info']) {
+            try {
+                trackInfo = JSON.parse(req.headers['x-track-info']);
+            } catch (e) {}
+        }
 
         if (!trackInfo) {
             return res.status(400).json({ 
@@ -2191,8 +2219,21 @@ app.get('/api/kv/user-providers', async (req, res) => {
 app.delete('/api/kv/user-lyrics/:trackKey', async (req, res) => {
     try {
         const { trackKey } = req.params;
-        const trackInfo = req.headers['x-track-info'] ? 
-            JSON.parse(req.headers['x-track-info']) : null;
+        // 從查詢參數或 body 中讀取 trackInfo，避免 headers 中文字符編碼問題
+        let trackInfo = null;
+        if (req.query.info) {
+            try {
+                trackInfo = JSON.parse(decodeURIComponent(req.query.info));
+            } catch (e) {}
+        }
+        if (!trackInfo && req.body && req.body.trackInfo) {
+            trackInfo = req.body.trackInfo;
+        }
+        if (!trackInfo && req.headers['x-track-info']) {
+            try {
+                trackInfo = JSON.parse(req.headers['x-track-info']);
+            } catch (e) {}
+        }
 
         if (!trackInfo) {
             return res.status(400).json({ 

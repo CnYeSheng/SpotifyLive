@@ -1873,8 +1873,9 @@ async initializeStorage() {
                 return;
             }
 
-            const artist = this.nextSongData.artists?.[0]?.name || this.nextSongData.artist || 'Unknown';
-            const name = this.nextSongData.name;
+            // 確保 artist 和 name 都是有效的字符串，避免 Unicode 字符問題
+            const artist = String(this.nextSongData.artists?.[0]?.name || this.nextSongData.artist || 'Unknown');
+            const name = String(this.nextSongData.name || 'Unknown');
 
             this.log(`🔍 開始預加載下一首歌詞: ${artist} - ${name}`);
 
@@ -1882,7 +1883,7 @@ async initializeStorage() {
             if (window.lyricsStorageManager) {
                 try {
                     const savedLyrics = await window.lyricsStorageManager.getUserLyrics({
-                        id: nextTrackId,
+                        id: String(nextTrackId),
                         name: name,
                         artist: artist
                     });
