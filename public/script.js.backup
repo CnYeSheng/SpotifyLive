@@ -2179,11 +2179,11 @@
             let lyricsUrl;
             if (this.selectedLyricsProvider) {
                 // 如果有選定的供應商，直接使用該供應商
-                lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${title}/${artist}?p=${this.selectedLyricsProvider}`;
+                lyricsUrl = `${Lyrics_API_URL}/api/lyrics/${title}/${artist}?p=${this.selectedLyricsProvider}`;
                 this.log(`🎯 使用已選定的歌詞供應商: ${this.selectedLyricsProvider}`);
             } else {
                 // 如果沒有選定供應商，使用默認 API（不指定供應商參數）
-                lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${title}/${artist}`;
+                lyricsUrl = `${Lyrics_API_URL}/api/lyrics/${title}/${artist}`;
                 this.log(`🔍 使用默認歌詞 API 搜尋歌詞`);
             }
 
