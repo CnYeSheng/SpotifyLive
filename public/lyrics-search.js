@@ -52,7 +52,7 @@ SpotifyLyricsPlayer.prototype.hideLyricsSearchModal = function() {
 SpotifyLyricsPlayer.prototype.performLyricsSearch = async function() {
     const searchInput = document.getElementById('lyrics-search-input');
     const query = searchInput.value.trim();
-    
+
     if (!query) {
         this.showErrorMessage('請輸入搜尋內容');
         return;
@@ -69,27 +69,69 @@ SpotifyLyricsPlayer.prototype.performLyricsSearch = async function() {
     }
 
     this.log(`🔍 開始搜尋歌詞: ${artist} - ${title}`);
-    
+
     document.getElementById('search-loading').style.display = 'flex';
-    document.getElementById('search-results').style.display = 'none';
-    
+    document.getElementById('search-results').style.display = 'block'; // Show immediately for streaming
+
+    const resultsContainer = document.getElementById('results-container');
+    resultsContainer.innerHTML = ''; // Clear previous results
+
     try {
         const isWbw = document.getElementById('wbw-checkbox')?.checked;
         const wbwParam = isWbw ? '?wbw' : '';
-        
-        // ✅ 改用多供應商端點
+
         const response = await fetch(
             `${this.apiBase}/api/lyrics-search-multi/${encodeURIComponent(artist)}/${encodeURIComponent(title)}${wbwParam}`
         );
-        
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
 
-        if (data.success && Array.isArray(data.results)) {
-            this.displaySearchResults(data.results);
-        } else {
-            this.displayNoResults();
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            buffer += chunk;
+
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // Keep the last incomplete line in the buffer
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const jsonStr = line.slice(6);
+                    try {
+                        const data = JSON.parse(jsonStr);
+                        // Skip empty data (like the done event payload)
+                        if (Object.keys(data).length === 0) continue;
+
+                        // Handle different event types
+                        if (data.message && data.totalProviders) {
+                            // This is a start or status message
+                            this.log(`🔍 ${data.message}`);
+                        } else if (data.provider) {
+                            // This is a result from a provider
+                            this.appendSingleSearchResult(data);
+                        } else if (data.error) {
+                            // This is an error message
+                            this.showErrorMessage(data.error || '搜尋發生錯誤');
+                        }
+                    } catch (e) {
+                        // Ignore parse errors for keep-alive or malformed lines
+                    }
+                } else if (line.startsWith('event: done')) {
+                    // Stream finished
+                    this.log('✅ 搜尋完成');
+                } else if (line.startsWith('event: error')) {
+                    const data = JSON.parse(line.slice(6));
+                    this.showErrorMessage(data.message || '搜尋發生錯誤');
+                }
+            }
         }
+
     } catch (error) {
         this.log(`❌ 搜尋歌詞失敗: ${error.message}`);
         this.showErrorMessage('搜尋失敗，請稍後重試');

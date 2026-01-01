@@ -33,12 +33,14 @@ app.use(cors({
     credentials: true,
     allowedHeaders: ['Content-Type', 'X-Session-Id', 'X-Spotify-User-Id']
 }));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // Increase payload limit for large lyrics data
+app.use(express.urlencoded({ extended: true, limit: '10mb' })); // For form data
 
 // Spotify API credentials
 const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI;
+const Lyrics_API_URL = process.env.Lyrics_API_URL || 'https://api.lyrics.wmcc.jp.eu.org';
 
 // Store user sessions (in production, use a proper database)
 const userSessions = new Map();
@@ -1053,142 +1055,52 @@ app.get('/api/search-lyrics/:query', async (req, res) => {
     try {
         console.log(`🔍 歌詞搜尋請求: ${query}`);
         
-        // 解析查詢字符串，嘗試提取歌手和歌曲名
-        const parts = query.split(/[-–\s]+/);
-        let artist = '', title = '';
+        // 構建搜尋URL - 改用 /api/search 以獲取列表
+        const searchUrl = `${Lyrics_API_URL}/api/search/${encodeURIComponent(query)}`;
+        console.log(`📡 請求 URL: ${searchUrl}`);
         
-        if (parts.length >= 2) {
-            artist = parts[0].trim();
-            title = parts.slice(1).join(' ').trim();
-        } else {
-            // 如果無法分離，就把整個查詢當作歌曲名
-            title = query.trim();
-        }
-        
-        console.log(`📝 解析結果 - 歌手: "${artist}", 歌曲: "${title}"`);
-        
-        // 構建搜尋URL
-        const lyricsUrl = `${Lyrics_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`;
-        console.log(`📡 請求 URL: ${lyricsUrl}`);
-        
-        const response = await axios.get(lyricsUrl, {
-            timeout: 15000,
+        const response = await axios.get(searchUrl, {
+            timeout: 20000,
             headers: {
                 'User-Agent': 'Spotify-Lyrics-Player/1.0',
                 'Accept': 'application/json'
             }
         });
         
-        console.log(`📥 歌詞 API 回應狀態: ${response.status}`);
-        console.log(`📥 歌詞 API 回應類型: ${response.headers['content-type']}`);
-        
-        // 檢查回應是否為HTML而不是JSON
-        if (response.headers['content-type'] && response.headers['content-type'].includes('text/html')) {
-            console.log('⚠️ API 返回 HTML 而非 JSON');
-            return res.json({
-                success: false,
-                total: 0,
-                results: [],
-                error: '歌詞服務暫時無法使用，請稍後重試'
+        if (Array.isArray(response.data)) {
+            // 轉換為前端預期的格式
+            const results = response.data.map(item => ({
+                id: item.id,
+                title: item.title,
+                artist: Array.isArray(item.artist) ? item.artist.join(', ') : item.artist,
+                album: item.album,
+                duration: item.duration,
+                source: item.provider,
+                score: item.score,
+                type: 'synced' // 假設為同步
+            }));
+            
+            res.json({
+                success: true,
+                total: results.length,
+                results: results
             });
-        }
-        
-        if (response.data) {
-            let lyrics = [];
-            let lyricsType = 'plain';
-            
-            // 解析歌詞數據
-            if (Array.isArray(response.data)) {
-                const lrcResult = parseLrcFormat(response.data.join('\n'));
-                if (lrcResult.isLrc) {
-                    lyrics = lrcResult.lyrics;
-                    lyricsType = 'synced';
-                } else {
-                    lyrics = response.data.filter(line => line && typeof line === 'string' && line.trim() !== '');
-                }
-            } else if (response.data.lyrics) {
-                if (Array.isArray(response.data.lyrics)) {
-                    lyrics = response.data.lyrics;
-                    lyricsType = response.data.type || 'plain';
-                } else if (typeof response.data.lyrics === 'string') {
-                    const lrcResult = parseLrcFormat(response.data.lyrics);
-                    if (lrcResult.isLrc) {
-                        lyrics = lrcResult.lyrics;
-                        lyricsType = 'synced';
-                    } else {
-                        lyrics = response.data.lyrics.split('\n').filter(line => line && typeof line === 'string' && line.trim() !== '');
-                    }
-                }
-            } else if (typeof response.data === 'string') {
-                const lrcResult = parseLrcFormat(response.data);
-                if (lrcResult.isLrc) {
-                    lyrics = lrcResult.lyrics;
-                    lyricsType = 'synced';
-                } else {
-                    lyrics = response.data.split('\n').filter(line => line && typeof line === 'string' && line.trim() !== '');
-                }
-            } else {
-                // 尝试其他可能的结构
-                if (response.data.syncedLyrics) {
-                    const lrcResult = parseLrcFormat(response.data.syncedLyrics);
-                    if (lrcResult.isLrc) {
-                        lyrics = lrcResult.lyrics;
-                        lyricsType = 'synced';
-                    }
-                } else if (response.data.plainLyrics) {
-                    lyrics = response.data.plainLyrics.split('\n').filter(line => line && typeof line === 'string' && line.trim() !== '');
-                }
-            }
-            
-            if (lyrics && lyrics.length > 0) {
-                console.log(`✅ 搜尋成功: ${lyrics.length} 行歌詞`);
-                res.json({
-                    success: true,
-                    total: 1,
-                    results: [{
-                        artist: artist || '未知歌手',
-                        title: title || query,
-                        lyrics: lyrics,
-                        type: lyricsType,
-                        source: 'wmcc'
-                    }]
-                });
-            } else {
-                console.log('ℹ️ 沒有找到歌詞內容');
-                res.json({
-                    success: false,
-                    total: 0,
-                    results: [],
-                    error: '沒有找到歌詞'
-                });
-            }
         } else {
-            console.log('ℹ️ API 返回空數據');
+            console.log('ℹ️ API 返回格式不正確或為空');
             res.json({
                 success: false,
                 total: 0,
                 results: [],
-                error: 'API 返回空數據'
+                error: '沒有找到相關歌曲'
             });
         }
     } catch (error) {
         console.error(`❌ 搜尋歌詞失敗: ${error.message}`);
-        
-        // 更好的錯誤處理
-        let errorMessage = '搜尋失敗，請稍後重試';
-        if (error.code === 'ENOTFOUND') {
-            errorMessage = '無法連接到歌詞服務';
-        } else if (error.code === 'ECONNRESET') {
-            errorMessage = '連接被重置，請重試';
-        } else if (error.message.includes('JSON')) {
-            errorMessage = '歌詞服務回應格式錯誤';
-        }
-        
         res.json({
             success: false,
             total: 0,
             results: [],
-            error: errorMessage
+            error: '搜尋服務暫時無法使用: ' + error.message
         });
     }
 });
@@ -1430,137 +1342,117 @@ app.use('/api/lyrics', (req, res, next) => {
 // 多供應商歌詞搜尋 API
 app.get('/api/lyrics-search-multi/:artist/:title', async (req, res) => {
     const { artist, title } = req.params;
-    
+    const isWbw = req.query.wbw !== undefined;
+
+    // Set headers for streaming
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Type');
+
     try {
-        console.log(`🔍 多供應商搜尋: ${artist} - ${title}`);
-        
+        console.log(`🔍 多供應商搜尋（API）: ${artist} - ${title}`);
         const providers = ['Musixmatch', 'Lrclib', 'NetEase', 'QQMusic', 'Kugou'];
-        const isWbw = req.query.wbw !== undefined;
-        const results = [];
-        
-        // 並行請求所有供應商
+
+        // Send initial event to indicate search started
+        res.write('event: start\n');
+        res.write(`data: ${JSON.stringify({ message: '開始搜尋歌詞...', totalProviders: providers.length })}\n\n`);
+
+        // Process each provider individually for streaming
         const promises = providers.map(async (provider) => {
-            let apiUrl = `${Lyrics_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}&wbw`;
-            
-            console.log(`📡 請求 ${provider}: ${apiUrl}`);
-            
             try {
-                const response = await axios.get(apiUrl, { 
-                    timeout: 60000,
-                    headers: {
-                        'User-Agent': 'Spotify-Lyrics-Player/1.0',
-                        'Accept': 'application/json'
+                // Build API URL based on provider and wbw flag
+                let apiUrl = `${Lyrics_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`;
+
+                // For providers that support wbw, add the wbw parameter
+                if (['NetEase', 'QQMusic', 'Kugou'].includes(provider)) {
+                    if (isWbw) {
+                        apiUrl = `${Lyrics_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}&wbw`;
+                    } else {
+                        apiUrl = `${Lyrics_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
                     }
-                });
-                
-                // 解析歌詞數據
+                } else {
+                    apiUrl = `${Lyrics_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
+                }
+
+                const response = await axios.get(apiUrl, { timeout: 60000 });
+
                 let lyrics = [];
                 let lyricsType = 'plain';
-                
+
                 if (Array.isArray(response.data)) {
                     const lrcResult = parseLrcFormat(response.data.join('\n'));
-                    if (lrcResult.isLrc) {
-                        lyrics = lrcResult.lyrics;
-                        lyricsType = 'synced';
-                    } else {
-                        lyrics = response.data.filter(line => line && typeof line === 'string' && line.trim() !== '');
-                    }
-                } else if (response.data && response.data.lyrics) {
-                    if (Array.isArray(response.data.lyrics)) {
-                        lyrics = response.data.lyrics;
-                        lyricsType = response.data.type || 'plain';
-                    } else if (typeof response.data.lyrics === 'string') {
-                        const lrcResult = parseLrcFormat(response.data.lyrics);
-                        if (lrcResult.isLrc) {
-                            lyrics = lrcResult.lyrics;
-                            lyricsType = 'synced';
-                        } else {
-                            lyrics = response.data.lyrics.split('\n').filter(line => line && typeof line === 'string' && line.trim() !== '');
-                        }
-                    }
+                    lyrics = lrcResult.isLrc ? lrcResult.lyrics : response.data.filter(l => l && typeof l === 'string' && l.trim());
+                } else if (response.data?.lyrics) {
+                    lyrics = Array.isArray(response.data.lyrics) ? response.data.lyrics : [response.data.lyrics];
+                    lyricsType = response.data.type || 'plain';
                 } else if (typeof response.data === 'string') {
                     const lrcResult = parseLrcFormat(response.data);
-                    if (lrcResult.isLrc) {
-                        lyrics = lrcResult.lyrics;
-                        lyricsType = 'synced';
-                    } else {
-                        lyrics = response.data.split('\n').filter(line => line && typeof line === 'string' && line.trim() !== '');
-                    }
+                    lyrics = lrcResult.isLrc ? lrcResult.lyrics : response.data.split('\n').filter(l => l && typeof l === 'string' && l.trim());
                 }
-                
-                if (lyrics && lyrics.length > 0) {
-                    console.log(`✅ ${provider} 成功: ${lyrics.length} 行`);
-                    return {
-                        provider: provider,
+
+                if (lyrics.length > 0) {
+                    // Determine if this is synced or word-by-word lyrics
+                    if (lyrics.some(l => l.time)) {
+                        lyricsType = lyrics.some(l => l.words && l.words.length > 0) ? 'wordbyword' : 'synced';
+                    }
+
+                    const result = {
+                        provider,
                         success: true,
-                        lyrics: lyrics,
+                        lyrics,
                         type: lyricsType,
-                        artist: artist,
-                        title: title,
-                        lyricsPreview: lyrics.slice(0, 3).map(line => 
-                            typeof line === 'string' ? line : line.text || ''
-                        ).join(' / ')
+                        artist,
+                        title,
+                        lyricsPreview: lyrics.slice(0, 3).map(l => typeof l === 'string' ? l : l.text || '').join(' / ')
                     };
+
+                    // Send individual result as it becomes available
+                    res.write('event: result\n');
+                    res.write(`data: ${JSON.stringify(result)}\n\n`);
                 } else {
-                    console.log(`ℹ️ ${provider} 無歌詞`);
-                    return {
-                        provider: provider,
+                    const errorResult = {
+                        provider,
                         success: false,
                         error: '未找到歌詞',
-                        artist: artist,
-                        title: title
+                        artist,
+                        title
                     };
+
+                    // Send error result
+                    res.write('event: result\n');
+                    res.write(`data: ${JSON.stringify(errorResult)}\n\n`);
                 }
             } catch (error) {
-                console.error(`❌ ${provider} 失敗:`, error.message);
-                return {
-                    provider: provider,
+                const errorResult = {
+                    provider,
                     success: false,
                     error: error.message,
-                    artist: artist,
-                    title: title
+                    artist,
+                    title
                 };
+
+                // Send error result
+                res.write('event: result\n');
+                res.write(`data: ${JSON.stringify(errorResult)}\n\n`);
             }
         });
-        
-        const allResults = await Promise.allSettled(promises);
-        
-        // 處理結果
-        allResults.forEach((result, index) => {
-            if (result.status === 'fulfilled') {
-                results.push(result.value);
-            } else {
-                results.push({
-                    provider: providers[index],
-                    success: false,
-                    error: result.reason?.message || '請求失敗',
-                    artist: artist,
-                    title: title
-                });
-            }
-        });
-        
-        const successfulResults = results.filter(r => r.success);
-        
-        res.json({
-            success: true,
-            results: results,
-            total: results.length,
-            found: successfulResults.length,
-            artist: artist,
-            title: title
-        });
-        
+
+        // Wait for all promises to complete
+        await Promise.allSettled(promises);
+
+        // Send done event
+        res.write('event: done\n');
+        res.write(`data: ${JSON.stringify({ message: '搜尋完成', totalProviders: providers.length })}\n\n`);
+
+        res.end();
     } catch (error) {
         console.error('多供應商搜尋失敗:', error.message);
-        res.json({
-            success: false,
-            error: error.message,
-            results: [],
-            total: 0
-        });
-    }
-});
+        res.write('event: error\n');
+        res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+        res.end();
+    }});
 
 // 靜默刷新 token 端點（Vercel 版）
 app.post('/api/refresh-token', async (req, res) => {
