@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  @apply box-border;
+}
+
+html {
+  @apply scroll-smooth;
+}
+
+body {
+  @apply bg-spotify-black text-white font-sans;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  @apply w-2;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-spotify-darkgray;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-spotify-lightgray rounded hover:bg-spotify-lightgray hover:bg-opacity-70;
+}
+
+/* Smooth transitions */
+button, a {
+  @apply transition-all duration-200;
+}
