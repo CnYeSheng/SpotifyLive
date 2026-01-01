@@ -16,7 +16,7 @@ class SpotifyRateLimiter {
         this.sessionCalls = new Map();
         this.globalCalls = [];
         this.maxCallsPerMinute = 30;
-        this.maxCallsPerSession = 10;
+        this.maxCallsPerSession = 30;
         this.retryAfterMs = 1000;
     }
 
@@ -141,7 +141,7 @@ function trackSongChange(sessionId, trackId) {
             // Trigger token refresh
             const session = userSessions.get(sessionId);
             if (session) {
-                refreshAccessToken(session, req.sessionId).then(refreshed => {
+                refreshAccessToken(session, sessionId).then(refreshed => {
                     if (refreshed) {
                         console.log(`✅ Token refreshed successfully after song change`);
                     } else {
@@ -1469,7 +1469,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
             }
 
             console.log('ℹ️ 自動模式：所有來源均未找到歌詞');
-            return res.status(404).json({
+            return res.json({
                 success: false,
                 error: '未找到歌詞'
             });

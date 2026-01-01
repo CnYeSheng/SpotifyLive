@@ -130,7 +130,7 @@ function initUserLyricsManager() {
         this.log(`🔍 檢查用戶自定義設置: ${trackInfo.artist} - ${trackInfo.name}`);
 
         // 1. 首先檢查是否有用戶自定義歌詞
-        const customLyrics = this.getUserCustomLyrics(trackInfo);
+        const customLyrics = await this.getUserCustomLyrics(trackInfo);
         if (customLyrics && customLyrics.lyrics && customLyrics.lyrics.length > 0) {
             this.log(`🎯 應用用戶自定義歌詞: ${trackInfo.artist} - ${trackInfo.name}`);
             
@@ -151,7 +151,7 @@ function initUserLyricsManager() {
         }
 
         // 2. 檢查是否有用戶指定的歌詞供應商
-        const preferredProvider = this.getUserLyricsProvider(trackInfo);
+        const preferredProvider = await this.getUserLyricsProvider(trackInfo);
         if (preferredProvider) {
             this.log(`🎯 使用用戶指定供應商搜索: ${preferredProvider} for ${trackInfo.artist} - ${trackInfo.name}`);
             
