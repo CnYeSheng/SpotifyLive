@@ -352,7 +352,18 @@
                         搜尋
                     </button>
                 </div>
-                <div class="search-options" style="margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                <div class="search-options" style="margin-bottom: 15px; display: flex; flex-wrap: wrap; align-items: center; gap: 15px;">
+                    <div class="provider-select-group" style="display: flex; align-items: center; gap: 8px;">
+                        <span style="color: #ddd; font-size: 14px;">供應商:</span>
+                        <select id="search-provider-select" style="background: #333; color: white; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; font-size: 14px; cursor: pointer; outline: none;">
+                            <option value="auto">全部 (自動並行)</option>
+                            <option value="QQMusic">QQ音樂 (支持逐字)</option>
+                            <option value="Kugou">酷狗音樂 (支持逐字)</option>
+                            <option value="NetEase">網易雲音樂 (支持逐字)</option>
+                            <option value="Musixmatch">Musixmatch</option>
+                            <option value="Lrclib">Lrclib</option>
+                        </select>
+                    </div>
                     <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; color: #ddd; font-size: 14px;">
                         <input type="checkbox" id="wbw-checkbox" style="cursor: pointer;">
                         <span>逐字歌詞 (僅支援部分來源)</span>

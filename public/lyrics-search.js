@@ -60,11 +60,38 @@ SpotifyLyricsPlayer.prototype.performLyricsSearch = async function() {
 
     // 解析 artist 和 title
     let artist = '', title = '';
-    const parts = query.split(/[-–\s]+/);
-    if (parts.length >= 2) {
+    
+    // 優先嘗試用破折號分隔 (常見格式: 歌手 - 歌名)
+    if (query.includes(' - ')) {
+        const parts = query.split(' - ');
         artist = parts[0].trim();
-        title = parts.slice(1).join(' ').trim();
+        title = parts.slice(1).join(' - ').trim();
+    } else if (query.includes('-')) {
+        const parts = query.split('-');
+        artist = parts[0].trim();
+        title = parts.slice(1).join('-').trim();
     } else {
+        // 如果沒有破折號，嘗試按空格分割
+        const parts = query.split(/\s+/);
+        if (parts.length >= 2) {
+            // 這是一個粗略的猜測，通常第一部分是歌手
+            artist = parts[0].trim();
+            title = parts.slice(1).join(' ').trim();
+        } else {
+            title = query;
+        }
+    }
+
+    // 如果提供了當前播放歌曲，且搜尋框內容包含當前歌曲信息，優先使用當前歌曲的準確信息
+    if (this.currentTrack && (query.includes(this.currentTrack.name) || query.includes(this.currentTrack.artist))) {
+        // 如果搜尋內容與當前歌曲高度匹配，使用精確的元數據
+        // ✨ 優化：只取第一位歌手
+        artist = this.currentTrack.artist.split(/[,;/\\]|\s+&\s+/)[0].trim();
+        title = this.currentTrack.name;
+    }
+    
+    // 如果仍然為空（解析失敗），則回退到使用原始 query
+    if (!title && query) {
         title = query;
     }
 
@@ -75,18 +102,46 @@ SpotifyLyricsPlayer.prototype.performLyricsSearch = async function() {
     
     try {
         const isWbw = document.getElementById('wbw-checkbox')?.checked;
+        const provider = document.getElementById('search-provider-select')?.value || 'auto';
         const wbwParam = isWbw ? '?wbw' : '';
         
-        // ✅ 改用多供應商端點
-        const response = await fetch(
-            `${this.apiBase}/api/lyrics-search-multi/${encodeURIComponent(artist)}/${encodeURIComponent(title)}${wbwParam}`
-        );
+        let response;
+        if (provider === 'auto') {
+            // ✅ 改用多供應商端點 (原本的邏輯)
+            response = await fetch(
+                `${this.apiBase}/api/lyrics-search-multi/${encodeURIComponent(artist)}/${encodeURIComponent(title)}${wbwParam}`
+            );
+        } else {
+            // ✅ 使用指定供應商端點
+            const url = `${this.apiBase}/api/lyrics/${encodeURIComponent(artist)}/${encodeURIComponent(title)}?p=${provider}${isWbw ? '&wbw' : ''}`;
+            response = await fetch(url);
+        }
         
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+            // 處理 404 情況，這通常表示該供應商未找到歌詞
+            if (response.status === 404) {
+                this.displayNoResults();
+                return;
+            }
+            throw new Error(`HTTP ${response.status}`);
+        }
         const data = await response.json();
 
-        if (data.success && Array.isArray(data.results)) {
-            this.displaySearchResults(data.results);
+        if (data.success) {
+            if (provider === 'auto') {
+                this.displaySearchResults(data.results);
+            } else {
+                // 如果是單一供應商返回的數據結構與 search-multi 不同，需要包裝一下
+                this.displaySearchResults([{
+                    provider: provider,
+                    success: true,
+                    lyrics: data.lyrics,
+                    type: data.type,
+                    artist: artist,
+                    title: title,
+                    source: data.provider || provider
+                }]);
+            }
         } else {
             this.displayNoResults();
         }

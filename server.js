@@ -15,8 +15,8 @@ class SpotifyRateLimiter {
     constructor() {
         this.sessionCalls = new Map();
         this.globalCalls = [];
-        this.maxCallsPerMinute = 30;
-        this.maxCallsPerSession = 10;
+        this.maxCallsPerMinute = 180; // Increased from 30
+        this.maxCallsPerSession = 60; // Increased from 10
         this.retryAfterMs = 1000;
     }
 
@@ -106,6 +106,7 @@ app.use(express.static('public'));
 const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI || `http://localhost:${PORT}/callback`;
+const LYRICS_API_URL = process.env.LYRICS_API_URL || 'https://api.lyrics.wmcc.jp.eu.org';
 
 // Store user sessions (in production, use a proper database)
 const userSessions = new Map();
@@ -115,41 +116,48 @@ const songChangeTracker = new Map();
 
 // Track song changes and refresh token every 2 songs
 function trackSongChange(sessionId, trackId) {
-    if (!sessionId || !trackId) return;
-    
-    const tracker = songChangeTracker.get(sessionId) || {
-        currentTrackId: null,
-        songCount: 0,
-        lastRefreshTime: Date.now()
-    };
-    
-    // Only count if it's a different song
-    if (tracker.currentTrackId !== trackId) {
-        tracker.currentTrackId = trackId;
-        tracker.songCount++;
+    try {
+        if (!sessionId || !trackId) return;
         
-        console.log(`🎵 Song changed for session ${sessionId.substring(0, 8)}... Count: ${tracker.songCount}`);
+        const tracker = songChangeTracker.get(sessionId) || {
+            currentTrackId: null,
+            songCount: 0,
+            lastRefreshTime: Date.now()
+        };
         
-        // Refresh token every 2 songs
-        if (tracker.songCount >= 2) {
-            console.log(`🔄 Refreshing token after ${tracker.songCount} songs for session ${sessionId.substring(0, 8)}...`);
-            tracker.songCount = 0; // Reset counter
-            tracker.lastRefreshTime = Date.now();
+        // Only count if it's a different song
+        if (tracker.currentTrackId !== trackId) {
+            tracker.currentTrackId = trackId;
+            tracker.songCount++;
             
-            // Trigger token refresh
-            const session = userSessions.get(sessionId);
-            if (session) {
-                refreshAccessToken(session, req.sessionId).then(refreshed => {
-                    if (refreshed) {
-                        console.log(`✅ Token refreshed successfully after song change`);
-                    } else {
-                        console.log(`⚠️ Token refresh failed after song change`);
-                    }
-                });
+            console.log(`🎵 Song changed for session ${sessionId.substring(0, 8)}... Count: ${tracker.songCount}`);
+            
+            // Refresh token every 2 songs
+            if (tracker.songCount >= 2) {
+                console.log(`🔄 Refreshing token after ${tracker.songCount} songs for session ${sessionId.substring(0, 8)}...`);
+                tracker.songCount = 0; // Reset counter
+                tracker.lastRefreshTime = Date.now();
+                
+                // Trigger token refresh
+                const session = userSessions.get(sessionId);
+                if (session) {
+                    // Use a safe wrapper or ensure refreshAccessToken handles its own errors
+                    refreshAccessToken(session, sessionId).then(refreshed => {
+                        if (refreshed) {
+                            console.log(`✅ Token refreshed successfully after song change`);
+                        } else {
+                            console.log(`⚠️ Token refresh failed after song change`);
+                        }
+                    }).catch(err => {
+                        console.error('❌ Error in background token refresh:', err);
+                    });
+                }
             }
+            
+            songChangeTracker.set(sessionId, tracker);
         }
-        
-        songChangeTracker.set(sessionId, tracker);
+    } catch (error) {
+        console.error('❌ Error inside trackSongChange:', error);
     }
 }
 
@@ -315,21 +323,52 @@ app.get('/api/current-track', async (req, res) => {
     try {
         console.log(`🎵 Fetching current track for session: ${sessionId?.substring(0, 8)}...`);
         
+        // Check if we have a cached user profile (valid for 1 hour)
+        let userProfilePromise;
+        if (session.userProfile && (Date.now() - session.userProfile.timestamp < 3600000)) {
+            userProfilePromise = Promise.resolve({ data: session.userProfile.data, status: 200 });
+        } else {
+            userProfilePromise = makeSpotifyAPICall('https://api.spotify.com/v1/me', {
+                headers: { 'Authorization': `Bearer ${session.accessToken}` }
+            }, sessionId).then(async response => {
+                session.userProfile = {
+                    data: response.data,
+                    timestamp: Date.now()
+                };
+                await saveUserSession(sessionId, session);
+                return response;
+            });
+        }
+
+        // Check if we have a cached queue (valid for 30 seconds)
+        let queuePromise;
+        if (session.playerQueue && (Date.now() - session.playerQueue.timestamp < 30000)) {
+            queuePromise = Promise.resolve({ data: session.playerQueue.data, status: 200 });
+        } else {
+            queuePromise = makeSpotifyAPICall('https://api.spotify.com/v1/me/player/queue', {
+                headers: { 'Authorization': `Bearer ${session.accessToken}` }
+            }, sessionId).then(async response => {
+                session.playerQueue = {
+                    data: response.data,
+                    timestamp: Date.now()
+                };
+                // We don't necessarily need to await saveUserSession here to speed up response, 
+                // but let's do it to keep session consistent in KV.
+                // However, session is already in memory Map 'userSessions'.
+                return response;
+            }).catch((err) => {
+                console.log('⚠️ Queue API failed (non-critical):', err.message);
+                return null;
+            });
+        }
+
         // 一次性獲取所有需要的數據，避免分批請求
         const [playerResponse, userResponse, queueResponse] = await Promise.all([
             makeSpotifyAPICall('https://api.spotify.com/v1/me/player', {
                 headers: { 'Authorization': `Bearer ${session.accessToken}` }
             }, sessionId),
-            makeSpotifyAPICall('https://api.spotify.com/v1/me', {
-                headers: { 'Authorization': `Bearer ${session.accessToken}` }
-            }, sessionId),
-            // 同時獲取播放隊列信息
-            makeSpotifyAPICall('https://api.spotify.com/v1/me/player/queue', {
-                headers: { 'Authorization': `Bearer ${session.accessToken}` }
-            }, sessionId).catch((err) => {
-                console.log('⚠️ Queue API failed (non-critical):', err.message);
-                return null;
-            }) // 隊列信息失敗不影響主要功能
+            userProfilePromise,
+            queuePromise
         ]);
         
         console.log(`📊 Player API response status: ${playerResponse.status}`);
@@ -388,7 +427,11 @@ app.get('/api/current-track', async (req, res) => {
         };
         
         // Track song change for token refresh
-        trackSongChange(sessionId, track.id);
+        try {
+            trackSongChange(sessionId, track.id);
+        } catch (e) {
+            console.error('❌ Error in trackSongChange:', e);
+        }
         
         res.json(currentTrack);
     } catch (error) {
@@ -411,17 +454,26 @@ app.get('/api/current-track', async (req, res) => {
         
         if (error.response?.status === 401) {
             console.log('🔑 Authentication error detected, attempting token refresh...');
-            const refreshed = await refreshAccessToken(session, req.sessionId);
-            if (!refreshed) {
-                console.log('⚠️ Token refresh failed, returning 401');
-                return res.status(401).json({ 
+            // Ensure req exists before accessing it
+            if (req && req.sessionId) {
+                const refreshed = await refreshAccessToken(session, req.sessionId);
+                if (!refreshed) {
+                    console.log('⚠️ Token refresh failed, returning 401');
+                    return res.status(401).json({ 
+                        error: 'Token expired, please re-authenticate',
+                        needsAuth: true 
+                    });
+                }
+                console.log('✅ Token refreshed, retrying request...');
+                // Retry the request
+                return res.redirect(307, req.originalUrl);
+            } else {
+                 console.log('⚠️ Authentication error but req.sessionId missing');
+                 return res.status(401).json({ 
                     error: 'Token expired, please re-authenticate',
                     needsAuth: true 
                 });
             }
-            console.log('✅ Token refreshed, retrying request...');
-            // Retry the request
-            return res.redirect(307, req.originalUrl);
         }
         
         if (error.response?.status === 429) {
@@ -492,8 +544,8 @@ app.post('/api/refresh-token', async (req, res) => {
 });
 
 // Authentication middleware
-function authenticateSpotify(req, res, next) {
-    const session = getUserSession(req);
+async function authenticateSpotify(req, res, next) {
+    const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
@@ -502,15 +554,16 @@ function authenticateSpotify(req, res, next) {
     const fiveMinutesFromNow = Date.now() + (5 * 60 * 1000);
     if (session.expiresAt <= fiveMinutesFromNow) {
         console.log('🔄 Token expires soon, refreshing proactively...');
-        refreshAccessToken(session, req.sessionId).then(refreshed => {
+        try {
+            const refreshed = await refreshAccessToken(session, req.sessionId);
             if (!refreshed) {
                 return res.status(401).json({ error: 'Token expired, please re-authenticate' });
             }
             req.session = session;
             next();
-        }).catch(() => {
+        } catch (e) {
             return res.status(401).json({ error: 'Token refresh failed' });
-        });
+        }
     } else {
         req.session = session;
         next();
@@ -630,18 +683,8 @@ app.get('/api/devices', async (req, res) => {
             if (!refreshed) {
                 return res.status(401).json({ error: 'Token expired, please re-authenticate' });
             }
-            try {
-                const retry = await makeSpotifyAPICall(`https://api.spotify.com/v1/me/tracks/contains?ids=${trackId}`, {
-                    headers: { 'Authorization': `Bearer ${session.accessToken}` }
-                }, sessionId);
-                const isLiked = retry.data && retry.data[0] === true;
-                return res.json({ isLiked });
-            } catch (e) {
-                return res.status(e.response?.status || 500).json({ 
-                    error: 'Failed to check track status',
-                    details: e.response?.data?.error?.message || e.message
-                });
-            }
+            // 重新導向以重試請求
+            return res.redirect(307, req.originalUrl);
         }
         
         console.error('Error fetching devices:', error.response?.data || error.message);
@@ -1233,7 +1276,7 @@ app.get('/api/search-lyrics/:query', async (req, res) => {
         const searchSources = [
             {
                 name: 'wmcc.jp.eu.org',
-                url: `https://api.lyrics.wmcc.jp.eu.org/api/search/${encodeURIComponent(query)}`,
+                url: `${LYRICS_API_URL}/api/search/${encodeURIComponent(query)}`,
                 parser: (data) => {
                     if (Array.isArray(data)) {
                         return data.map(item => ({
@@ -1308,9 +1351,9 @@ app.get('/api/get-lyrics/:source/:id', async (req, res) => {
             if (parts.length >= 2) {
                 const title = parts.slice(0, -1).join('-');
                 const artist = parts[parts.length - 1];
-                lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`;
+                lyricsUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`;
             } else {
-                lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(id)}`;
+                lyricsUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(id)}`;
             }
         } else {
             throw new Error('不支援的歌詞來源');
@@ -1386,13 +1429,35 @@ app.get('/api/get-lyrics/:source/:id', async (req, res) => {
     }
 });
 
+// 輔助函數：清洗歌曲元數據以提高搜尋成功率
+function cleanMetadata(text) {
+    if (!text) return '';
+    return text
+        .replace(/\s*[\(\[][fF]eat\.?.*[\)\]]/g, '') // 移除 (feat. ...) 或 [feat. ...]
+        .replace(/\s*[\(\[][wW]ith.*[\)\]]/g, '')    // 移除 (with ...) 或 [with ...]
+        .replace(/\s*-\s*.*(?:Remix|Mix|Edit|Version)/gi, '') // 移除 - Remix, - Radio Edit 等
+        .replace(/\s*[\(\[][^()]*Version[^()]*[\)\]]/gi, '') // 移除 (Special Version) 等
+        .trim();
+}
+
+// 輔助函數：簡化歌手名稱 (只取第一位歌手)
+function cleanArtist(text) {
+    if (!text) return '';
+    // 取第一個歌手 (通常在逗號、分號、斜槓、& 號之前)
+    return text.split(/[,;/\\]|\s+&\s+/)[0].trim();
+}
+
 // Get lyrics with multiple providers support
 app.get('/api/lyrics/:artist/:title', async (req, res) => {
-    const { artist, title } = req.params;
+    const { artist: originalArtist, title: originalTitle } = req.params;
     const provider = req.query.p; // undefined 表示自動模式
+    
+    // 清洗元數據
+    const artist = cleanArtist(originalArtist);
+    const title = cleanMetadata(originalTitle);
 
     try {
-        console.log(`🎤 請求歌詞: ${artist} - ${title} (provider: ${provider || 'auto'})`);
+        console.log(`🎤 請求歌詞: ${artist} - ${title} (原始: ${originalArtist} - ${originalTitle}) (provider: ${provider || 'auto'})`);
 
         // ========== 自動模式：無 ?p= ==========
         if (!provider) {
@@ -1401,7 +1466,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
             
             const searchPromises = providers.map(async (p) => {
                 try {
-                    let apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${p}`;
+                    let apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${p}`;
                     
                     // 對支援逐字的供應商添加 wbw 參數
                     if (['NetEase', 'QQMusic', 'Kugou'].includes(p)) {
@@ -1488,7 +1553,7 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
         else if (normalizedProvider === 'kugou') pParam = 'Kugou';
 
         try {
-            let apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${pParam}`;
+            let apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${pParam}`;
             
             // 只有指定提供商支持逐字歌詞
             if (isWbw && ['NetEase', 'QQMusic', 'Kugou'].includes(pParam)) {
@@ -1559,14 +1624,19 @@ app.get('/api/lyrics/lrc/:title/:artist', async (req, res) => {
 
 // 多供應商歌詞搜尋 API（本地開發用）
 app.get('/api/lyrics-search-multi/:artist/:title', async (req, res) => {
-    const { artist, title } = req.params;
+    const { artist: originalArtist, title: originalTitle } = req.params;
+    
+    // 清洗元數據
+    const artist = cleanArtist(originalArtist);
+    const title = cleanMetadata(originalTitle);
+    
     try {
-        console.log(`🔍 多供應商搜尋（本地）: ${artist} - ${title}`);
+        console.log(`🔍 多供應商搜尋（本地）: ${artist} - ${title} (原始: ${originalArtist} - ${originalTitle})`);
         const providers = ['Musixmatch', 'Lrclib', 'NetEase', 'QQMusic', 'Kugou'];
         const isWbw = req.query.wbw !== undefined;
         const results = [];
         const promises = providers.map(async (provider) => {
-            let apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}&wbw`;
+            let apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}&wbw`;
             
             // 只有指定提供商支持逐字歌詞
             try {
@@ -1616,7 +1686,7 @@ async function searchMusixmatchLyrics(artist, title) {
         console.log(`🔍 Musixmatch 搜尋: ${artist} - ${title}`);
         
         // 使用統一的API端點格式
-        const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Musixmatch`;
+        const apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Musixmatch`;
         
         const response = await axios.get(apiUrl, {
             timeout: 15000,
@@ -1647,7 +1717,7 @@ async function searchLrclibLyrics(artist, title) {
         console.log(`🔍 LRCLib 搜尋: ${artist} - ${title}`);
         
         // 使用統一的API端點格式
-        const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Lrclib`;
+        const apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Lrclib`;
         
         const response = await axios.get(apiUrl, {
             timeout: 15000,
@@ -1678,7 +1748,7 @@ async function searchNeteaseLyrics(artist, title) {
         console.log(`🔍 NetEase 搜尋: ${artist} - ${title}`);
         
         // 使用統一的API端點格式
-        const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=NetEase`;
+        const apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=NetEase`;
         
         const response = await axios.get(apiUrl, {
             timeout: 15000,
@@ -1709,7 +1779,7 @@ async function searchKugouLyrics(artist, title) {
         console.log(`🔍 Kugou 搜尋: ${artist} - ${title}`);
         
         // 使用統一的API端點格式
-        const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Kugou`;
+        const apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Kugou`;
         
         const response = await axios.get(apiUrl, {
             timeout: 15000,
@@ -1740,7 +1810,7 @@ async function searchQQMusicLyrics(artist, title) {
         console.log(`🔍 QQMusic 搜尋: ${artist} - ${title}`);
         
         // 使用統一的API端點格式
-        const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=QQMusic`;
+        const apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=QQMusic`;
         
         const response = await axios.get(apiUrl, {
             timeout: 15000,
@@ -1784,7 +1854,7 @@ app.get('/api/lyrics-search-provider/:provider/:artist/:title', async (req, res)
             });
         }
         
-        let apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
+        let apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
         
         // 只有指定提供商支持逐字歌詞
         if (isWbw && ['NetEase', 'QQMusic', 'Kugou'].includes(provider)) {
@@ -1849,7 +1919,7 @@ app.get('/api/lyrics-legacy/:artist/:title', async (req, res) => {
         // ======================
         if (!providersParam) {
             try {
-                const apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`;
+                const apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`;
                 console.log(`🔍 自動載入歌詞 URL: ${apiUrl}`);
                 
                 const response = await axios.get(apiUrl, {
@@ -1925,20 +1995,20 @@ app.get('/api/lyrics-legacy/:artist/:title', async (req, res) => {
 
                 switch (provider) {
                     case 'musixmatch':
-                        apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Musixmatch`;
+                        apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Musixmatch`;
                         break;
                     case 'lrclib':
-                        apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Lrclib`;
+                        apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Lrclib`;
                         break;
                     case 'netease':
-                        apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=NetEase&wbw`;
+                        apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=NetEase&wbw`;
                         break;
                     case 'qm':
                     case 'qqmusic':
-                        apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=QQMusic&wbw`;
+                        apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=QQMusic&wbw`;
                         break;
                     case 'kugou':
-                        apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Kugou&wbw`;
+                        apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Kugou&wbw`;
                         break;
                     default:
                         console.log(`⚠️ 不支援的提供商: ${provider}`);
@@ -2268,7 +2338,7 @@ function isValidLyricsText(text) {
 // 測試歌詞 API 連接
 app.get('/api/test-lyrics', async (req, res) => {
     try {
-        const testUrl = 'https://api.lyrics.wmcc.jp.eu.org/api/lyrics/test/test';
+        const testUrl = '${LYRICS_API_URL}/api/lyrics/test/test';
         const response = await axios.get(testUrl, {
             timeout: 5000,
             headers: {

@@ -312,21 +312,49 @@ app.get('/api/current-track', checkSessionValidity, async (req, res) => {
     }
     
     try {
+        // Check if we have a cached user profile (valid for 1 hour)
+        let userProfilePromise;
+        if (session.userProfile && (Date.now() - session.userProfile.timestamp < 3600000)) {
+            userProfilePromise = Promise.resolve({ data: session.userProfile.data, status: 200 });
+        } else {
+            userProfilePromise = axios.get('https://api.spotify.com/v1/me', {
+                headers: { 'Authorization': `Bearer ${session.accessToken}` }
+            }).then(async response => {
+                session.userProfile = {
+                    data: response.data,
+                    timestamp: Date.now()
+                };
+                await saveUserSession(req.sessionId, session);
+                return response;
+            });
+        }
+
+        // Check if we have a cached queue (valid for 30 seconds)
+        let queuePromise;
+        if (session.playerQueue && (Date.now() - session.playerQueue.timestamp < 30000)) {
+            queuePromise = Promise.resolve({ data: session.playerQueue.data, status: 200 });
+        } else {
+            queuePromise = axios.get('https://api.spotify.com/v1/me/player/queue', {
+                headers: { 'Authorization': `Bearer ${session.accessToken}` }
+            }).then(async response => {
+                session.playerQueue = {
+                    data: response.data,
+                    timestamp: Date.now()
+                };
+                return response;
+            }).catch(err => {
+                console.log('⚠️ Queue API failed (non-critical):', err.message);
+                return null;
+            });
+        }
+
         // 一次性獲取所有需要的數據，包括播放隊列
         const [playerResponse, userResponse, queueResponse] = await Promise.all([
             axios.get('https://api.spotify.com/v1/me/player', {
                 headers: { 'Authorization': `Bearer ${session.accessToken}` }
             }),
-            axios.get('https://api.spotify.com/v1/me', {
-                headers: { 'Authorization': `Bearer ${session.accessToken}` }
-            }),
-            // 同時獲取播放隊列信息
-            axios.get('https://api.spotify.com/v1/me/player/queue', {
-                headers: { 'Authorization': `Bearer ${session.accessToken}` }
-            }).catch(err => {
-                console.log('⚠️ Queue API failed (non-critical):', err.message);
-                return null;
-            })
+            userProfilePromise,
+            queuePromise
         ]);
         
         if (playerResponse.status === 204 || !playerResponse.data || !playerResponse.data.item) {
@@ -1193,13 +1221,35 @@ app.get('/api/search-lyrics/:query', async (req, res) => {
     }
 });
 
+// 輔助函數：清洗歌曲元數據以提高搜尋成功率
+function cleanMetadata(text) {
+    if (!text) return '';
+    return text
+        .replace(/\s*[\(\[][fF]eat\.?.*[\)\]]/g, '') // 移除 (feat. ...) 或 [feat. ...]
+        .replace(/\s*[\(\[][wW]ith.*[\)\]]/g, '')    // 移除 (with ...) 或 [with ...]
+        .replace(/\s*-\s*.*(?:Remix|Mix|Edit|Version)/gi, '') // 移除 - Remix, - Radio Edit 等
+        .replace(/\s*[\(\[][^()]*Version[^()]*[\)\]]/gi, '') // 移除 (Special Version) 等
+        .trim();
+}
+
+// 輔助函數：簡化歌手名稱 (只取第一位歌手)
+function cleanArtist(text) {
+    if (!text) return '';
+    // 取第一個歌手 (通常在逗號、分號、斜槓、& 號之前)
+    return text.split(/[,;/\\]|\s+&\s+/)[0].trim();
+}
+
 // Get lyrics with multiple providers support
 app.get('/api/lyrics/:artist/:title', async (req, res) => {
-    const { artist, title } = req.params;
+    const { artist: originalArtist, title: originalTitle } = req.params;
     const providersParam = req.query.p; // e.g. "lrclib", "netease", etc.
+    
+    // 清洗元數據
+    const artist = cleanArtist(originalArtist);
+    const title = cleanMetadata(originalTitle);
 
     try {
-        console.log(`🎤 請求歌詞: ${artist} - ${title} (provider: ${providersParam || 'default'})`);
+        console.log(`🎤 請求歌詞: ${artist} - ${title} (原始: ${originalArtist} - ${originalTitle}) (provider: ${providersParam || 'default'})`);
 
         // ======================
         // 情境一：自動載入（無 ?p=）
@@ -1405,6 +1455,163 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
     }
 });
 
+// Get specific lyrics by source and ID
+app.get('/api/get-lyrics/:source/:id', async (req, res) => {
+    const { source, id } = req.params;
+    
+    try {
+        console.log(`🎤 獲取歌詞: ${source} - ${id}`);
+        
+        let lyricsUrl;
+        if (source === 'wmcc.jp.eu.org') {
+            // 如果ID是title-artist格式，需要解析
+            const parts = decodeURIComponent(id).split('-');
+            if (parts.length >= 2) {
+                const title = parts.slice(0, -1).join('-');
+                const artist = parts[parts.length - 1];
+                lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`;
+            } else {
+                lyricsUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(id)}`;
+            }
+        } else {
+            throw new Error('不支援的歌詞來源');
+        }
+        
+        console.log(`📡 請求歌詞 URL: ${lyricsUrl}`);
+        
+        const response = await axios.get(lyricsUrl, {
+            timeout: 25000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json, text/plain, */*'
+            }
+        });
+        
+        if (response.data) {
+            let lyrics = [];
+            let lyricsType = 'plain';
+            
+            if (typeof response.data === 'string') {
+                const lrcResult = parseLrcFormat(response.data);
+                if (lrcResult.isLrc) {
+                    lyrics = lrcResult.lyrics;
+                    lyricsType = 'synced';
+                } else {
+                    lyrics = response.data.split('\n')
+                        .filter(line => line.trim() !== '')
+                        .map(line => ({ text: line.trim() }));
+                }
+            } else if (response.data.lyrics) {
+                if (Array.isArray(response.data.lyrics)) {
+                    lyrics = response.data.lyrics;
+                    lyricsType = response.data.type || 'plain';
+                } else if (typeof response.data.lyrics === 'string') {
+                    const lrcResult = parseLrcFormat(response.data.lyrics);
+                    if (lrcResult.isLrc) {
+                        lyrics = lrcResult.lyrics;
+                        lyricsType = 'synced';
+                    } else {
+                        lyrics = response.data.lyrics.split('\n')
+                            .filter(line => line.trim() !== '')
+                            .map(line => ({ text: line.trim() }));
+                    }
+                }
+            }
+            
+            if (lyrics.length > 0) {
+                res.json({
+                    success: true,
+                    lyrics: lyrics,
+                    type: lyricsType,
+                    source: source
+                });
+            } else {
+                res.json({
+                    success: false,
+                    error: '歌詞內容為空'
+                });
+            }
+        } else {
+            res.json({
+                success: false,
+                error: 'API 響應無數據'
+            });
+        }
+        
+    } catch (error) {
+        console.error('❌ 獲取歌詞失敗:', error.message);
+        res.json({
+            success: false,
+            error: '獲取歌詞失敗: ' + error.message
+        });
+    }
+});
+
+// 從特定供應商搜索歌詞 - 用於用戶自定義設置
+app.get('/api/lyrics-search-provider/:provider/:artist/:title', async (req, res) => {
+    const { provider, artist, title } = req.params;
+    
+    try {
+        console.log(`🔍 從指定供應商搜索歌詞: ${provider} for ${artist} - ${title}`);
+        
+        // 驗證供應商名稱
+        const validProviders = ['Musixmatch', 'Lrclib', 'NetEase', 'QQMusic', 'QM', 'Kugou', 'Genius'];
+        const isWbw = req.query.wbw !== undefined;
+
+        if (!validProviders.includes(provider)) {
+            return res.status(400).json({
+                success: false,
+                error: `不支持的歌詞供應商: ${provider}`
+            });
+        }
+        
+        let apiUrl = `https://api.lyrics.wmcc.jp.eu.org/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${provider}`;
+        
+        // 只有指定提供商支持逐字歌詞
+        if (isWbw && ['NetEase', 'QQMusic', 'Kugou'].includes(provider)) {
+            apiUrl += '&wbw';
+        }
+
+        const response = await axios.get(apiUrl, {
+            timeout: 15000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+        
+        const data = response.data;
+        
+        if (data.success && data.lyrics && data.lyrics.length > 0) {
+            console.log(`✅ 從 ${provider} 成功獲取歌詞: ${data.lyrics.length} 行`);
+            
+            res.json({
+                success: true,
+                provider: provider,
+                artist: artist,
+                title: title,
+                lyrics: data.lyrics,
+                type: data.syncType || 'plain',
+                source: `${provider} (用戶指定)`
+            });
+        } else {
+            console.log(`ℹ️ ${provider} 未找到歌詞: ${artist} - ${title}`);
+            res.json({
+                success: false,
+                provider: provider,
+                error: `${provider} 未找到歌詞`
+            });
+        }
+        
+    } catch (error) {
+        console.error(`❌ 從 ${provider} 搜索歌詞失敗:`, error.message);
+        res.status(500).json({
+            success: false,
+            provider: provider,
+            error: `從 ${provider} 搜索失敗: ${error.message}`
+        });
+    }
+});
+
 // Alias route for LRC format as requested by user
 app.get('/api/lyrics/lrc/:title/:artist', async (req, res) => {
     const { title, artist } = req.params;
@@ -1429,10 +1636,14 @@ app.use('/api/lyrics', (req, res, next) => {
 
 // 多供應商歌詞搜尋 API
 app.get('/api/lyrics-search-multi/:artist/:title', async (req, res) => {
-    const { artist, title } = req.params;
+    const { artist: originalArtist, title: originalTitle } = req.params;
+    
+    // 清洗元數據
+    const artist = cleanArtist(originalArtist);
+    const title = cleanMetadata(originalTitle);
     
     try {
-        console.log(`🔍 多供應商搜尋: ${artist} - ${title}`);
+        console.log(`🔍 多供應商搜尋: ${artist} - ${title} (原始: ${originalArtist} - ${originalTitle})`);
         
         const providers = ['Musixmatch', 'Lrclib', 'NetEase', 'QQMusic', 'Kugou'];
         const isWbw = req.query.wbw !== undefined;
