@@ -16,7 +16,7 @@ class SpotifyRateLimiter {
         this.sessionCalls = new Map();
         this.globalCalls = [];
         this.maxCallsPerMinute = 180; // Increased from 30
-        this.maxCallsPerSession = 60; // Increased from 10
+        this.maxCallsPerSession = 300; // Increased to accommodate multiple overlays
         this.retryAfterMs = 1000;
     }
 
@@ -302,12 +302,33 @@ app.get('/callback', async (req, res) => {
 
 // Get currently playing track with enhanced information
 app.get('/api/current-track', async (req, res) => {
+    // Disable browser caching
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
     }
     
     const sessionId = req.headers['x-session-id'] || req.query.sessionId;
+
+    // Server-side caching to prevent hitting Spotify rate limits with multiple overlays
+    // Cache for 2 seconds
+    if (session.currentTrackCache && (Date.now() - session.currentTrackCache.timestamp < 2000)) {
+        // Return cached data but update the 'progress' locally to make it smoother?
+        // For now, just return cached data. The client interpolates anyway.
+        // We can optionally estimate progress:
+        const cachedData = session.currentTrackCache.data;
+        if (cachedData.isPlaying) {
+             const elapsed = Date.now() - session.currentTrackCache.timestamp;
+             const estimatedProgress = Math.min(cachedData.duration, cachedData.progress + elapsed);
+             // Return a copy with updated progress
+             return res.json({ ...cachedData, progress: estimatedProgress });
+        }
+        return res.json(cachedData);
+    }
     
     // Check if token needs refresh (more lenient - allow 1 minute grace period)
     const oneMinuteFromNow = Date.now() + (1 * 60 * 1000);
@@ -321,7 +342,7 @@ app.get('/api/current-track', async (req, res) => {
     }
     
     try {
-        console.log(`🎵 Fetching current track for session: ${sessionId?.substring(0, 8)}...`);
+        // console.log(`🎵 Fetching current track for session: ${sessionId?.substring(0, 8)}...`);
         
         // Check if we have a cached user profile (valid for 1 hour)
         let userProfilePromise;
@@ -371,16 +392,22 @@ app.get('/api/current-track', async (req, res) => {
             queuePromise
         ]);
         
-        console.log(`📊 Player API response status: ${playerResponse.status}`);
-        console.log(`👤 User API response status: ${userResponse.status}`);
+        // console.log(`📊 Player API response status: ${playerResponse.status}`);
+        // console.log(`👤 User API response status: ${userResponse.status}`);
         
         if (playerResponse.status === 204 || !playerResponse.data || !playerResponse.data.item) {
-            console.log('🔍 No active playback detected');
-            return res.json({ 
+            // console.log('🔍 No active playback detected');
+            const responseData = { 
                 isPlaying: false,
                 name: null,
                 message: 'No music currently playing. Please start playing music in Spotify.'
-            });
+            };
+            // Cache empty state too (shorter duration maybe? 2s is fine)
+            session.currentTrackCache = {
+                data: responseData,
+                timestamp: Date.now()
+            };
+            return res.json(responseData);
         }
         
         const data = playerResponse.data;
@@ -426,6 +453,12 @@ app.get('/api/current-track', async (req, res) => {
             } : null
         };
         
+        // Save to cache
+        session.currentTrackCache = {
+            data: currentTrack,
+            timestamp: Date.now()
+        };
+
         // Track song change for token refresh
         try {
             trackSongChange(sessionId, track.id);
@@ -1620,6 +1653,19 @@ app.get('/api/lyrics/lrc/:title/:artist', async (req, res) => {
     req.params.artist = artist;
     req.params.title = title;
     return app._router.handle(req, res);
+});
+
+// New Routes for OBS/Overlay display
+app.get('/lyrics-text', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'lyrics-text.html'));
+});
+
+app.get('/song', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'song.html'));
+});
+
+app.get('/image', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'image.html'));
 });
 
 // 多供應商歌詞搜尋 API（本地開發用）
