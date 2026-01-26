@@ -53,18 +53,20 @@
             line-height: 1.4;
             color: var(--text-tertiary);
             transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-            font-weight: 500;
+            font-weight: 700;
             letter-spacing: -0.02em;
             display: none; /* Only current line */
-            word-wrap: break-word;
-            overflow-wrap: break-word;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
             max-width: 100%;
+            width: 100%;
+            text-align: center;
         }
 
         .lyrics-line.current {
             display: block;
             color: var(--text-primary);
-            font-weight: 700;
         }
         
         /* Word-by-word karaoke effect from main player styles.css */
@@ -78,7 +80,7 @@
             transition: transform 0.1s cubic-bezier(0.25, 0.46, 0.45, 0.94);
             -webkit-text-fill-color: initial;
             background: none;
-            white-space: pre-wrap;
+            white-space: nowrap;
             vertical-align: baseline;
             color: #fff;
         }
@@ -320,8 +322,6 @@
                 if (trackData.id !== currentTrackId) {
                     currentTrackId = trackData.id;
                     shouldFetchLyrics = true;
-                    // Reset manual lyrics state if it was for previous song? 
-                    // No, server handles session state. If server says manual, we trust it.
                 }
 
                 // Logic to detect switch between auto <-> manual
@@ -333,12 +333,6 @@
                         fetchMode = 'manual';
                         manualLyricsId = serverManualLyrics.id;
                     } else if (currentTrackId !== trackData.id) {
-                        // Song changed, but manual lyrics persist? Usually reset on song change is good, 
-                        // but maybe user wants to force lyrics. 
-                        // Let's assume server persists manual lyrics until explicitly reset or user changes it.
-                        // However, usually manual lyrics are specific to a song.
-                        // If track ID changed, we probably shouldn't use the OLD manual lyrics unless the user re-selected it for this song.
-                        // But here we rely on what server sends.
                         shouldFetchLyrics = true;
                         fetchMode = 'manual';
                     }
@@ -399,7 +393,7 @@
             requestAnimationFrame(loop);
         }
 
-        setInterval(update, 2000);
+        setInterval(update, 1000);
         update();
         loop();
     </script>

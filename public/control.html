@@ -461,10 +461,16 @@
                 const data = await res.json();
 
                 if (data.name) {
+                    // Always update labels if they differ to ensure "real-time" feeling
+                    if (document.getElementById('track-title').innerText !== data.name) {
+                        document.getElementById('track-title').innerText = data.name;
+                    }
+                    if (document.getElementById('track-artist').innerText !== data.artist) {
+                        document.getElementById('track-artist').innerText = data.artist;
+                    }
+                    
                     if (data.id !== currentTrackId) {
                         currentTrackId = data.id;
-                        document.getElementById('track-title').innerText = data.name;
-                        document.getElementById('track-artist').innerText = data.artist;
                         if (data.image) {
                             document.getElementById('track-art').src = data.image;
                         }
@@ -599,8 +605,8 @@
             }
         }
 
-        // Poll every 2 seconds
-        setInterval(update, 2000);
+        // Poll every 1 second
+        setInterval(update, 1000);
         update();
     </script>
 </body>

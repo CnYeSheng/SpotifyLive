@@ -183,7 +183,7 @@ function generateSessionId() {
 
 // Get user session from request
 async function getUserSession(req) {
-    const headerId = req.headers['x-session-id'] || req.query.sessionId;
+    const headerId = req.headers['x-session-id'] || req.query.sessionId || (req.body && req.body.sessionId);
     let sessionId = headerId;
     
     if (!sessionId) {
@@ -224,6 +224,11 @@ async function getUserSession(req) {
 async function saveUserSession(sessionId, sessionData) {
     if (!sessionId || !sessionData) return;
     
+    // 清除该 session 的轨道缓存，强制下一次请求重新获取最新状态
+    if (sessionData.currentTrackCache) {
+        delete sessionData.currentTrackCache;
+    }
+
     // 保存到內存
     userSessions.set(sessionId, sessionData);
     
@@ -316,8 +321,8 @@ app.get('/api/current-track', async (req, res) => {
     const sessionId = req.headers['x-session-id'] || req.query.sessionId;
 
     // Server-side caching to prevent hitting Spotify rate limits with multiple overlays
-    // Cache for 2 seconds
-    if (session.currentTrackCache && (Date.now() - session.currentTrackCache.timestamp < 2000)) {
+    // Cache for 800ms (reduced from 2000ms for better real-time updates)
+    if (session.currentTrackCache && (Date.now() - session.currentTrackCache.timestamp < 800)) {
         // Return cached data but update the 'progress' locally to make it smoother?
         // For now, just return cached data. The client interpolates anyway.
         // We can optionally estimate progress:
@@ -1381,6 +1386,22 @@ app.get('/api/search-lyrics/:query', async (req, res) => {
                     }
                     return [];
                 }
+            },
+            {
+                name: 'Lrclib',
+                url: `https://lrclib.net/api/search?q=${encodeURIComponent(query)}`,
+                parser: (data) => {
+                    if (Array.isArray(data)) {
+                        return data.map(item => ({
+                            title: item.name || '未知標題',
+                            artist: item.artistName || '未知歌手',
+                            source: 'Lrclib',
+                            id: item.id ? item.id.toString() : `${item.name}-${item.artistName}`,
+                            preview: item.syncedLyrics ? item.syncedLyrics.substring(0, 100) + '...' : (item.plainLyrics ? item.plainLyrics.substring(0, 100) : '無預覽')
+                        }));
+                    }
+                    return [];
+                }
             }
         ];
         
@@ -1447,6 +1468,8 @@ app.get('/api/get-lyrics/:source/:id', async (req, res) => {
             } else {
                 lyricsUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(id)}`;
             }
+        } else if (source === 'Lrclib') {
+            lyricsUrl = `https://lrclib.net/api/get/${encodeURIComponent(id)}`;
         } else {
             throw new Error('不支援的歌詞來源');
         }
@@ -1465,7 +1488,17 @@ app.get('/api/get-lyrics/:source/:id', async (req, res) => {
             let lyrics = [];
             let lyricsType = 'plain';
             
-            if (typeof response.data === 'string') {
+            if (source === 'Lrclib') {
+                if (response.data.syncedLyrics) {
+                    const lrcResult = parseLrcFormat(response.data.syncedLyrics);
+                    lyrics = lrcResult.lyrics;
+                    lyricsType = 'synced';
+                } else if (response.data.plainLyrics) {
+                    lyrics = response.data.plainLyrics.split('\n')
+                        .filter(line => line.trim() !== '')
+                        .map(line => ({ text: line.trim() }));
+                }
+            } else if (typeof response.data === 'string') {
                 const lrcResult = parseLrcFormat(response.data);
                 if (lrcResult.isLrc) {
                     lyrics = lrcResult.lyrics;

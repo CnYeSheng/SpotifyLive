@@ -617,6 +617,19 @@
                 this.lyricsTimeOffset += offset;
                 this.log(`⏰ 歌詞時間調整: ${this.lyricsTimeOffset > 0 ? '+' : ''}${this.lyricsTimeOffset}ms`);
                 
+                // --- 新增：同步到服务器 Session ---
+                if (this.sessionId) {
+                    fetch('/api/control/offset', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            offset: this.lyricsTimeOffset,
+                            sessionId: this.sessionId 
+                        })
+                    }).catch(e => console.error('同步偏移失败:', e));
+                }
+                // -------------------------------
+
                 // 保存歌詞時間調整到永久存儲
                 if (this.currentTrack) {
                     this.saveLyricsTimeAdjustment(this.currentTrack, this.lyricsTimeOffset);
@@ -631,6 +644,16 @@
                 this.lyricsTimeOffset = 0;
                 this.log('⏰ 歌詞時間偏移已重置');
                 
+                // --- 新增：同步到服务器 Session ---
+                if (this.sessionId) {
+                    fetch('/api/control/reset', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sessionId: this.sessionId })
+                    }).catch(e => console.error('同步重置失败:', e));
+                }
+                // -------------------------------
+
                 if (this.currentTrack) {
                     const cacheKey = this.generateTrackCacheKey(this.currentTrack);
                     this.lyricsTimeAdjustments.delete(cacheKey);
@@ -641,27 +664,7 @@
                 this.showLyricsOffsetMessage(0, true);
             };
             
-            // 添加顯示歌詞時間調整提示的方法
-            window.player.showLyricsOffsetMessage = function(offset, isReset = false) {
-                const message = isReset ? 
-                    '⏰ 歌詞時間已重置' : 
-                    `⏰ 歌詞時間${offset > 0 ? '延後' : '提前'} ${Math.abs(offset)}ms`;
-                
-                const messageDiv = document.createElement('div');
-                messageDiv.style.cssText = `
-                    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-                    background: rgba(0, 0, 0, 0.8); color: white; padding: 12px 20px;
-                    border-radius: 8px; z-index: 2000; font-size: 14px; font-weight: 500;
-                `;
-                messageDiv.textContent = message;
-                document.body.appendChild(messageDiv);
-                
-                setTimeout(() => {
-                    if (messageDiv.parentNode) {
-                        messageDiv.parentNode.removeChild(messageDiv);
-                    }
-                }, 1500);
-            };
+            // ... (保持原有 showLyricsOffsetMessage 代码)
         }
         
         // 2. 增強歌詞載入功能
@@ -671,6 +674,22 @@
                 window.player.overrideLyrics = function(lyrics, lyricsType, source) {
                     originalOverrideLyrics.call(this, lyrics, lyricsType, source);
                     
+                    // --- 新增：同步到服务器 Session (手动套用/搜索/上传) ---
+                    if (this.sessionId && source && source.source !== 'auto_applied') {
+                        fetch('/api/control/manual-lyrics', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 
+                                id: source.id || (source.title + '-' + source.artist),
+                                source: source.source || 'manual',
+                                title: source.title,
+                                artist: source.artist,
+                                sessionId: this.sessionId 
+                            })
+                        }).catch(e => console.error('同步手动歌词失败:', e));
+                    }
+                    // -----------------------------------------------------
+
                     // 自動保存用戶修改的歌詞
                     if (this.currentTrack && source && source.source !== 'auto_applied') {
                         this.saveLyrics(this.currentTrack, lyrics, lyricsType, {
@@ -755,6 +774,29 @@
             const originalUpdateTrackInfo = window.player.updateTrackInfo;
             if (originalUpdateTrackInfo) {
                 window.player.updateTrackInfo = function(track) {
+                    // --- 新增：从服务器同步状态 (来自 /control 的控制) ---
+                    if (track) {
+                        // 同步时间偏移
+                        if (typeof track.lyricsOffset !== 'undefined' && track.lyricsOffset !== this.lyricsTimeOffset) {
+                            this.log(`🔄 從同步伺服器接收到新的時間偏移: ${track.lyricsOffset}ms`);
+                            this.lyricsTimeOffset = track.lyricsOffset;
+                            this.updateLyricsHighlight();
+                        }
+
+                        // 同步手动指定的歌词
+                        if (track.manualLyrics && (!this.overriddenLyricsSource || this.overriddenLyricsSource.id !== track.manualLyrics.id)) {
+                            this.log(`🔄 從同步伺服器接收到手動指定的歌詞: ${track.manualLyrics.source}`);
+                            this.fetchManualLyricsFromServer(track.manualLyrics);
+                        } else if (!track.manualLyrics && this.isLyricsOverridden && this.overriddenLyricsSource && this.overriddenLyricsSource.source !== 'auto_applied') {
+                            // 如果服务器重置了手动歌词，主页面也应恢复自动模式
+                            this.log(`🔄 同步伺服器已重置手動歌詞，恢復自動獲取`);
+                            this.isLyricsOverridden = false;
+                            this.overriddenLyricsSource = null;
+                            this.checkLyrics(track); 
+                        }
+                    }
+                    // ----------------------------------------------
+
                     // 調用原始方法
                     const result = originalUpdateTrackInfo.call(this, track);
                     
@@ -774,6 +816,24 @@
                     return result;
                 };
             }
+
+            // 辅助函数：主页面根据服务器指令获取并切换歌词
+            window.player.fetchManualLyricsFromServer = async function(manualData) {
+                try {
+                    const response = await fetch(`/api/get-lyrics/${manualData.source}/${encodeURIComponent(manualData.id)}`);
+                    const data = await response.json();
+                    if (data.success) {
+                        this.overrideLyrics(data.lyrics, data.type, {
+                            ...manualData,
+                            id: manualData.id,
+                            source: manualData.source,
+                            appliedAt: Date.now()
+                        });
+                    }
+                } catch (e) {
+                    this.log(`❌ 同步手動歌詞內容失敗: ${e.message}`);
+                }
+            };
         }
         
         // 啟動增強功能
