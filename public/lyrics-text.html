@@ -139,6 +139,10 @@
         let trackDuration = 0;
         let isPlaying = false;
         
+        // Control state
+        let lyricsOffset = 0;
+        let manualLyricsId = null;
+        
         // Session Management
         let sessionId = new URLSearchParams(window.location.search).get('sessionId');
         
@@ -168,31 +172,42 @@
             try {
                 const response = await fetch(`${API_BASE}/lyrics/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
                 if (!response.ok) return null;
-                const data = await response.json();
-                
-                if (data.success && data.lyrics && Array.isArray(data.lyrics)) {
-                    // Normalize data structure (match script.js logic)
-                    data.lyrics = data.lyrics.map(line => {
-                        let processedLine = { ...line };
-                        
-                        if (processedLine.words && Array.isArray(processedLine.words)) {
-                            processedLine.words = processedLine.words.map(w => {
-                                let word = { ...w };
-                                // Normalize time fields
-                                if (word.start !== undefined && word.time === undefined) word.time = word.start;
-                                if (word.end !== undefined && word.duration === undefined) {
-                                    word.duration = word.end - (word.start || word.time || 0);
-                                }
-                                return word;
-                            });
-                        }
-                        return processedLine;
-                    });
-                }
-                return data;
+                return await processLyricsResponse(response);
             } catch (e) {
                 return null;
             }
+        }
+
+        async function fetchManualLyrics(source, id) {
+            try {
+                const response = await fetch(`${API_BASE}/get-lyrics/${source}/${encodeURIComponent(id)}`);
+                if (!response.ok) return null;
+                return await processLyricsResponse(response);
+            } catch (e) {
+                return null;
+            }
+        }
+
+        async function processLyricsResponse(response) {
+            const data = await response.json();
+            if (data.success && data.lyrics && Array.isArray(data.lyrics)) {
+                // Normalize data structure
+                data.lyrics = data.lyrics.map(line => {
+                    let processedLine = { ...line };
+                    if (processedLine.words && Array.isArray(processedLine.words)) {
+                        processedLine.words = processedLine.words.map(w => {
+                            let word = { ...w };
+                            if (word.start !== undefined && word.time === undefined) word.time = word.start;
+                            if (word.end !== undefined && word.duration === undefined) {
+                                word.duration = word.end - (word.start || word.time || 0);
+                            }
+                            return word;
+                        });
+                    }
+                    return processedLine;
+                });
+            }
+            return data;
         }
 
         function renderLyrics(currentTime) {
@@ -294,12 +309,63 @@
                 isPlaying = trackData.isPlaying;
                 const now = Date.now();
                 
+                // Update control state
+                lyricsOffset = trackData.lyricsOffset || 0;
+                const serverManualLyrics = trackData.manualLyrics;
+
+                // Check if song changed OR manual lyrics changed
+                let shouldFetchLyrics = false;
+                let fetchMode = 'auto'; // 'auto' or 'manual'
+
                 if (trackData.id !== currentTrackId) {
                     currentTrackId = trackData.id;
+                    shouldFetchLyrics = true;
+                    // Reset manual lyrics state if it was for previous song? 
+                    // No, server handles session state. If server says manual, we trust it.
+                }
+
+                // Logic to detect switch between auto <-> manual
+                if (serverManualLyrics) {
+                    // We are in manual mode
+                    if (manualLyricsId !== serverManualLyrics.id) {
+                        // New manual lyrics selected
+                        shouldFetchLyrics = true;
+                        fetchMode = 'manual';
+                        manualLyricsId = serverManualLyrics.id;
+                    } else if (currentTrackId !== trackData.id) {
+                        // Song changed, but manual lyrics persist? Usually reset on song change is good, 
+                        // but maybe user wants to force lyrics. 
+                        // Let's assume server persists manual lyrics until explicitly reset or user changes it.
+                        // However, usually manual lyrics are specific to a song.
+                        // If track ID changed, we probably shouldn't use the OLD manual lyrics unless the user re-selected it for this song.
+                        // But here we rely on what server sends.
+                        shouldFetchLyrics = true;
+                        fetchMode = 'manual';
+                    }
+                } else {
+                    // We are in auto mode
+                    if (manualLyricsId !== null) {
+                        // We were in manual mode, now back to auto
+                        shouldFetchLyrics = true;
+                        fetchMode = 'auto';
+                        manualLyricsId = null;
+                    } else if (shouldFetchLyrics) {
+                        // Just song change in auto mode
+                        fetchMode = 'auto';
+                    }
+                }
+
+                if (shouldFetchLyrics) {
                     lyricsData = [];
                     document.getElementById('lyrics-content').innerHTML = '<div id="status">Loading lyrics...</div>';
                     
-                    const lrc = await fetchLyrics(trackData.artist, trackData.name);
+                    let lrc;
+                    if (fetchMode === 'manual' && serverManualLyrics) {
+                        lrc = await fetchManualLyrics(serverManualLyrics.source, serverManualLyrics.id);
+                    } else {
+                        lrc = await fetchLyrics(trackData.artist, trackData.name);
+                    }
+
                     if (lrc && lrc.success) {
                         lyricsData = lrc.lyrics;
                         isSynced = lrc.type === 'synced';
@@ -324,10 +390,11 @@
                 let projectedProgress = lastProgress + dt;
                 if (projectedProgress > trackDuration) projectedProgress = trackDuration;
                 
-                renderLyrics(projectedProgress);
+                // Apply offset here
+                renderLyrics(projectedProgress + lyricsOffset);
             } else if (isSynced && currentTrackId) {
                 // Keep rendering current progress even if paused to show state
-                renderLyrics(lastProgress);
+                renderLyrics(lastProgress + lyricsOffset);
             }
             requestAnimationFrame(loop);
         }

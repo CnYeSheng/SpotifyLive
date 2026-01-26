@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lyrics Control Center</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        :root {
+            --glass-bg: rgba(20, 20, 20, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --accent-color: #1ed760;
+            --accent-hover: #1fdf64;
+            --text-primary: #ffffff;
+            --text-secondary: #b3b3b3;
+            --danger-color: #ff5252;
+            --card-radius: 16px;
+            --input-bg: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #000;
+            background-image: linear-gradient(135deg, #1a1a1a 0%, #000 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+            box-sizing: border-box;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        /* Card Style */
+        .card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--card-radius);
+            padding: 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s ease;
+        }
+
+        /* Header / Track Info */
+        .track-header {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .album-art {
+            width: 80px;
+            height: 80px;
+            border-radius: 12px;
+            object-fit: cover;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            background: #2a2a2a;
+        }
+
+        .track-meta {
+            flex: 1;
+            min-width: 0; /* Text truncation fix */
+        }
+
+        .track-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin: 0 0 4px 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .track-artist {
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            margin: 0 0 8px 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            background: rgba(255,255,255,0.1);
+            color: var(--text-secondary);
+            transition: all 0.3s ease;
+        }
+        
+        .badge.active {
+            background: rgba(30, 215, 96, 0.2);
+            color: var(--accent-color);
+            border: 1px solid rgba(30, 215, 96, 0.3);
+        }
+
+        /* Section Headers */
+        h2 {
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-secondary);
+            margin: 0 0 16px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        h2::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--glass-border);
+        }
+
+        /* Controls Grid */
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+            margin-bottom: 16px;
+            align-items: center;
+        }
+
+        .btn {
+            background: var(--input-bg);
+            border: 1px solid transparent;
+            color: var(--text-primary);
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+            user-select: none;
+        }
+
+        .btn:hover {
+            background: rgba(255,255,255,0.2);
+            transform: translateY(-1px);
+        }
+
+        .btn:active {
+            transform: translateY(1px);
+        }
+
+        .btn-primary {
+            background: var(--accent-color);
+            color: #000;
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-hover);
+            box-shadow: 0 0 15px rgba(30, 215, 96, 0.4);
+        }
+
+        .btn-danger {
+            background: rgba(255, 82, 82, 0.15);
+            color: var(--danger-color);
+            border: 1px solid rgba(255, 82, 82, 0.3);
+            width: 100%;
+            margin-top: 10px;
+        }
+        
+        .btn-danger:hover {
+            background: rgba(255, 82, 82, 0.25);
+        }
+
+        .offset-value {
+            grid-column: span 1;
+            text-align: center;
+            font-family: 'SF Mono', 'Roboto Mono', monospace;
+            font-size: 0.9rem;
+            color: var(--accent-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+        }
+
+        /* Inputs */
+        .input-row {
+            display: flex;
+            gap: 8px;
+        }
+
+        input {
+            flex: 1;
+            background: var(--input-bg);
+            border: 1px solid transparent;
+            border-radius: 8px;
+            padding: 12px;
+            color: white;
+            font-size: 0.95rem;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        input:focus {
+            background: rgba(255,255,255,0.15);
+            border-color: rgba(255,255,255,0.3);
+        }
+
+        input::placeholder {
+            color: rgba(255,255,255,0.4);
+        }
+
+        /* Search Results */
+        .results-list {
+            margin-top: 16px;
+            max-height: 250px;
+            overflow-y: auto;
+            border-radius: 8px;
+            background: rgba(0,0,0,0.2);
+        }
+        
+        .results-list::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .results-list::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.2);
+            border-radius: 3px;
+        }
+
+        .result-item {
+            padding: 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.2s;
+        }
+
+        .result-item:last-child {
+            border-bottom: none;
+        }
+
+        .result-item:hover {
+            background: rgba(255,255,255,0.05);
+        }
+
+        .result-info {
+            flex: 1;
+            margin-right: 12px;
+            overflow: hidden;
+        }
+
+        .result-title {
+            font-weight: 600;
+            margin-bottom: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .result-meta {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .source-tag {
+            font-size: 0.7rem;
+            padding: 1px 4px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 0.8rem;
+        }
+
+        /* Toast Notification */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: #333;
+            padding: 12px 24px;
+            border-radius: 50px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 1000;
+            font-weight: 500;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+
+        .toast-success { color: var(--accent-color); }
+        .toast-error { color: var(--danger-color); }
+
+        .empty-state {
+            padding: 30px;
+            text-align: center;
+            color: var(--text-secondary);
+            font-style: italic;
+            font-size: 0.9rem;
+        }
+
+        /* Auth Overlay */
+        .auth-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(15px);
+            z-index: 2000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="auth-overlay" class="auth-overlay" style="display: none;">
+        <div class="card" style="text-align: center; max-width: 400px;">
+            <h2 style="justify-content: center;">Not Connected</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 24px; line-height: 1.5;">
+                Please login to Spotify to access the control center.
+            </p>
+            <a href="/api/auth" class="btn btn-primary" style="text-decoration: none; display: inline-block; width: 100%; box-sizing: border-box;">Login with Spotify</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Track Card -->
+        <div class="card">
+            <div class="track-header">
+                <img id="track-art" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Crect width='80' height='80' fill='%23333'/%3E%3C/svg%3E" alt="Album Art" class="album-art">
+                <div class="track-meta">
+                    <div id="track-title" class="track-title">Waiting for music...</div>
+                    <div id="track-artist" class="track-artist">Spotify Player</div>
+                    <div id="current-source" class="badge">Auto Source</div>
+                </div>
+            </div>
+            <button class="btn btn-danger" onclick="resetAll()">Reset All Settings</button>
+        </div>
+
+        <!-- Timing Controls -->
+        <div class="card">
+            <h2>Timing Adjustment</h2>
+            <div class="controls-grid">
+                <button class="btn" onclick="adjustOffset(-500)">-0.5s</button>
+                <button class="btn" onclick="adjustOffset(-100)">-0.1s</button>
+                <div id="offset-display" class="offset-value">0ms</div>
+                <button class="btn" onclick="adjustOffset(100)">+0.1s</button>
+                <button class="btn" onclick="adjustOffset(500)">+0.5s</button>
+            </div>
+            <div class="input-row">
+                <input type="number" id="custom-offset" placeholder="Custom offset (ms)">
+                <button class="btn btn-primary" onclick="applyCustomOffset()">Set</button>
+            </div>
+        </div>
+
+        <!-- Manual Search -->
+        <div class="card">
+            <h2>Manual Lyrics</h2>
+            <div class="input-row">
+                <input type="text" id="search-query" placeholder="Artist - Title" onkeypress="handleEnter(event)">
+                <button class="btn btn-primary" onclick="searchLyrics()">Search</button>
+            </div>
+            <div id="search-results" class="results-list"></div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast">
+        <span id="toast-icon">✓</span>
+        <span id="toast-message">Action successful</span>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin + '/api';
+        let currentOffset = 0;
+        let currentTrackId = null;
+        let sessionId = new URLSearchParams(window.location.search).get('sessionId');
+
+        // Listen for session updates from main window (if open in another tab)
+        const authChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('spotify_auth') : null;
+        if (authChannel) {
+            authChannel.onmessage = (ev) => {
+                const d = ev.data || {};
+                if (d.type === 'session-update' && d.sessionId) {
+                    console.log('Received session ID from broadcast:', d.sessionId);
+                    sessionId = d.sessionId;
+                    // Update URL without reloading
+                    const newUrl = new URL(window.location);
+                    newUrl.searchParams.set('sessionId', sessionId);
+                    window.history.pushState({}, '', newUrl);
+                    // Hide overlay if it was shown
+                    document.getElementById('auth-overlay').style.display = 'none';
+                    update();
+                }
+            };
+        }
+
+        function handleEnter(e) {
+            if(e.key === 'Enter') searchLyrics();
+        }
+
+        function showToast(msg, type = 'success') {
+            const toast = document.getElementById('toast');
+            const msgEl = document.getElementById('toast-message');
+            const iconEl = document.getElementById('toast-icon');
+            
+            msgEl.innerText = msg;
+            toast.className = `toast show ${type === 'success' ? 'toast-success' : 'toast-error'}`;
+            iconEl.innerText = type === 'success' ? '✓' : '✕';
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        async function update() {
+            try {
+                const url = `${API_BASE}/current-track${sessionId ? '?sessionId=' + sessionId : ''}`;
+                const res = await fetch(url);
+                
+                if (res.status === 401) {
+                    document.getElementById('auth-overlay').style.display = 'flex';
+                    return; // Stop processing
+                }
+                
+                // Hide overlay if successful
+                if (res.ok) {
+                    document.getElementById('auth-overlay').style.display = 'none';
+                }
+
+                const data = await res.json();
+
+                if (data.name) {
+                    if (data.id !== currentTrackId) {
+                        currentTrackId = data.id;
+                        document.getElementById('track-title').innerText = data.name;
+                        document.getElementById('track-artist').innerText = data.artist;
+                        if (data.image) {
+                            document.getElementById('track-art').src = data.image;
+                        }
+                        // Pre-fill search if empty
+                        if(!document.getElementById('search-query').value) {
+                            document.getElementById('search-query').value = `${data.artist} - ${data.name}`;
+                        }
+                    }
+
+                    // Update control state
+                    currentOffset = data.lyricsOffset || 0;
+                    const offsetDisplay = document.getElementById('offset-display');
+                    offsetDisplay.innerText = (currentOffset > 0 ? '+' : '') + currentOffset + 'ms';
+                    offsetDisplay.style.color = currentOffset !== 0 ? 'var(--accent-color)' : 'var(--text-secondary)';
+                    
+                    const sourceBadge = document.getElementById('current-source');
+                    if (data.manualLyrics) {
+                        sourceBadge.innerText = `MANUAL: ${data.manualLyrics.source}`;
+                        sourceBadge.classList.add('active');
+                    } else {
+                        sourceBadge.innerText = 'AUTO SOURCE';
+                        sourceBadge.classList.remove('active');
+                    }
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+
+        async function adjustOffset(delta) {
+            const newOffset = currentOffset + delta;
+            await setOffset(newOffset);
+        }
+
+        async function applyCustomOffset() {
+            const val = parseInt(document.getElementById('custom-offset').value);
+            if (!isNaN(val)) {
+                await setOffset(val);
+                document.getElementById('custom-offset').value = '';
+            }
+        }
+
+        async function setOffset(offset) {
+            try {
+                const res = await fetch(`${API_BASE}/control/offset`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ offset, sessionId })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    currentOffset = data.lyricsOffset;
+                    update(); 
+                    showToast(`Offset set to ${currentOffset}ms`);
+                }
+            } catch (e) {
+                showToast('Failed to set offset', 'error');
+            }
+        }
+
+        async function resetAll() {
+            try {
+                await fetch(`${API_BASE}/control/reset`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId })
+                });
+                showToast('Reset all settings');
+                update();
+            } catch (e) {
+                showToast('Failed to reset', 'error');
+            }
+        }
+
+        async function searchLyrics() {
+            const query = document.getElementById('search-query').value;
+            if (!query) return;
+
+            const resultsContainer = document.getElementById('search-results');
+            resultsContainer.innerHTML = '<div class="empty-state"><div style="display:inline-block; width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite;"></div> Searching...</div><style>@keyframes spin { to { transform: rotate(360deg); } }</style>';
+
+            try {
+                const res = await fetch(`${API_BASE}/search-lyrics/${encodeURIComponent(query)}`);
+                const data = await res.json();
+
+                if (data.success && data.results && data.results.length > 0) {
+                    resultsContainer.innerHTML = '';
+                    data.results.forEach(result => {
+                        // Safe string escaping for inline handler
+                        const safeTitle = result.title.replace(/\\/g, '\\\\').replace(/'/g, "\'");
+                        const safeArtist = result.artist.replace(/\\/g, '\\\\').replace(/'/g, "\'");
+                        const safeId = result.id.replace(/\\/g, '\\\\').replace(/'/g, "\'");
+                        const safeSource = result.source.replace(/\\/g, '\\\\').replace(/'/g, "\'");
+
+                        const div = document.createElement('div');
+                        div.className = 'result-item';
+                        div.innerHTML = `
+                            <div class="result-info">
+                                <div class="result-title">${result.title}</div>
+                                <div class="result-meta">
+                                    <span class="source-tag">${result.source}</span>
+                                    <span>${result.artist}</span>
+                                </div>
+                            </div>
+                            <button class="btn btn-primary btn-sm" onclick="selectLyrics('${safeId}', '${safeSource}', '${safeTitle}', '${safeArtist}')">Select</button>
+                        `;
+                        resultsContainer.appendChild(div);
+                    });
+                } else {
+                    resultsContainer.innerHTML = '<div class="empty-state">No lyrics found</div>';
+                }
+            } catch (e) {
+                resultsContainer.innerHTML = '<div class="empty-state">Search failed</div>';
+            }
+        }
+
+        async function selectLyrics(id, source, title, artist) {
+            try {
+                const res = await fetch(`${API_BASE}/control/manual-lyrics`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, source, title, artist, sessionId })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(`Selected lyrics from ${source}`);
+                    update();
+                }
+            } catch (e) {
+                showToast('Failed to select lyrics', 'error');
+            }
+        }
+
+        // Poll every 2 seconds
+        setInterval(update, 2000);
+        update();
+    </script>
+</body>
+</html>

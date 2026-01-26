@@ -450,7 +450,10 @@ app.get('/api/current-track', async (req, res) => {
                 id: queueResponse.data.queue[0].id,
                 name: queueResponse.data.queue[0].name,
                 artist: queueResponse.data.queue[0].artists.map(a => a.name).join(', ')
-            } : null
+            } : null,
+            // Control state
+            lyricsOffset: session.lyricsOffset || 0,
+            manualLyrics: session.manualLyrics || null
         };
         
         // Save to cache
@@ -543,6 +546,61 @@ app.get('/api/current-track', async (req, res) => {
             details: error.message 
         });
     }
+});
+
+// Control endpoints
+app.post('/api/control/offset', async (req, res) => {
+    const session = await getUserSession(req);
+    if (!session) return res.status(401).json({ error: 'Not authenticated' });
+    
+    const { offset } = req.body; // milliseconds
+    session.lyricsOffset = parseInt(offset) || 0;
+    
+    // Clear cache to reflect change immediately
+    if (session.currentTrackCache) {
+        session.currentTrackCache.data.lyricsOffset = session.lyricsOffset;
+    }
+    
+    await saveUserSession(req.sessionId, session);
+    res.json({ success: true, lyricsOffset: session.lyricsOffset });
+});
+
+app.post('/api/control/manual-lyrics', async (req, res) => {
+    const session = await getUserSession(req);
+    if (!session) return res.status(401).json({ error: 'Not authenticated' });
+    
+    const { id, source, title, artist } = req.body;
+    
+    if (id && source) {
+        session.manualLyrics = { id, source, title, artist };
+    } else {
+        session.manualLyrics = null;
+    }
+    
+    // Clear cache to reflect change immediately
+    if (session.currentTrackCache) {
+        session.currentTrackCache.data.manualLyrics = session.manualLyrics;
+    }
+
+    await saveUserSession(req.sessionId, session);
+    res.json({ success: true, manualLyrics: session.manualLyrics });
+});
+
+app.post('/api/control/reset', async (req, res) => {
+    const session = await getUserSession(req);
+    if (!session) return res.status(401).json({ error: 'Not authenticated' });
+    
+    session.lyricsOffset = 0;
+    session.manualLyrics = null;
+    
+    // Clear cache
+    if (session.currentTrackCache) {
+        session.currentTrackCache.data.lyricsOffset = 0;
+        session.currentTrackCache.data.manualLyrics = null;
+    }
+
+    await saveUserSession(req.sessionId, session);
+    res.json({ success: true });
 });
 
 // 靜默刷新token端點
@@ -1658,6 +1716,18 @@ app.get('/api/lyrics/lrc/:title/:artist', async (req, res) => {
 // New Routes for OBS/Overlay display
 app.get('/lyrics-text', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'lyrics-text.html'));
+});
+
+app.get('/pre', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'pre.html'));
+});
+
+app.get('/next', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'next.html'));
+});
+
+app.get('/control', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'control.html'));
 });
 
 app.get('/song', (req, res) => {
