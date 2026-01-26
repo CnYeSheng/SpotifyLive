@@ -33,7 +33,8 @@ app.use(cors({
     credentials: true,
     allowedHeaders: ['Content-Type', 'X-Session-Id', 'X-Spotify-User-Id']
 }));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Spotify API credentials
 const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
