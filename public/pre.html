@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Previous Lyrics Overlay</title>
+    <style>
+        @font-face {
+            font-family: 'Spotify Mix';
+            src: url('font/SpotifyMix-Extrabold.woff2') format('woff2'),
+                 url('font/SpotifyMix-Extrabold.woff') format('woff'),
+                 url('font/SpotifyMix-Extrabold.ttf') format('truetype');
+            font-weight: bold;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        :root {
+            --background-primary: #000000;
+            --text-primary: #FFFFFF;
+            --text-tertiary: rgba(255, 255, 255, 0.6);
+            --spotify-green: #1ed760;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Spotify Mix', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--background-primary);
+            color: var(--text-primary);
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            width: 100vw;
+        }
+        
+        .lyrics-content {
+            width: 100%;
+            text-align: center;
+            padding: 40px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .lyrics-line {
+            padding: 20px 0;
+            font-size: 48px;
+            line-height: 1.4;
+            color: var(--text-tertiary);
+            transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            font-weight: 500;
+            letter-spacing: -0.02em;
+            display: none; /* Only target line */
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            max-width: 100%;
+        }
+
+        .lyrics-line.target {
+            display: block;
+            color: var(--text-tertiary); /* Previous line slightly dimmed */
+            font-weight: 500;
+        }
+        
+        #status {
+            font-size: 1.5em;
+            opacity: 0.7;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div id="lyrics-content" class="lyrics-content">
+        <div id="status">Waiting for music...</div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin + '/api';
+        let currentTrackId = null;
+        let lyricsData = [];
+        let isSynced = false;
+        let lastProgress = 0;
+        let lastUpdate = Date.now();
+        let trackDuration = 0;
+        let isPlaying = false;
+        
+        // Control state
+        let lyricsOffset = 0;
+        let manualLyricsId = null;
+        
+        // Session Management
+        let sessionId = new URLSearchParams(window.location.search).get('sessionId');
+        
+        // Listen for session updates from main window
+        const authChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('spotify_auth') : null;
+        if (authChannel) {
+            authChannel.onmessage = (ev) => {
+                const d = ev.data || {};
+                if (d.type === 'session-update' && d.sessionId) {
+                    sessionId = d.sessionId;
+                }
+            };
+        }
+
+        async function fetchCurrentTrack() {
+            try {
+                const url = `${API_BASE}/current-track${sessionId ? '?sessionId=' + sessionId : ''}`;
+                const response = await fetch(url);
+                if (!response.ok) return null;
+                return await response.json();
+            } catch (e) {
+                return null;
+            }
+        }
+
+        async function fetchLyrics(artist, title) {
+            try {
+                const response = await fetch(`${API_BASE}/lyrics/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
+                if (!response.ok) return null;
+                return await processLyricsResponse(response);
+            } catch (e) {
+                return null;
+            }
+        }
+
+        async function fetchManualLyrics(source, id) {
+            try {
+                const response = await fetch(`${API_BASE}/get-lyrics/${source}/${encodeURIComponent(id)}`);
+                if (!response.ok) return null;
+                return await processLyricsResponse(response);
+            } catch (e) {
+                return null;
+            }
+        }
+
+        async function processLyricsResponse(response) {
+            const data = await response.json();
+            if (data.success && data.lyrics && Array.isArray(data.lyrics)) {
+                data.lyrics = data.lyrics.map(line => ({ ...line }));
+            }
+            return data;
+        }
+
+        function renderLyrics(currentTime) {
+            const container = document.getElementById('lyrics-content');
+            const status = document.getElementById('status');
+            
+            if (!lyricsData || lyricsData.length === 0) {
+                if(status) {
+                    status.innerText = "No lyrics found";
+                    status.style.display = 'block';
+                }
+                return;
+            }
+            if(status) status.style.display = 'none';
+
+            // Find current line index
+            let activeIndex = -1;
+            for (let i = 0; i < lyricsData.length; i++) {
+                if (lyricsData[i].time <= currentTime) {
+                    activeIndex = i;
+                } else {
+                    break;
+                }
+            }
+
+            // Target index is activeIndex - 1
+            const targetIndex = activeIndex - 1;
+
+            // Rebuild DOM if track/lyrics changed
+            const existingLines = document.getElementsByClassName('lyrics-line');
+            if (existingLines.length !== lyricsData.length) {
+                container.innerHTML = '';
+                lyricsData.forEach((line, index) => {
+                    const div = document.createElement('div');
+                    div.className = 'lyrics-line';
+                    div.setAttribute('data-index', index);
+                    div.innerText = line.text;
+                    container.appendChild(div);
+                });
+            }
+
+            // Update lines
+            for (let i = 0; i < lyricsData.length; i++) {
+                const lineDiv = container.querySelector(`.lyrics-line[data-index="${i}"]`);
+                if (!lineDiv) continue;
+
+                if (i === targetIndex) {
+                    lineDiv.classList.add('target');
+                } else {
+                    lineDiv.classList.remove('target');
+                }
+            }
+        }
+
+        async function update() {
+            const trackData = await fetchCurrentTrack();
+            
+            if (trackData && (trackData.isPlaying || trackData.name)) {
+                isPlaying = trackData.isPlaying;
+                const now = Date.now();
+                
+                lyricsOffset = trackData.lyricsOffset || 0;
+                const serverManualLyrics = trackData.manualLyrics;
+
+                let shouldFetchLyrics = false;
+                let fetchMode = 'auto';
+
+                if (trackData.id !== currentTrackId) {
+                    currentTrackId = trackData.id;
+                    shouldFetchLyrics = true;
+                }
+
+                if (serverManualLyrics) {
+                    if (manualLyricsId !== serverManualLyrics.id) {
+                        shouldFetchLyrics = true;
+                        fetchMode = 'manual';
+                        manualLyricsId = serverManualLyrics.id;
+                    } else if (currentTrackId !== trackData.id) {
+                        shouldFetchLyrics = true;
+                        fetchMode = 'manual';
+                    }
+                } else {
+                    if (manualLyricsId !== null) {
+                        shouldFetchLyrics = true;
+                        fetchMode = 'auto';
+                        manualLyricsId = null;
+                    } else if (shouldFetchLyrics) {
+                        fetchMode = 'auto';
+                    }
+                }
+
+                if (shouldFetchLyrics) {
+                    lyricsData = [];
+                    document.getElementById('lyrics-content').innerHTML = '<div id="status">Loading lyrics...</div>';
+                    
+                    let lrc;
+                    if (fetchMode === 'manual' && serverManualLyrics) {
+                        lrc = await fetchManualLyrics(serverManualLyrics.source, serverManualLyrics.id);
+                    } else {
+                        lrc = await fetchLyrics(trackData.artist, trackData.name);
+                    }
+
+                    if (lrc && lrc.success) {
+                        lyricsData = lrc.lyrics;
+                        isSynced = lrc.type === 'synced';
+                    } else {
+                        document.getElementById('lyrics-content').innerHTML = '<div id="status">No lyrics available</div>';
+                    }
+                }
+                
+                lastProgress = trackData.progress;
+                lastUpdate = now;
+                trackDuration = trackData.duration;
+            } else {
+                isPlaying = false;
+                document.getElementById('lyrics-content').innerHTML = '<div id="status">Paused / No Music</div>';
+            }
+        }
+        
+        function loop() {
+            if (isPlaying && isSynced) {
+                const now = Date.now();
+                const dt = now - lastUpdate;
+                let projectedProgress = lastProgress + dt;
+                if (projectedProgress > trackDuration) projectedProgress = trackDuration;
+                
+                renderLyrics(projectedProgress + lyricsOffset);
+            } else if (isSynced && currentTrackId) {
+                renderLyrics(lastProgress + lyricsOffset);
+            }
+            requestAnimationFrame(loop);
+        }
+
+        setInterval(update, 2000);
+        update();
+        loop();
+    </script>
+</body>
+</html>
