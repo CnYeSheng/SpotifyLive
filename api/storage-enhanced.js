@@ -32,29 +32,28 @@ class EnhancedStorage {
         // Initialize Database
         try {
             switch (this.dbType.toLowerCase()) {
-                case 'postgres':
-                case 'postgresql':
-                    const { Pool } = require('pg');
-                    this.db = new Pool({
-                        connectionString: process.env.DATABASE_URL
-                    });
-                    // Create table if not exists
-                    await this.db.query(`
-                        CREATE TABLE IF NOT EXISTS song_settings (
-                            track_id VARCHAR(255) PRIMARY KEY,
-                            offset INTEGER DEFAULT 0,
-                            manual_lyrics_id VARCHAR(255),
-                            manual_lyrics_source VARCHAR(50),
-                            manual_lyrics_title VARCHAR(255),
-                                                        manual_lyrics_artist VARCHAR(255),
-                                                        lyrics_content TEXT,
-                                                        meta_data TEXT,
-                                                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                                                    )
-                                                `);
-                                                console.log('✅ PostgreSQL connected');
-                                                break;
-                            
+                                case 'postgres':
+                                case 'postgresql':
+                                    const { Pool } = require('pg');
+                                    this.db = new Pool({
+                                        connectionString: process.env.DATABASE_URL
+                                    });
+                                    // Create table if not exists
+                                    await this.db.query(`
+                                        CREATE TABLE IF NOT EXISTS song_settings (
+                                            track_id VARCHAR(255) PRIMARY KEY,
+                                            offset_ms INTEGER DEFAULT 0,
+                                            manual_lyrics_id VARCHAR(255),
+                                            manual_lyrics_source VARCHAR(50),
+                                            manual_lyrics_title VARCHAR(255),
+                                            manual_lyrics_artist VARCHAR(255),
+                                            lyrics_content TEXT,
+                                            meta_data TEXT,
+                                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                        )
+                                    `);
+                                    console.log('✅ PostgreSQL connected');
+                                    break;                            
                                             case 'mysql':
                                             case 'mariadb':
                                                 const mysql = require('mysql2/promise');
@@ -127,15 +126,14 @@ class EnhancedStorage {
                                     // 2. Try DB
                                     let settings = null;
                                     try {
-                                        if (this.dbType === 'postgres') {
-                                            const res = await this.db.query('SELECT * FROM song_settings WHERE track_id = $1', [trackId]);
-                                            if (res.rows.length > 0) {
-                                                const row = res.rows[0];
-                                                settings = {
-                                                    offset: row.offset,
-                                                    manualLyrics: row.manual_lyrics_id ? {
-                                                        id: row.manual_lyrics_id,
-                                                        source: row.manual_lyrics_source,
+                                                    if (this.dbType === 'postgres') {
+                                                        const res = await this.db.query('SELECT * FROM song_settings WHERE track_id = $1', [trackId]);
+                                                        if (res.rows.length > 0) {
+                                                            const row = res.rows[0];
+                                                            settings = {
+                                                                offset: row.offset_ms,
+                                                                manualLyrics: row.manual_lyrics_id ? {
+                                                                    id: row.manual_lyrics_id,                                                        source: row.manual_lyrics_source,
                                                         title: row.manual_lyrics_title,
                                                         artist: row.manual_lyrics_artist
                                                     } : null,
@@ -220,32 +218,31 @@ class EnhancedStorage {
                                         const lyricsContentStr = updated.lyricsContent ? JSON.stringify(updated.lyricsContent) : null;
                                         const metaDataStr = updated.customLyricsMeta ? JSON.stringify(updated.customLyricsMeta) : null;
                             
-                                        if (this.dbType === 'postgres') {
-                                            await this.db.query(`
-                                                INSERT INTO song_settings (track_id, offset, manual_lyrics_id, manual_lyrics_source, manual_lyrics_title, manual_lyrics_artist, lyrics_content, meta_data, updated_at)
-                                                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-                                                ON CONFLICT (track_id) 
-                                                DO UPDATE SET 
-                                                    offset = EXCLUDED.offset,
-                                                    manual_lyrics_id = EXCLUDED.manual_lyrics_id,
-                                                    manual_lyrics_source = EXCLUDED.manual_lyrics_source,
-                                                    manual_lyrics_title = EXCLUDED.manual_lyrics_title,
-                                                    manual_lyrics_artist = EXCLUDED.manual_lyrics_artist,
-                                                    lyrics_content = EXCLUDED.lyrics_content,
-                                                    meta_data = EXCLUDED.meta_data,
-                                                    updated_at = NOW()
-                                            `, [
-                                                trackId, 
-                                                updated.offset || 0, 
-                                                manualLyrics.id || null, 
-                                                manualLyrics.source || null, 
-                                                manualLyrics.title || null,
-                                                manualLyrics.artist || null,
-                                                lyricsContentStr,
-                                                metaDataStr
-                                            ]);
-                                        } else if (this.dbType === 'mysql' || this.dbType === 'mariadb') {
-                                            await this.db.execute(`
+                                                    if (this.dbType === 'postgres') {
+                                                        await this.db.query(`
+                                                            INSERT INTO song_settings (track_id, offset_ms, manual_lyrics_id, manual_lyrics_source, manual_lyrics_title, manual_lyrics_artist, lyrics_content, meta_data, updated_at)
+                                                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+                                                            ON CONFLICT (track_id) 
+                                                            DO UPDATE SET 
+                                                                offset_ms = EXCLUDED.offset_ms,
+                                                                manual_lyrics_id = EXCLUDED.manual_lyrics_id,
+                                                                manual_lyrics_source = EXCLUDED.manual_lyrics_source,
+                                                                manual_lyrics_title = EXCLUDED.manual_lyrics_title,
+                                                                manual_lyrics_artist = EXCLUDED.manual_lyrics_artist,
+                                                                lyrics_content = EXCLUDED.lyrics_content,
+                                                                meta_data = EXCLUDED.meta_data,
+                                                                updated_at = NOW()
+                                                        `, [
+                                                            trackId, 
+                                                            updated.offset || 0, 
+                                                            manualLyrics.id || null, 
+                                                            manualLyrics.source || null, 
+                                                            manualLyrics.title || null,
+                                                            manualLyrics.artist || null,
+                                                            lyricsContentStr,
+                                                            metaDataStr
+                                                        ]);
+                                                    } else if (this.dbType === 'mysql' || this.dbType === 'mariadb') {                                            await this.db.execute(`
                                                 INSERT INTO song_settings (track_id, offset_ms, manual_lyrics_id, manual_lyrics_source, manual_lyrics_title, manual_lyrics_artist, lyrics_content, meta_data, updated_at)
                                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
                                                 ON DUPLICATE KEY UPDATE 
