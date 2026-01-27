@@ -6,9 +6,14 @@ const path = require('path');
 const cors = require('cors');
 const axios = require('axios');
 const KVStorageManager = require('./api/kv-storage');
+const EnhancedStorage = require('./api/storage-enhanced');
 require('dotenv').config();
 
 const kvStorage = new KVStorageManager();
+const enhancedStorage = new EnhancedStorage();
+
+// Initialize enhanced storage
+enhancedStorage.init().catch(err => console.error('Failed to init storage:', err));
 
 // Rate limiter for Spotify API
 class SpotifyRateLimiter {
@@ -420,6 +425,9 @@ app.get('/api/current-track', async (req, res) => {
         const track = data.item;
         const device = data.device;
         const user = userResponse.data;
+
+        // Fetch saved settings for this track
+        const savedSettings = await enhancedStorage.getSongSettings(track.id) || {};
         
         const currentTrack = {
             isPlaying: data.is_playing,
@@ -457,9 +465,9 @@ app.get('/api/current-track', async (req, res) => {
                 name: queueResponse.data.queue[0].name,
                 artist: queueResponse.data.queue[0].artists.map(a => a.name).join(', ')
             } : null,
-            // Control state
-            lyricsOffset: session.lyricsOffset || 0,
-            manualLyrics: session.manualLyrics || null
+            // Control state - Use saved settings or defaults
+            lyricsOffset: savedSettings.offset || 0,
+            manualLyrics: savedSettings.manualLyrics || null
         };
         
         // Save to cache
@@ -559,46 +567,84 @@ app.post('/api/control/offset', async (req, res) => {
     const session = await getUserSession(req);
     if (!session) return res.status(401).json({ error: 'Not authenticated' });
     
+    // We need the current track ID to save settings for it.
+    // Try to get it from cache first, otherwise we might need to fetch it (or frontend sends it)
+    let trackId = null;
+    if (session.currentTrackCache && session.currentTrackCache.data) {
+        trackId = session.currentTrackCache.data.id;
+    }
+
+    // Ideally frontend should send trackId to avoid ambiguity, but for now we use cached
+    if (!trackId) {
+        return res.status(400).json({ error: 'No active track found to apply offset' });
+    }
+
     const { offset } = req.body; // milliseconds
-    session.lyricsOffset = parseInt(offset) || 0;
+    const newOffset = parseInt(offset) || 0;
+    session.lyricsOffset = newOffset; // Keep in session for backward compat/fast access if needed
+    
+    // Save to persistent storage
+    await enhancedStorage.saveSongSettings(trackId, { offset: newOffset });
     
     // Clear cache to reflect change immediately
     if (session.currentTrackCache) {
-        session.currentTrackCache.data.lyricsOffset = session.lyricsOffset;
+        session.currentTrackCache.data.lyricsOffset = newOffset;
     }
     
     await saveUserSession(req.sessionId, session);
-    res.json({ success: true, lyricsOffset: session.lyricsOffset });
+    res.json({ success: true, lyricsOffset: newOffset });
 });
 
 app.post('/api/control/manual-lyrics', async (req, res) => {
     const session = await getUserSession(req);
     if (!session) return res.status(401).json({ error: 'Not authenticated' });
     
+    let trackId = null;
+    if (session.currentTrackCache && session.currentTrackCache.data) {
+        trackId = session.currentTrackCache.data.id;
+    }
+
+    if (!trackId) {
+        return res.status(400).json({ error: 'No active track found to apply manual lyrics' });
+    }
+
     const { id, source, title, artist } = req.body;
     
+    let manualLyricsData = null;
     if (id && source) {
-        session.manualLyrics = { id, source, title, artist };
-    } else {
-        session.manualLyrics = null;
+        manualLyricsData = { id, source, title, artist };
     }
+    
+    session.manualLyrics = manualLyricsData;
+    
+    // Save to persistent storage
+    await enhancedStorage.saveSongSettings(trackId, { manualLyrics: manualLyricsData });
     
     // Clear cache to reflect change immediately
     if (session.currentTrackCache) {
-        session.currentTrackCache.data.manualLyrics = session.manualLyrics;
+        session.currentTrackCache.data.manualLyrics = manualLyricsData;
     }
 
     await saveUserSession(req.sessionId, session);
-    res.json({ success: true, manualLyrics: session.manualLyrics });
+    res.json({ success: true, manualLyrics: manualLyricsData });
 });
 
 app.post('/api/control/reset', async (req, res) => {
     const session = await getUserSession(req);
     if (!session) return res.status(401).json({ error: 'Not authenticated' });
     
+    let trackId = null;
+    if (session.currentTrackCache && session.currentTrackCache.data) {
+        trackId = session.currentTrackCache.data.id;
+    }
+
     session.lyricsOffset = 0;
     session.manualLyrics = null;
     
+    if (trackId) {
+        await enhancedStorage.saveSongSettings(trackId, { offset: 0, manualLyrics: null, lyricsContent: null });
+    }
+
     // Clear cache
     if (session.currentTrackCache) {
         session.currentTrackCache.data.lyricsOffset = 0;
@@ -637,6 +683,153 @@ app.post('/api/refresh-token', async (req, res) => {
     } catch (err) {
         console.error('❌ Failed to refresh token:', err.message);
         res.status(500).json({ error: err.message });
+    }
+});
+
+// KV Storage API Endpoints (Bridged to EnhancedStorage)
+
+app.get('/api/kv/status', (req, res) => {
+    res.json({
+        success: true,
+        kvAvailable: enhancedStorage.initialized,
+        userKey: 'local-user', // Simplified for local mode
+        storageType: enhancedStorage.dbType
+    });
+});
+
+app.post('/api/kv/user-lyrics', async (req, res) => {
+    try {
+        const { trackInfo, lyrics, lyricsType, source } = req.body;
+        if (!trackInfo || !trackInfo.id) {
+            return res.status(400).json({ error: 'Missing trackInfo' });
+        }
+
+        await enhancedStorage.saveSongSettings(trackInfo.id, {
+            lyricsContent: lyrics, // Save the actual lyrics array
+            // We also save metadata about the custom lyrics
+            customLyricsMeta: {
+                type: lyricsType,
+                source: source,
+                savedAt: Date.now()
+            }
+        });
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error saving user lyrics:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/kv/user-lyrics/:trackKey', async (req, res) => {
+    try {
+        const { info } = req.query;
+        let trackId = null;
+        
+        if (info) {
+            try {
+                const trackInfo = JSON.parse(decodeURIComponent(info));
+                trackId = trackInfo.id;
+            } catch (e) {
+                console.error('Failed to parse track info:', e);
+            }
+        }
+
+        // Fallback: try to extract from trackKey if possible (not reliable for ID)
+        // For now, require trackId via info param which frontend sends.
+
+        if (!trackId) {
+            return res.status(400).json({ error: 'Could not determine track ID' });
+        }
+
+        const settings = await enhancedStorage.getSongSettings(trackId);
+        
+        if (settings && settings.lyricsContent) {
+            res.json({
+                success: true,
+                data: {
+                    lyrics: settings.lyricsContent,
+                    lyricsType: settings.customLyricsMeta?.type || 'plain',
+                    source: settings.customLyricsMeta?.source || 'custom',
+                    lastModified: settings.updated_at || Date.now()
+                }
+            });
+        } else {
+            res.json({ success: false, message: 'No custom lyrics found' });
+        }
+    } catch (error) {
+        console.error('Error getting user lyrics:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/kv/save-time-offset', async (req, res) => {
+    try {
+        const { trackInfo, timeOffset } = req.body;
+        if (!trackInfo || !trackInfo.id) {
+            return res.status(400).json({ error: 'Missing trackInfo' });
+        }
+
+        await enhancedStorage.saveSongSettings(trackInfo.id, {
+            offset: timeOffset
+        });
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error saving time offset:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/kv/get-time-offset/:trackKey', async (req, res) => {
+    // This endpoint in kv-storage-manager.js does NOT send ?info=... for GET usually?
+    // Let's check kv-storage-manager.js: 
+    // fetch(`${this.apiBase}/api/kv/get-time-offset/${trackKey}`);
+    // It does NOT send info.
+    // However, trackKey is "id-artist-name". We can try to extract ID.
+    // Format: `${id}-${artist}-${name}`.
+    // If ID is simple, it works. If ID contains dashes, it might be tricky.
+    // Spotify IDs are alphanumeric.
+    
+    // Strategy: Parse trackKey.
+    // But better strategy: The frontend calls this, but `server.js` /api/current-track already returns the offset!
+    // The frontend `kv-storage-manager.js` is a "manager" that syncs.
+    // If I implement this, I need to parse the ID.
+    
+    try {
+        const { trackKey } = req.params;
+        // Spotify ID is usually at the start.
+        // But `generateTrackKey` does `replace(/\s+/g, '_')`.
+        // It's not reversible reliably.
+        
+        // workaround: We might not be able to implement this reliable without trackId.
+        // BUT, `enhancedStorage` relies on ID.
+        // Let's look at `kv-storage-manager.js` again. 
+        // `getLyricsTimeOffset` tries Redis, then Local.
+        
+        // Since we modified `/api/current-track` to return the correct offset from DB,
+        // the main player `script.js` uses `trackData.lyricsOffset`.
+        // `kv-storage-manager.js` is auxiliary.
+        
+        // I will attempt to implement it if possible, but maybe return 404 if ambiguous.
+        // actually, for this specific request, I'll just return { timeOffset: 0 } or try to find by ID if I can guess it.
+        // Wait, if I can't parse ID, I can't look it up in SQL.
+        
+        // However, looking at `kv-storage-manager.js`, it seems `saveLyricsTimeOffset` sends `trackInfo`.
+        // `getLyricsTimeOffset` calls `GET .../${trackKey}`.
+        
+        // I will try to split by `-` and take the first part as ID?
+        const potentialId = trackKey.split('-')[0];
+        if (potentialId) {
+             const settings = await enhancedStorage.getSongSettings(potentialId);
+             if (settings) {
+                 return res.json({ timeOffset: settings.offset || 0 });
+             }
+        }
+        
+        res.json({ timeOffset: 0 });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 

@@ -443,14 +443,47 @@
             }, 3000);
         }
 
+        let isRefreshing = false;
+
+        async function attemptTokenRefresh() {
+            if (isRefreshing) return false;
+            isRefreshing = true;
+            try {
+                const res = await fetch(`${API_BASE}/refresh-token`, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'x-session-id': sessionId 
+                    }
+                });
+                const data = await res.json();
+                isRefreshing = false;
+                if (data.success) {
+                    return true;
+                }
+            } catch (e) {
+                console.error('Refresh failed', e);
+            }
+            isRefreshing = false;
+            return false;
+        }
+
         async function update() {
             try {
                 const url = `${API_BASE}/current-track${sessionId ? '?sessionId=' + sessionId : ''}`;
                 const res = await fetch(url);
                 
                 if (res.status === 401) {
-                    document.getElementById('auth-overlay').style.display = 'flex';
-                    return; // Stop processing
+                    console.log('Token expired, attempting refresh...');
+                    const refreshed = await attemptTokenRefresh();
+                    if (refreshed) {
+                        console.log('Token refreshed, retrying update...');
+                        // Retry immediately
+                        return update();
+                    } else {
+                        document.getElementById('auth-overlay').style.display = 'flex';
+                        return; // Stop processing
+                    }
                 }
                 
                 // Hide overlay if successful
