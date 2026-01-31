@@ -392,6 +392,16 @@
             </div>
             <div id="search-results" class="results-list"></div>
         </div>
+
+        <!-- Manage Synced Lyrics -->
+        <div class="card">
+            <h2>Manage Synced Lyrics</h2>
+            <div class="controls-grid" style="grid-template-columns: 1fr 1fr; gap: 8px;">
+                <button class="btn btn-primary" onclick="loadSyncedLyrics()">Refresh List</button>
+                <button class="btn btn-primary" onclick="downloadLyricsBackup()">Download JSON</button>
+            </div>
+            <div id="synced-lyrics-list" class="results-list"></div>
+        </div>
     </div>
 
     <!-- Toast Notification -->
@@ -638,9 +648,61 @@
             }
         }
 
+        async function loadSyncedLyrics() {
+            const listContainer = document.getElementById('synced-lyrics-list');
+            listContainer.innerHTML = '<div class="empty-state">Loading synced lyrics...</div>';
+
+            try {
+                // Use the endpoint we unified in server.js
+                const res = await fetch(`${API_BASE}/kv/export-all-lyrics`);
+                const lyricsData = await res.json(); // It returns an array directly
+
+                if (lyricsData && lyricsData.length > 0) {
+                    listContainer.innerHTML = '';
+                    // Sort by updated time desc
+                    lyricsData.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+
+                    lyricsData.forEach(item => {
+                        // Safe string escaping
+                        const manual = item.manualLyrics || {};
+                        const title = (manual.title || item.trackId).replace(/\\/g, '\\\\').replace(/'/g, "\'");
+                        const artist = (manual.artist || 'Unknown').replace(/\\/g, '\\\\').replace(/'/g, "\'");
+                        const source = (manual.source || item.customLyricsMeta?.source || 'custom').replace(/\\/g, '\\\\').replace(/'/g, "\'");
+                        
+                        // Try to find track name if manual info is missing (basic attempt)
+                        let displayTitle = manual.title || item.trackId;
+                        if(displayTitle.includes('-')) displayTitle = displayTitle.split('-').slice(2).join('-'); // crude fallback
+
+                        const div = document.createElement('div');
+                        div.className = 'result-item';
+                        div.innerHTML = `
+                            <div class="result-info">
+                                <div class="result-title">${manual.title || displayTitle || 'Unknown Track'}</div>
+                                <div class="result-meta">
+                                    <span class="source-tag">${source}</span>
+                                    <span>${manual.artist || 'Unknown Artist'}</span>
+                                    <span style="margin-left:8px; font-size:0.7em;">${new Date(item.updatedAt).toLocaleDateString()}</span>
+                                </div>
+                            </div>
+                        `;
+                        // Optional: Add a "Use" button if we can map it back to the current track, 
+                        // but since these are saved *per track ID*, they are automatically used when that song plays.
+                        // So we just list them here for verification.
+                        listContainer.appendChild(div);
+                    });
+                } else {
+                    listContainer.innerHTML = '<div class="empty-state">No synced lyrics found</div>';
+                }
+            } catch (e) {
+                console.error(e);
+                listContainer.innerHTML = '<div class="empty-state">Failed to load lyrics</div>';
+            }
+        }
+
         // Poll every 1 second
         setInterval(update, 1000);
         update();
-    </script>
+        // Load synced list initially
+        loadSyncedLyrics();
 </body>
 </html>

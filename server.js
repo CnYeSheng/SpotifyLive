@@ -755,11 +755,28 @@ app.get('/api/kv/user-lyrics/:trackKey', async (req, res) => {
                 }
             });
         } else {
-            res.json({ success: false, message: 'No custom lyrics found' });
+            res.json({ success: true, message: 'No custom lyrics found' });
         }
     } catch (error) {
         console.error('Error getting user lyrics:', error);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// Export all lyrics
+app.get(['/api/export-lyrics', '/api/kv/export-all-lyrics'], async (req, res) => {
+    try {
+        const allLyrics = await enhancedStorage.getAllLyrics();
+        
+        if (req.path.includes('export-lyrics')) {
+             res.setHeader('Content-Disposition', 'attachment; filename="lyrics-export.json"');
+        }
+        res.setHeader('Content-Type', 'application/json');
+        
+        res.json(allLyrics);
+    } catch (error) {
+        console.error('Error exporting lyrics:', error);
+        res.status(500).json({ error: 'Failed to export lyrics' });
     }
 });
 
@@ -1780,14 +1797,15 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
         // ========== 自動模式：無 ?p= ==========
         if (!provider) {
             const providers = ['QQMusic', 'Kugou', 'NetEase', 'Lrclib', 'Musixmatch'];
-            console.log(`🔍 自動並行載入歌詞: ${artist} - ${title}`);
+            const isWbw = req.query.wbw !== undefined;
+            console.log(`🔍 自動並行載入歌詞 (wbw=${isWbw}): ${artist} - ${title}`);
             
             const searchPromises = providers.map(async (p) => {
                 try {
                     let apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${p}`;
                     
-                    // 對支援逐字的供應商添加 wbw 參數
-                    if (['NetEase', 'QQMusic', 'Kugou'].includes(p)) {
+                    // 如果原請求有 wbw，且該 Provider 支持，則加上參數
+                    if (isWbw && ['NetEase', 'QQMusic', 'Kugou'].includes(p)) {
                         apiUrl += '&wbw';
                     }
                     
@@ -1796,21 +1814,25 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                         headers: { 'User-Agent': 'Spotify-Lyrics-Player/1.0' }
                     });
 
-                    if (response.data?.success && Array.isArray(response.data.lyrics) && response.data.lyrics.length > 0) {
+                    if (response.data && (response.data.success || response.data.lyrics)) {
+                        const lyricsData = Array.isArray(response.data.lyrics) ? response.data.lyrics : [];
+                        if (lyricsData.length === 0) return null;
+
                         let score = 1;
                         let type = response.data.type || 'plain';
                         
                         // 檢查逐字歌詞特徵
-                        if (response.data.lyrics.some(line => line.words && line.words.length > 0)) {
+                        if (lyricsData.some(line => line && line.words && line.words.length > 0)) {
                             score = 3;
                             type = 'synced';
-                        } else if (type === 'synced') {
+                        } else if (type === 'synced' || (lyricsData[0] && lyricsData[0].time !== undefined)) {
                             score = 2;
+                            type = 'synced';
                         }
 
                         return {
                             provider: p,
-                            lyrics: response.data.lyrics,
+                            lyrics: lyricsData,
                             type: type,
                             score: score
                         };
@@ -1831,19 +1853,10 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                 const best = validResults[0];
                 console.log(`✅ 自動並行載入成功：選用 ${best.provider} (品質分數: ${best.score})`);
                 
-                // 數據清洗確保 UI 純淨
-                const safeLyrics = best.lyrics.map(line => {
-                    if (!line) return line;
-                    let processed = { ...line };
-                    if (typeof processed.text === 'string') {
-                        processed.text = processed.text.replace(/<[^>]*>/g, '').trim();
-                    }
-                    return processed;
-                });
-
+                // 確保數據格式正確回傳給前端
                 return res.json({
                     success: true,
-                    lyrics: safeLyrics,
+                    lyrics: best.lyrics,
                     type: best.type,
                     provider: best.provider
                 });
@@ -1873,24 +1886,28 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
         try {
             let apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${pParam}`;
             
-            // 只有指定提供商支持逐字歌詞
-            if (isWbw && ['NetEase', 'QQMusic', 'Kugou'].includes(pParam)) {
+            // 重要：如果是逐字模式，必須轉發 wbw 參數給 Python API
+            if (isWbw) {
                 apiUrl += '&wbw';
             }
 
-            console.log(`📡 指定來源 ${pParam}: ${apiUrl}`);
+            console.log(`📡 轉發請求給 Python API: ${apiUrl}`);
             
             const response = await axios.get(apiUrl, {
                 timeout: 60000,
                 headers: { 'User-Agent': 'Spotify-Lyrics-Player/1.0' }
             });
 
-            if (response.data?.success && Array.isArray(response.data.lyrics) && response.data.lyrics.length > 0) {
-                // 額外過濾確保每行歌詞都是有效的
-                const safeLyrics = response.data.lyrics.filter(line => {
+            if (response.data && (response.data.success || response.data.lyrics)) {
+                // 數據清洗確保每行歌詞都是有效的，同時保留 words 數據
+                const rawLyrics = Array.isArray(response.data.lyrics) ? response.data.lyrics : [];
+                const safeLyrics = rawLyrics.filter(line => {
                     if (!line) return false;
                     const text = typeof line === 'string' ? line : (line.text || '');
                     return typeof text === 'string' && text.trim() !== '';
+                }).map(line => {
+                    if (typeof line === 'string') return { text: line };
+                    return line;
                 });
 
                 if (safeLyrics.length > 0) {
@@ -1902,14 +1919,14 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                         provider: provider
                     });
                 }
-            } else {
-                console.log(`ℹ️ 指定來源 ${provider} 未找到歌詞`);
-                return res.status(404).json({
-                    success: false,
-                    error: `${provider} 未找到歌詞`,
-                    provider: provider
-                });
             }
+            
+            console.log(`ℹ️ 指定來源 ${provider} 未找到歌詞或格式錯誤`);
+            return res.status(404).json({
+                success: false,
+                error: `${provider} 未找到歌詞`,
+                provider: provider
+            });
         } catch (error) {
             console.error(`❌ 指定來源 ${provider} 請求失敗:`, error.message);
             return res.status(500).json({
