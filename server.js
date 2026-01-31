@@ -800,41 +800,41 @@ app.post('/api/kv/save-time-offset', async (req, res) => {
 
 app.get('/api/kv/get-time-offset/:trackKey', async (req, res) => {
     // This endpoint in kv-storage-manager.js does NOT send ?info=... for GET usually?
-    // Let's check kv-storage-manager.js: 
+    // Let's check kv-storage-manager.js:
     // fetch(`${this.apiBase}/api/kv/get-time-offset/${trackKey}`);
     // It does NOT send info.
     // However, trackKey is "id-artist-name". We can try to extract ID.
     // Format: `${id}-${artist}-${name}`.
     // If ID is simple, it works. If ID contains dashes, it might be tricky.
     // Spotify IDs are alphanumeric.
-    
+
     // Strategy: Parse trackKey.
     // But better strategy: The frontend calls this, but `server.js` /api/current-track already returns the offset!
     // The frontend `kv-storage-manager.js` is a "manager" that syncs.
     // If I implement this, I need to parse the ID.
-    
+
     try {
         const { trackKey } = req.params;
         // Spotify ID is usually at the start.
         // But `generateTrackKey` does `replace(/\s+/g, '_')`.
         // It's not reversible reliably.
-        
+
         // workaround: We might not be able to implement this reliable without trackId.
         // BUT, `enhancedStorage` relies on ID.
-        // Let's look at `kv-storage-manager.js` again. 
+        // Let's look at `kv-storage-manager.js` again.
         // `getLyricsTimeOffset` tries Redis, then Local.
-        
+
         // Since we modified `/api/current-track` to return the correct offset from DB,
         // the main player `script.js` uses `trackData.lyricsOffset`.
         // `kv-storage-manager.js` is auxiliary.
-        
+
         // I will attempt to implement it if possible, but maybe return 404 if ambiguous.
         // actually, for this specific request, I'll just return { timeOffset: 0 } or try to find by ID if I can guess it.
         // Wait, if I can't parse ID, I can't look it up in SQL.
-        
+
         // However, looking at `kv-storage-manager.js`, it seems `saveLyricsTimeOffset` sends `trackInfo`.
         // `getLyricsTimeOffset` calls `GET .../${trackKey}`.
-        
+
         // I will try to split by `-` and take the first part as ID?
         const potentialId = trackKey.split('-')[0];
         if (potentialId) {
@@ -843,9 +843,209 @@ app.get('/api/kv/get-time-offset/:trackKey', async (req, res) => {
                  return res.json({ timeOffset: settings.offset || 0 });
              }
         }
-        
+
         res.json({ timeOffset: 0 });
     } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Batch save lyrics endpoint
+app.post('/api/kv/batch-save-lyrics', async (req, res) => {
+    try {
+        const { lyrics } = req.body;
+        if (!lyrics || !Array.isArray(lyrics)) {
+            return res.status(400).json({ error: 'Missing or invalid lyrics array' });
+        }
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const lyricData of lyrics) {
+            try {
+                const trackInfo = lyricData.trackInfo;
+                if (!trackInfo || !trackInfo.id) {
+                    errorCount++;
+                    continue;
+                }
+
+                await enhancedStorage.saveSongSettings(trackInfo.id, {
+                    lyricsContent: lyricData.lyrics,
+                    lyricsType: lyricData.lyricsType,
+                    customLyricsMeta: {
+                        type: lyricData.customLyricsMeta?.type || 'plain',
+                        source: lyricData.customLyricsMeta?.source || 'manual',
+                        savedAt: Date.now()
+                    }
+                });
+
+                successCount++;
+            } catch (error) {
+                console.error('Error saving individual lyric:', error.message);
+                errorCount++;
+            }
+        }
+
+        res.json({
+            success: true,
+            message: `Batch save completed: ${successCount} successful, ${errorCount} failed`,
+            successCount,
+            errorCount
+        });
+    } catch (error) {
+        console.error('Error in batch save lyrics:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Endpoint to get all lyrics for export
+app.get('/api/kv/get-all-lyrics', async (req, res) => {
+    try {
+        const allLyrics = await enhancedStorage.getAllLyrics();
+
+        res.json({
+            success: true,
+            total: allLyrics.length,
+            lyrics: allLyrics
+        });
+    } catch (error) {
+        console.error('Error getting all lyrics:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Save user lyrics provider preference
+app.post('/api/kv/save-provider', async (req, res) => {
+    try {
+        const { trackInfo, provider } = req.body;
+        if (!trackInfo || !trackInfo.id || !provider) {
+            return res.status(400).json({ error: 'Missing trackInfo or provider' });
+        }
+
+        // Save provider preference to storage
+        await enhancedStorage.saveSongSettings(trackInfo.id, {
+            manualLyrics: { source: provider } // Overload manualLyrics.source for provider pref
+        });
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error saving provider:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Batch save lyrics endpoint (for compatibility with client)
+app.post('/api/kv/sync-lyrics', async (req, res) => {
+    try {
+        const { lyrics } = req.body;
+        if (!lyrics || !Array.isArray(lyrics)) {
+            return res.status(400).json({ error: 'Missing or invalid lyrics array' });
+        }
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const lyricData of lyrics) {
+            try {
+                const trackInfo = lyricData.trackInfo;
+                if (!trackInfo || !trackInfo.id) {
+                    errorCount++;
+                    continue;
+                }
+
+                await enhancedStorage.saveSongSettings(trackInfo.id, {
+                    lyricsContent: lyricData.lyrics,
+                    lyricsType: lyricData.lyricsType,
+                    customLyricsMeta: {
+                        type: lyricData.customLyricsMeta?.type || 'plain',
+                        source: lyricData.customLyricsMeta?.source || 'manual',
+                        savedAt: Date.now()
+                    }
+                });
+
+                successCount++;
+            } catch (error) {
+                console.error('Error saving individual lyric:', error.message);
+                errorCount++;
+            }
+        }
+
+        res.json({
+            success: true,
+            message: `Batch save completed: ${successCount} successful, ${errorCount} failed`,
+            successCount,
+            errorCount
+        });
+    } catch (error) {
+        console.error('Error in batch save lyrics:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Endpoint for time adjustments sync (for compatibility with client)
+app.post('/api/kv/sync-time-adjustments', async (req, res) => {
+    try {
+        const { adjustments } = req.body;
+        if (!adjustments || !Array.isArray(adjustments)) {
+            return res.status(400).json({ error: 'Missing or invalid adjustments array' });
+        }
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const adjustmentData of adjustments) {
+            try {
+                const trackInfo = adjustmentData.trackInfo;
+                const timeOffset = adjustmentData.timeOffset;
+
+                if (!trackInfo || !trackInfo.id || timeOffset === undefined) {
+                    errorCount++;
+                    continue;
+                }
+
+                await enhancedStorage.saveSongSettings(trackInfo.id, {
+                    offset: timeOffset
+                });
+
+                successCount++;
+            } catch (error) {
+                console.error('Error saving individual time adjustment:', error.message);
+                errorCount++;
+            }
+        }
+
+        res.json({
+            success: true,
+            message: `Time adjustments sync completed: ${successCount} successful, ${errorCount} failed`,
+            successCount,
+            errorCount
+        });
+    } catch (error) {
+        console.error('Error in time adjustments sync:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Endpoint to get all time adjustments (for compatibility with client)
+app.get('/api/kv/time-adjustments', async (req, res) => {
+    try {
+        const allLyrics = await enhancedStorage.getAllLyrics();
+
+        // Extract time offsets from the lyrics data
+        const timeAdjustments = allLyrics
+            .filter(item => item.offset !== undefined)
+            .map(item => ({
+                key: item.trackId || item.id,
+                timeOffset: item.offset,
+                trackInfo: item.trackInfo || { id: item.trackId || item.id }
+            }));
+
+        res.json({
+            success: true,
+            data: timeAdjustments
+        });
+    } catch (error) {
+        console.error('Error getting time adjustments:', error);
         res.status(500).json({ error: error.message });
     }
 });

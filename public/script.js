@@ -182,9 +182,94 @@ class SpotifyLyricsPlayer {
         
         // 初始化自動同步功能
         this.initAutoSync();
-        
+
         // 初始化增強 Session 管理器
         this.initSessionManager();
+
+        // 初始化同步控制按鈕
+        this.initSyncControls();
+
+        // 在初始化完成後，立即從雲端同步數據以確保一致性
+        setTimeout(() => {
+            if (this.sessionId) {
+                this.syncWithCloudOnLoad();
+            }
+        }, 2000); // 延遲2秒以確保其他初始化完成
+    }
+
+    // 在加載時從雲端同步數據以確保跨瀏覽器一致性
+    async syncWithCloudOnLoad() {
+        try {
+            this.log('🔄 應用程序加載時同步雲端數據...');
+
+            // 從雲端獲取最新數據
+            const downloadResponse = await fetch('/api/kv/get-all-lyrics', {
+                headers: { 'X-Session-Id': this.sessionId }
+            });
+
+            if (downloadResponse.ok) {
+                const data = await downloadResponse.json();
+                if (data.success && Array.isArray(data.lyrics)) {
+                    // 從 localStorage 獲取當前本地數據
+                    const currentLocalLyrics = JSON.parse(localStorage.getItem('user_custom_lyrics') || '{}');
+                    let localLyricsUpdated = false;
+
+                    this.log(`📥 開始從雲端同步 ${data.lyrics.length} 條歌詞...`);
+
+                    for (const lyricData of data.lyrics) {
+                        // 驗證數據完整性
+                        if (!lyricData.trackInfo || !lyricData.trackInfo.id) {
+                            this.log(`⚠️ 跳過無效雲端歌詞數據: 缺少 trackInfo 或 trackInfo.id`);
+                            continue;
+                        }
+
+                        const cacheKey = this.generateTrackCacheKey(lyricData.trackInfo);
+
+                        // 檢查是否本地已經有這個歌詞（比較時間戳來判斷哪個更新）
+                        const localLyric = currentLocalLyrics[cacheKey];
+                        const cloudTimestamp = lyricData.lastModified || lyricData.updatedAt || lyricData.lastUsed || Date.now();
+                        const localTimestamp = localLyric?.lastUsed || 0;
+
+                        // 如果雲端數據更新，或者本地沒有此歌詞，則下載
+                        if (!localLyric || cloudTimestamp > localTimestamp) {
+                            // 添加到內存中的 savedLyrics
+                            this.savedLyrics.set(cacheKey, lyricData);
+
+                            // 同時添加到 localStorage（更新時間戳）
+                            currentLocalLyrics[cacheKey] = {
+                                trackInfo: lyricData.trackInfo,
+                                lyrics: lyricData.lyricsContent || lyricData.lyrics,
+                                lyricsType: lyricData.lyricsType || 'synced',
+                                source: lyricData.source || { source: 'cloud' },
+                                lastUsed: Date.now()
+                            };
+                            localLyricsUpdated = true;
+                        }
+                    }
+
+                    // 如果本地數據有更新，保存到 localStorage
+                    if (localLyricsUpdated) {
+                        localStorage.setItem('user_custom_lyrics', JSON.stringify(currentLocalLyrics));
+                        this.log(`📥 已從雲端同步 ${Object.keys(currentLocalLyrics).length} 條歌詞到本地`);
+
+                        // 更新本地歌詞計數顯示
+                        if (typeof this.updateSyncStatus === 'function') {
+                            this.updateSyncStatus();
+                        }
+                    } else {
+                        this.log(`✅ 本地歌詞已是最新，無需更新`);
+                    }
+                } else {
+                    this.log(`⚠️ 雲端返回空數據或格式錯誤`);
+                }
+            } else {
+                this.log(`⚠️ 無法從雲端獲取歌詞數據: ${downloadResponse.status}`);
+            }
+
+            this.log('✅ 雲端數據同步完成');
+        } catch (error) {
+            this.log(`❌ 雲端數據同步失敗: ${error.message}`);
+        }
     }
 
     // 初始化歌詞緩存
@@ -318,50 +403,118 @@ class SpotifyLyricsPlayer {
     // 同步歌詞數據
     async syncLyricsData() {
         try {
-            // 上傳本地歌詞到 KV
-            const localLyrics = Array.from(this.savedLyrics.entries()).map(([key, value]) => ({
-                key,
-                ...value
-            }));
-            
-            if (localLyrics.length > 0) {
-                const uploadResponse = await fetch('/api/kv/sync-lyrics', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Session-Id': this.sessionId
-                    },
-                    body: JSON.stringify({ lyrics: localLyrics })
-                });
-                
-                if (uploadResponse.ok) {
-                    this.log(`📤 已上傳 ${localLyrics.length} 條歌詞到 KV`);
-                }
-            }
-            
+            // 首先從雲端獲取所有數據，確保本地數據是最新的
+            let newCount = 0;
+
             // 從 KV 下載歌詞
-            const downloadResponse = await fetch('/api/kv/user-lyrics', {
+            const downloadResponse = await fetch('/api/kv/get-all-lyrics', {
                 headers: { 'X-Session-Id': this.sessionId }
             });
-            
-            let newCount = 0;
+
             if (downloadResponse.ok) {
                 const data = await downloadResponse.json();
-                if (data.data && Array.isArray(data.data)) {
-                    data.data.forEach(lyricData => {
+                if (data.success && Array.isArray(data.lyrics)) {
+                    // 從 localStorage 獲取當前本地數據
+                    const currentLocalLyrics = JSON.parse(localStorage.getItem('user_custom_lyrics') || '{}');
+                    let localLyricsUpdated = false;
+
+                    this.log(`📥 開始下載雲端歌詞: 共 ${data.lyrics.length} 條`);
+
+                    for (const lyricData of data.lyrics) {
+                        // 驗證數據完整性
+                        if (!lyricData.trackInfo || !lyricData.trackInfo.id) {
+                            this.log(`⚠️ 跳過無效雲端歌詞數據: 缺少 trackInfo 或 trackInfo.id`);
+                            continue;
+                        }
+
                         const cacheKey = this.generateTrackCacheKey(lyricData.trackInfo);
-                        if (!this.savedLyrics.has(cacheKey)) {
+
+                        // 檢查是否本地已經有這個歌詞（比較時間戳來判斷哪個更新）
+                        const localLyric = currentLocalLyrics[cacheKey];
+                        const cloudTimestamp = lyricData.lastModified || lyricData.updatedAt || lyricData.lastUsed || Date.now();
+                        const localTimestamp = localLyric?.lastUsed || 0;
+
+                        // 如果雲端數據更新，或者本地沒有此歌詞，則下載
+                        if (!localLyric || cloudTimestamp > localTimestamp) {
+                            // 添加到內存中的 savedLyrics
                             this.savedLyrics.set(cacheKey, lyricData);
+
+                            // 同時添加到 localStorage（更新時間戳）
+                            currentLocalLyrics[cacheKey] = {
+                                trackInfo: lyricData.trackInfo,
+                                lyrics: lyricData.lyricsContent || lyricData.lyrics,
+                                lyricsType: lyricData.lyricsType || 'synced',
+                                source: lyricData.source || { source: 'cloud' },
+                                lastUsed: Date.now()
+                            };
+                            localLyricsUpdated = true;
                             newCount++;
                         }
-                    });
-                    
-                    if (newCount > 0) {
-                        this.saveSavedLyricsToStorage();
-                        this.log(`📥 已下載 ${newCount} 條新歌詞從 KV`);
                     }
+
+                    // 如果本地數據有更新，保存到 localStorage
+                    if (localLyricsUpdated) {
+                        localStorage.setItem('user_custom_lyrics', JSON.stringify(currentLocalLyrics));
+                        this.log(`📥 已下載 ${newCount} 條新歌詞從雲端到本地`);
+
+                        // 更新本地歌詞計數顯示
+                        if (typeof this.updateSyncStatus === 'function') {
+                            this.updateSyncStatus();
+                        }
+                    } else {
+                        this.log(`✅ 本地歌詞已是最新，無需下載新數據`);
+                    }
+                } else {
+                    this.log(`⚠️ 雲端返回空數據或格式錯誤`);
+                }
+            } else {
+                this.log(`⚠️ 無法從雲端獲取歌詞數據: ${downloadResponse.status}`);
+            }
+
+            // 上傳本地歌詞到 KV (使用 existing endpoint) - 確保本地更改也上傳到雲端
+            // 從 localStorage 獲取本地歌詞數據，確保我們獲取所有本地保存的歌詞
+            const localLyricsFromStorage = JSON.parse(localStorage.getItem('user_custom_lyrics') || '{}');
+            let uploadCount = 0;
+
+            this.log(`📤 開始上傳本地歌詞到雲端: 共 ${Object.keys(localLyricsFromStorage).length} 條`);
+
+            for (const [key, lyricData] of Object.entries(localLyricsFromStorage)) {
+                try {
+                    // 驗證數據完整性
+                    if (!lyricData.trackInfo || !lyricData.trackInfo.id) {
+                        this.log(`⚠️ 跳過無效本地歌詞數據: 缺少 trackInfo 或 trackInfo.id - Key: ${key}`);
+                        continue;
+                    }
+
+                    const uploadResponse = await fetch('/api/kv/user-lyrics', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Session-Id': this.sessionId
+                        },
+                        body: JSON.stringify({
+                            trackInfo: lyricData.trackInfo,
+                            lyrics: lyricData.lyrics,
+                            lyricsType: lyricData.lyricsType || 'synced',
+                            source: lyricData.source || { source: 'manual' }
+                        })
+                    });
+
+                    if (uploadResponse.ok) {
+                        uploadCount++;
+                        this.log(`📤 已上傳歌詞到 KV: ${lyricData.trackInfo?.name || lyricData.trackInfo?.id || 'Unknown'}`);
+                    } else {
+                        // Log the response for debugging
+                        const responseText = await uploadResponse.text();
+                        this.log(`❌ 上傳歌詞失敗: ${uploadResponse.status} - ${responseText} - Track: ${lyricData.trackInfo?.name || lyricData.trackInfo?.id || 'Unknown'}`);
+                    }
+                } catch (uploadError) {
+                    this.log(`❌ 上傳單個歌詞失敗: ${uploadError.message} - Track: ${lyricData.trackInfo?.name || lyricData.trackInfo?.id || 'Unknown'}`);
                 }
             }
+
+            this.log(`✅ 本地歌詞上傳完成: 成功 ${uploadCount} 條`);
+
             return newCount; // ✨ 新增：返回下載數量
         } catch (error) {
             this.log(`❌ 歌詞同步失敗: ${error.message}`);
@@ -369,52 +522,111 @@ class SpotifyLyricsPlayer {
         }
     }
 
-    // 同步時間調整數據  
+    // 同步時間調整數據
     async syncTimeAdjustments() {
         try {
-            // 上傳本地時間調整到 KV
-            const localAdjustments = Array.from(this.lyricsTimeAdjustments.entries()).map(([key, value]) => ({
-                key,
-                ...value
-            }));
-            
-            if (localAdjustments.length > 0) {
-                const uploadResponse = await fetch('/api/kv/sync-time-adjustments', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Session-Id': this.sessionId
-                    },
-                    body: JSON.stringify({ adjustments: localAdjustments })
-                });
-                
-                if (uploadResponse.ok) {
-                    this.log(`📤 已上傳 ${localAdjustments.length} 個時間調整到 KV`);
-                }
-            }
-            
-            // 從 KV 下載時間調整
-            const downloadResponse = await fetch('/api/kv/time-adjustments', {
+            // 首先嘗試從雲端獲取所有時間調整數據
+            // Note: We don't have a specific endpoint to get all time adjustments, so we'll use the get-all-lyrics endpoint
+            // which should contain time offset information as well
+            const downloadResponse = await fetch('/api/kv/get-all-lyrics', {
                 headers: { 'X-Session-Id': this.sessionId }
             });
-            
+
             if (downloadResponse.ok) {
                 const data = await downloadResponse.json();
-                if (data.data && Array.isArray(data.data)) {
-                    let newCount = 0;
-                    data.data.forEach(adjustmentData => {
-                        if (!this.lyricsTimeAdjustments.has(adjustmentData.key)) {
-                            this.lyricsTimeAdjustments.set(adjustmentData.key, adjustmentData);
-                            newCount++;
+                if (data.success && Array.isArray(data.lyrics)) {
+                    let newOffsetsCount = 0;
+
+                    this.log(`📥 開始下載雲端時間調整: 檢查 ${data.lyrics.length} 首歌曲`);
+
+                    for (const lyricData of data.lyrics) {
+                        // 檢查是否有時間偏移數據
+                        if (lyricData.timeOffset !== undefined || lyricData.offset !== undefined) {
+                            const trackId = lyricData.trackInfo?.id;
+                            if (trackId) {
+                                // 檢查本地是否已有此時間調整（比較時間戳）
+                                const existingAdjustment = this.lyricsTimeAdjustments.get(trackId);
+                                const cloudTimestamp = lyricData.lastModified || lyricData.updatedAt || Date.now();
+                                const localTimestamp = existingAdjustment?.lastUpdated || 0;
+
+                                // 如果雲端數據更新，或者本地沒有此調整，則下載
+                                if (!existingAdjustment || cloudTimestamp > localTimestamp) {
+                                    const timeOffset = lyricData.timeOffset !== undefined ? lyricData.timeOffset : lyricData.offset;
+
+                                    // 添加到內存中的時間調整映射
+                                    this.lyricsTimeAdjustments.set(trackId, {
+                                        trackInfo: lyricData.trackInfo,
+                                        timeOffset: timeOffset,
+                                        lastUpdated: Date.now()
+                                    });
+
+                                    // 保存到本地存儲
+                                    const currentOffsets = JSON.parse(localStorage.getItem('lyrics_time_adjustments') || '{}');
+                                    currentOffsets[trackId] = {
+                                        timeOffset: timeOffset,
+                                        trackInfo: lyricData.trackInfo,
+                                        lastUpdated: Date.now()
+                                    };
+                                    localStorage.setItem('lyrics_time_adjustments', JSON.stringify(currentOffsets));
+
+                                    newOffsetsCount++;
+                                }
+                            }
                         }
-                    });
-                    
-                    if (newCount > 0) {
-                        this.saveTimeAdjustmentsToStorage();
-                        this.log(`📥 已下載 ${newCount} 個新時間調整從 KV`);
+                    }
+
+                    if (newOffsetsCount > 0) {
+                        this.log(`📥 已下載 ${newOffsetsCount} 個新時間調整從雲端`);
+                    } else {
+                        this.log(`✅ 本地時間調整已是最新`);
                     }
                 }
+            } else {
+                this.log(`⚠️ 無法從雲端獲取時間調整數據: ${downloadResponse.status}`);
             }
+
+            // 上傳本地時間調整到 KV (using existing endpoint)
+            // 從 localStorage 獲取本地時間調整數據，確保我們獲取所有本地保存的調整
+            const localOffsetsFromStorage = JSON.parse(localStorage.getItem('lyrics_time_adjustments') || '{}');
+            let offsetUploadCount = 0;
+
+            this.log(`📤 開始上傳本地時間調整到雲端: 共 ${Object.keys(localOffsetsFromStorage).length} 條`);
+
+            for (const [trackId, offsetData] of Object.entries(localOffsetsFromStorage)) {
+                try {
+                    // Validate data before sending
+                    if (!offsetData.trackInfo || !offsetData.trackInfo.id) {
+                        this.log(`⚠️ 跳過無效時間調整數據: 缺少 trackInfo 或 trackInfo.id for trackId: ${trackId}`);
+                        continue;
+                    }
+
+                    // Use the existing save-time-offset endpoint
+                    const uploadResponse = await fetch('/api/kv/save-time-offset', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Session-Id': this.sessionId
+                        },
+                        body: JSON.stringify({
+                            trackInfo: offsetData.trackInfo,
+                            timeOffset: offsetData.timeOffset
+                        })
+                    });
+
+                    if (uploadResponse.ok) {
+                        offsetUploadCount++;
+                        this.log(`📤 已上傳時間調整到 KV: ${offsetData.trackInfo?.name || trackId}`);
+                    } else {
+                        // Log the response for debugging
+                        const responseText = await uploadResponse.text();
+                        this.log(`❌ 上傳時間調整失敗: ${uploadResponse.status} - ${responseText} - Track: ${offsetData.trackInfo?.name || trackId}`);
+                    }
+                } catch (uploadError) {
+                    this.log(`❌ 上傳單個時間調整失敗: ${uploadError.message} - Track: ${offsetData.trackInfo?.name || trackId}`);
+                }
+            }
+
+            this.log(`✅ 本地時間調整上傳完成: 成功 ${offsetUploadCount} 條`);
         } catch (error) {
             this.log(`❌ 時間調整同步失敗: ${error.message}`);
         }
@@ -562,7 +774,15 @@ class SpotifyLyricsPlayer {
         }
 
         if (localLyricsCountElement) {
-            localLyricsCountElement.textContent = (this.savedLyrics?.size || 0).toString();
+            // 從 localStorage 獲取最新的本地歌詞數量
+            try {
+                const customLyrics = JSON.parse(localStorage.getItem('user_custom_lyrics') || '{}');
+                const localLyricsCount = Object.keys(customLyrics).length;
+                localLyricsCountElement.textContent = localLyricsCount.toString();
+            } catch (error) {
+                console.error('獲取本地歌詞數量失敗:', error);
+                localLyricsCountElement.textContent = (this.savedLyrics?.size || 0).toString();
+            }
         }
 
         if (cloudStatusElement) {
@@ -573,14 +793,18 @@ class SpotifyLyricsPlayer {
     // 執行手動同步
     async performManualSync() {
         const manualSyncBtn = document.getElementById('manual-sync-btn');
+        let originalText = '';
+
         if (manualSyncBtn) {
-            const originalText = manualSyncBtn.innerHTML;
+            originalText = manualSyncBtn.innerHTML;
             manualSyncBtn.innerHTML = '<div class="loading"></div> 同步中...';
             manualSyncBtn.disabled = true;
         }
 
         try {
             await this.performAutoSync();
+            // Refresh the local lyrics count after sync
+            await this.refreshLocalLyricsCount();
             this.updateSyncStatus();
             this.showSyncMessage('✅ 手動同步完成', 'success');
         } catch (error) {
@@ -590,6 +814,31 @@ class SpotifyLyricsPlayer {
                 manualSyncBtn.innerHTML = originalText;
                 manualSyncBtn.disabled = false;
             }
+        }
+    }
+
+    // 刷新本地歌詞計數
+    async refreshLocalLyricsCount() {
+        try {
+            // 重新從 localStorage 獲取數據
+            const customLyrics = JSON.parse(localStorage.getItem('user_custom_lyrics') || '{}');
+            const localLyricsCount = Object.keys(customLyrics).length;
+
+            // 更新本地計數
+            if (this.savedLyrics) {
+                this.savedLyrics.clear();
+                Object.entries(customLyrics).forEach(([key, value]) => {
+                    this.savedLyrics.set(key, value);
+                });
+            }
+
+            // 更新 UI 顯示
+            const localLyricsCountElement = document.getElementById('local-lyrics-count');
+            if (localLyricsCountElement) {
+                localLyricsCountElement.textContent = localLyricsCount.toString();
+            }
+        } catch (error) {
+            console.error('刷新本地歌詞計數失敗:', error);
         }
     }
 
@@ -839,12 +1088,18 @@ class SpotifyLyricsPlayer {
         if (savedLyrics) {
             this.log(`💎 從保存的歌詞載入: ${track.name} - ${track.artist}`);
             // 套用時間調整 (如果有的話)
-            const timeAdjustment = this.lyricsTimeAdjustments.get(cacheKey); // 使用標準化的 key 查找
+            // ✨ 修復：同時檢查 trackId 鍵（用於舊數據兼容性）
+            let timeAdjustment = this.lyricsTimeAdjustments.get(cacheKey); // 使用標準化的 key 查找
+            if (!timeAdjustment && track.id) {
+                timeAdjustment = this.lyricsTimeAdjustments.get(track.id); // 備用：使用 trackId
+            }
             if (timeAdjustment && savedLyrics.lyrics) {
-                this.log(`⏰ 為 ${track.name} 應用已保存的時間調整: ${timeAdjustment.timeOffset}ms`); // 注意：現在 timeAdjustment 是物件
+                // ✨ 修復：確保正確提取時間偏移值
+                const timeOffset = typeof timeAdjustment === 'number' ? timeAdjustment : timeAdjustment.timeOffset;
+                this.log(`⏰ 為 ${track.name} 應用已保存的時間調整: ${timeOffset}ms`);
                 return {
                     ...savedLyrics,
-                    lyrics: this.applyTimeAdjustmentToLyrics(savedLyrics.lyrics, timeAdjustment) // 傳入完整物件
+                    lyrics: this.applyTimeAdjustmentToLyrics(savedLyrics.lyrics, timeOffset)
                 };
             }
             return savedLyrics;
@@ -855,12 +1110,18 @@ class SpotifyLyricsPlayer {
         if (cached && (Date.now() - cached.timestamp) < this.lyricsCacheExpiry) {
             this.log(`💾 從一般緩存載入: ${track.name} - ${track.artist}`);
             // 套用時間調整 (如果有的話)
-            const timeAdjustment = this.lyricsTimeAdjustments.get(cacheKey); // 使用標準化的 key 查找
+            // ✨ 修復：同時檢查 trackId 鍵（用於舊數據兼容性）
+            let timeAdjustment = this.lyricsTimeAdjustments.get(cacheKey); // 使用標準化的 key 查找
+            if (!timeAdjustment && track.id) {
+                timeAdjustment = this.lyricsTimeAdjustments.get(track.id); // 備用：使用 trackId
+            }
             if (timeAdjustment && cached.lyrics) {
-                this.log(`⏰ 為 ${track.name} 應用時間調整 (從緩存): ${timeAdjustment.timeOffset}ms`); // 注意：現在 timeAdjustment 是物件
+                // ✨ 修復：確保正確提取時間偏移值
+                const timeOffset = typeof timeAdjustment === 'number' ? timeAdjustment : timeAdjustment.timeOffset;
+                this.log(`⏰ 為 ${track.name} 應用時間調整 (從緩存): ${timeOffset}ms`);
                 return {
                     ...cached,
-                    lyrics: this.applyTimeAdjustmentToLyrics(cached.lyrics, timeAdjustment) // 傳入完整物件
+                    lyrics: this.applyTimeAdjustmentToLyrics(cached.lyrics, timeOffset)
                 };
             }
             return cached;
@@ -1021,21 +1282,40 @@ async initializeStorage() {
 }
 
     // 套用時間調整到歌詞
-    applyTimeAdjustmentToLyrics(lyrics, timeAdjustment) {
-        // **修改點：檢查 timeAdjustment 物件及其 timeOffset 屬性**
-        if (!timeAdjustment || typeof timeAdjustment !== 'object' || timeAdjustment.timeOffset === undefined || timeAdjustment.timeOffset === 0) {
+    // ✨ 修復：確保正確處理時間調整數據
+    applyTimeAdjustmentToLyrics(lyrics, timeOffset) {
+        // 如果時間偏移為0或不存在，直接返回原歌詞
+        if (!timeOffset || timeOffset === 0) {
             return lyrics;
         }
 
-        const offset = timeAdjustment.timeOffset; // 從物件中取出數值
-        return lyrics.map(line => {
-            if (line.time !== undefined) {
+        // 確保 timeOffset 是數字
+        const offset = typeof timeOffset === 'number' ? timeOffset : (timeOffset.timeOffset || 0);
+        if (!offset || offset === 0) {
+            return lyrics;
+        }
+
+        // 如果歌詞是純文字（非同步歌詞），直接返回
+        if (!Array.isArray(lyrics) || lyrics.length === 0) {
+            return lyrics;
+        }
+
+        // 檢查歌詞是否有時間戳
+        const firstLyric = lyrics[0];
+        if (!firstLyric || typeof firstLyric !== 'object' || !('time' in firstLyric)) {
+            // 無時間戳，返回原歌詞
+            return lyrics;
+        }
+
+        // 對每條歌詞的時間戳進行調整
+        return lyrics.map(lyric => {
+            if (lyric && typeof lyric === 'object' && lyric.time !== undefined) {
                 return {
-                    ...line,
-                    time: Math.max(0, line.time + offset) // 確保時間不會是負數
+                    ...lyric,
+                    time: Math.max(0, lyric.time + offset) // 確保時間不為負數
                 };
             }
-            return line; // 如果行沒有 time 屬性，直接返回
+            return lyric;
         });
     }
 
@@ -6272,6 +6552,81 @@ showOffsetMessage() {
         this.showErrorMessage(`${message}\n請升級到 Spotify Premium 以使用此功能`);
     }
 
+    // 保存當前歌詞為自定義
+    async saveCurrentLyricsAsCustom() {
+        if (!this.currentTrack) {
+            this.showErrorMessage('沒有當前播放的歌曲');
+            return;
+        }
+
+        if (!this.lyrics || this.lyrics.length === 0) {
+            this.showErrorMessage('沒有可保存的歌詞');
+            return;
+        }
+
+        try {
+            // 使用 KV 存儲系統保存
+            const response = await fetch('/api/kv/user-lyrics', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Session-Id': this.sessionId
+                },
+                body: JSON.stringify({
+                    trackInfo: {
+                        id: this.currentTrack.id,
+                        name: this.currentTrack.name,
+                        artist: this.currentTrack.artist,
+                        album: this.currentTrack.album,
+                        image: this.currentTrack.image
+                    },
+                    lyrics: this.lyrics,
+                    lyricsType: this.lyricsType,
+                    source: {
+                        source: 'manual_save',
+                        title: `${this.currentTrack.artist} - ${this.currentTrack.name}`,
+                        artist: this.currentTrack.artist,
+                        savedAt: Date.now()
+                    }
+                })
+            });
+
+            if (response.ok) {
+                // 同時保存到本地 localStorage
+                const customLyrics = JSON.parse(localStorage.getItem('user_custom_lyrics') || '{}');
+                const trackKey = this.generateTrackCacheKey(this.currentTrack);
+
+                customLyrics[trackKey] = {
+                    trackInfo: {
+                        id: this.currentTrack.id,
+                        name: this.currentTrack.name,
+                        artist: this.currentTrack.artist,
+                        album: this.currentTrack.album,
+                        image: this.currentTrack.image
+                    },
+                    lyrics: this.lyrics,
+                    lyricsType: this.lyricsType,
+                    source: {
+                        source: 'manual_save',
+                        title: `${this.currentTrack.artist} - ${this.currentTrack.name}`,
+                        artist: this.currentTrack.artist,
+                        savedAt: Date.now()
+                    },
+                    lastUsed: Date.now()
+                };
+
+                localStorage.setItem('user_custom_lyrics', JSON.stringify(customLyrics));
+
+                this.showSuccessMessage('✅ 當前歌詞已保存為自定義歌詞');
+            } else {
+                throw new Error(`保存失敗: ${response.status}`);
+            }
+        } catch (error) {
+            console.error('保存當前歌詞失敗:', error);
+            this.showErrorMessage('保存失敗，請稍後重試');
+        }
+    }
+
     showErrorMessage(message) {
         const errorDiv = document.createElement('div');
         errorDiv.style.cssText = `
@@ -6290,9 +6645,9 @@ showOffsetMessage() {
             white-space: pre-line;
         `;
         errorDiv.textContent = message;
-        
+
         document.body.appendChild(errorDiv);
-        
+
         setTimeout(() => {
             errorDiv.style.animation = 'slideIn 0.3s ease reverse';
             setTimeout(() => {
@@ -6301,6 +6656,303 @@ showOffsetMessage() {
                 }
             }, 300);
         }, 4000);
+    }
+
+    // 同步進度顯示
+    showSyncProgress(current, total) {
+        // 創建或更新同步進度顯示
+        let progressContainer = document.getElementById('sync-progress-display');
+        if (!progressContainer) {
+            progressContainer = document.createElement('div');
+            progressContainer.id = 'sync-progress-display';
+            progressContainer.style.cssText = `
+                position: fixed;
+                bottom: 20px;
+                right: 20px;
+                background: rgba(0, 0, 0, 0.8);
+                color: white;
+                padding: 12px 16px;
+                border-radius: 8px;
+                z-index: 2000;
+                font-size: 14px;
+                font-weight: 500;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            `;
+            document.body.appendChild(progressContainer);
+        }
+
+        progressContainer.innerHTML = `
+            <div class="sync-spinner" style="
+                width: 16px;
+                height: 16px;
+                border: 2px solid rgba(255,255,255,0.3);
+                border-top: 2px solid white;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+            "></div>
+            <span>🔄 同步中... ${current}/${total}</span>
+        `;
+
+        // 添加旋轉動畫樣式
+        if (!document.getElementById('sync-spinner-style')) {
+            const style = document.createElement('style');
+            style.id = 'sync-spinner-style';
+            style.textContent = `
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+    }
+
+    // 隱藏同步進度顯示
+    hideSyncProgress() {
+        const progressContainer = document.getElementById('sync-progress-display');
+        if (progressContainer) {
+            progressContainer.style.display = 'none';
+        }
+    }
+
+    // 同步所有已保存的歌詞到雲端
+    async syncAllLyrics() {
+        try {
+            // 獲取所有已保存的歌詞
+            const allLyrics = Array.from(this.savedLyrics.entries()).map(([key, value]) => ({
+                key,
+                ...value
+            }));
+
+            if (allLyrics.length === 0) {
+                this.showSuccessMessage('✅ 沒有需要同步的歌詞');
+                return;
+            }
+
+            this.log(`🔄 開始同步 ${allLyrics.length} 首歌詞到雲端`);
+
+            // 顯示同步進度
+            this.showSyncProgress(0, allLyrics.length);
+
+            let syncedCount = 0;
+            let failedCount = 0;
+
+            // 分批同步，避免一次性請求太多
+            const batchSize = 10;
+            for (let i = 0; i < allLyrics.length; i += batchSize) {
+                const batch = allLyrics.slice(i, i + batchSize);
+
+                try {
+                    const response = await fetch('/api/kv/batch-save-lyrics', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Session-Id': this.sessionId
+                        },
+                        body: JSON.stringify({ lyrics: batch })
+                    });
+
+                    if (response.ok) {
+                        syncedCount += batch.length;
+                    } else {
+                        failedCount += batch.length;
+                    }
+
+                    // 更新進度顯示
+                    this.showSyncProgress(syncedCount + failedCount, allLyrics.length);
+
+                } catch (error) {
+                    this.log(`❌ 批次同步失敗: ${error.message}`);
+                    failedCount += batch.length;
+                }
+            }
+
+            // 隱藏進度顯示
+            this.hideSyncProgress();
+
+            const successMessage = `✅ 同步完成！成功: ${syncedCount}, 失敗: ${failedCount}`;
+            this.showSuccessMessage(successMessage);
+
+            this.log(`✅ 歌詞同步完成: 成功 ${syncedCount}, 失敗 ${failedCount}`);
+        } catch (error) {
+            this.hideSyncProgress();
+            this.showErrorMessage(`❌ 同步失敗: ${error.message}`);
+            this.log(`❌ 同步過程中發生錯誤: ${error.message}`);
+        }
+    }
+
+    // 匯出所有已保存的歌詞
+    async exportAllLyrics() {
+        try {
+            // 獲取所有已保存的歌詞
+            const allLyrics = Array.from(this.savedLyrics.entries()).map(([key, value]) => ({
+                key,
+                ...value
+            }));
+
+            if (allLyrics.length === 0) {
+                this.showSuccessMessage('✅ 沒有保存的歌詞可供匯出');
+                return;
+            }
+
+            // 創建匯出數據
+            const exportData = {
+                exportedAt: new Date().toISOString(),
+                totalLyrics: allLyrics.length,
+                lyrics: allLyrics
+            };
+
+            // 創建並下載文件
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `spotify-lyrics-export-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+
+            // 清理
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 100);
+
+            this.showSuccessMessage(`✅ 已匯出 ${allLyrics.length} 首歌詞`);
+            this.log(`✅ 匯出 ${allLyrics.length} 首歌詞到文件`);
+        } catch (error) {
+            this.showErrorMessage(`❌ 匯出失敗: ${error.message}`);
+            this.log(`❌ 匯出過程中發生錯誤: ${error.message}`);
+        }
+    }
+
+    // 匯入歌詞
+    async importLyrics(file) {
+        try {
+            const text = await file.text();
+            const importData = JSON.parse(text);
+
+            if (!importData.lyrics || !Array.isArray(importData.lyrics)) {
+                throw new Error('無效的匯入檔案格式');
+            }
+
+            // 顯示匯入進度
+            this.showSyncProgress(0, importData.lyrics.length);
+
+            let importedCount = 0;
+            let failedCount = 0;
+
+            // 匯入歌詞到本地存儲
+            for (const lyricData of importData.lyrics) {
+                try {
+                    const cacheKey = lyricData.key || this.generateTrackCacheKey(lyricData.trackInfo);
+                    this.savedLyrics.set(cacheKey, lyricData);
+                    importedCount++;
+                } catch (error) {
+                    failedCount++;
+                    this.log(`❌ 匯入單首歌詞失敗: ${error.message}`);
+                }
+
+                // 更新進度
+                this.showSyncProgress(importedCount + failedCount, importData.lyrics.length);
+            }
+
+            // 保存到本地存儲
+            this.saveSavedLyricsToStorage();
+
+            // 隱藏進度顯示
+            this.hideSyncProgress();
+
+            const successMessage = `✅ 匯入完成！成功: ${importedCount}, 失敗: ${failedCount}`;
+            this.showSuccessMessage(successMessage);
+
+            this.log(`✅ 匯入完成: 成功 ${importedCount}, 失敗 ${failedCount}`);
+        } catch (error) {
+            this.hideSyncProgress();
+            this.showErrorMessage(`❌ 匯入失敗: ${error.message}`);
+            this.log(`❌ 匯入過程中發生錯誤: ${error.message}`);
+        }
+    }
+
+    // 初始化同步控制按鈕
+    initSyncControls() {
+        // 添加同步控制按鈕到歌詞控制區域
+        const lyricsControls = document.querySelector('.lyrics-controls');
+        if (lyricsControls) {
+            // 檢查是否已經添加過按鈕
+            if (!document.getElementById('sync-all-btn')) {
+                const syncControlsHTML = `
+                    <div class="sync-controls-section">
+                        <button id="save-current-lyrics-btn" class="lyrics-control-btn" title="保存當前歌詞">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M17,3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3M20,19H4V5H15.17L18,7.83V19Z"/>
+                            </svg>
+                            保存當前
+                        </button>
+                        <button id="sync-all-btn" class="lyrics-control-btn" title="同步所有歌詞到雲端">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
+                            </svg>
+                            同步全部
+                        </button>
+                        <button id="export-all-btn" class="lyrics-control-btn" title="匯出所有歌詞">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                            </svg>
+                            匯出全部
+                        </button>
+                        <button id="import-lyrics-btn" class="lyrics-control-btn" title="匯入歌詞">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/>
+                            </svg>
+                            匯入
+                        </button>
+                    </div>
+                `;
+
+                // 添加到歌詞控制區域的開頭
+                lyricsControls.insertAdjacentHTML('afterbegin', syncControlsHTML);
+
+                // 綁定事件
+                document.getElementById('save-current-lyrics-btn')?.addEventListener('click', () => {
+                    if (typeof this.saveCurrentLyricsAsCustom === 'function') {
+                        this.saveCurrentLyricsAsCustom();
+                    } else {
+                        // 如果方法不在當前對象中，嘗試從全局獲取
+                        if (window.player && typeof window.player.saveCurrentLyricsAsCustom === 'function') {
+                            window.player.saveCurrentLyricsAsCustom();
+                        } else {
+                            this.showErrorMessage('保存功能尚未加載');
+                        }
+                    }
+                });
+
+                document.getElementById('sync-all-btn')?.addEventListener('click', () => {
+                    this.syncAllLyrics();
+                });
+
+                document.getElementById('export-all-btn')?.addEventListener('click', () => {
+                    this.exportAllLyrics();
+                });
+
+                document.getElementById('import-lyrics-btn')?.addEventListener('click', () => {
+                    // 創建文件選擇對話框
+                    const fileInput = document.createElement('input');
+                    fileInput.type = 'file';
+                    fileInput.accept = '.json';
+                    fileInput.onchange = (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            this.importLyrics(file);
+                        }
+                    };
+                    fileInput.click();
+                });
+            }
+        }
     }
 }
 
@@ -6940,6 +7592,23 @@ class OptimizedAutoSyncManager {
             return;
         }
 
+        // 創建或獲取 toast 容器
+        if (!this.toastContainer) {
+            this.toastContainer = document.createElement('div');
+            this.toastContainer.id = 'optimized-sync-toast-container';
+            this.toastContainer.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 10000;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                align-items: flex-end;
+            `;
+            document.body.appendChild(this.toastContainer);
+        }
+
         const toast = document.createElement('div');
         const colors = {
             success: 'rgba(74, 222, 128, 0.9)',
@@ -6947,7 +7616,7 @@ class OptimizedAutoSyncManager {
             info: 'rgba(96, 165, 250, 0.9)',
             warning: 'rgba(251, 191, 36, 0.9)'
         };
-        
+
         toast.style.cssText = `
             background: ${colors[type] || colors.info};
             color: white;
@@ -6963,8 +7632,9 @@ class OptimizedAutoSyncManager {
             min-width: 200px;
             max-width: 300px;
             word-break: break-word;
+            margin-bottom: 8px;
         `;
-        
+
         toast.textContent = message;
         this.toastContainer.appendChild(toast);
 
@@ -7003,6 +7673,14 @@ class OptimizedAutoSyncManager {
             setTimeout(() => {
                 if (toast.parentNode) {
                     toast.parentNode.removeChild(toast);
+
+                    // 如果容器中沒有更多 toast，可以移除容器
+                    if (this.toastContainer && this.toastContainer.children.length === 0) {
+                        if (this.toastContainer.parentNode) {
+                            this.toastContainer.parentNode.removeChild(this.toastContainer);
+                            this.toastContainer = null;
+                        }
+                    }
                 }
             }, 300);
         }, duration);
@@ -7171,44 +7849,81 @@ class OptimizedAutoSyncManager {
 
         try {
             console.log(`📦 同步批次 (${batch.length} 項)`);
-            
-            const response = await fetch('/api/kv/sync-all', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json; charset=utf-8',
-                    'X-Session-Id': window.player.sessionId
-                },
-                body: JSON.stringify(batchData)
-            });
 
-            if (response.status === 413) {
-                console.warn('⚠️ 批次過大，拆分後重試');
-                const halfBatch = batch.slice(0, Math.ceil(batch.length / 2));
-                const otherHalf = batch.slice(Math.ceil(batch.length / 2));
-                
-                await this.syncBatch(halfBatch);
-                await this.delay(300);
-                await this.syncBatch(otherHalf);
-                return;
-            }
+            let synced = 0;
+            let failed = 0;
 
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-
-            const result = await response.json();
-            const synced = result.summary?.synced || batch.length;
-            const failed = result.summary?.failed || 0;
-
-            batch.forEach(task => {
-                if (result.summary?.synced > 0) {
+            // Process each task individually using existing endpoints
+            for (const task of batch) {
+                try {
                     if (task.type === 'lyrics') {
-                        this.pendingChanges.lyrics.delete(task.key);
+                        const lyricData = task.item.data;
+
+                        // Validate data before sending
+                        if (!lyricData.trackInfo || !lyricData.trackInfo.id) {
+                            console.log(`⚠️ 跳過無效歌詞數據: 缺少 trackInfo 或 trackInfo.id`);
+                            failed++;
+                            continue;
+                        }
+
+                        const response = await fetch('/api/kv/user-lyrics', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json; charset=utf-8',
+                                'X-Session-Id': window.player.sessionId
+                            },
+                            body: JSON.stringify({
+                                trackInfo: lyricData.trackInfo,
+                                lyrics: lyricData.lyrics,
+                                lyricsType: lyricData.lyricsType,
+                                source: lyricData.source
+                            })
+                        });
+
+                        if (response.ok) {
+                            synced++;
+                            this.pendingChanges.lyrics.delete(task.key);
+                        } else {
+                            const responseText = await response.text();
+                            console.error(`❌ 歌詞同步失敗: ${response.status} - ${responseText}`);
+                            failed++;
+                        }
                     } else if (task.type === 'offsets') {
-                        this.pendingChanges.offsets.delete(task.key);
+                        const offsetData = task.item.data;
+
+                        // Validate data before sending
+                        if (!offsetData.trackInfo || !offsetData.trackInfo.id) {
+                            console.log(`⚠️ 跳過無效時間調整數據: 缺少 trackInfo 或 trackInfo.id`);
+                            failed++;
+                            continue;
+                        }
+
+                        const response = await fetch('/api/kv/save-time-offset', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json; charset=utf-8',
+                                'X-Session-Id': window.player.sessionId
+                            },
+                            body: JSON.stringify({
+                                trackInfo: offsetData.trackInfo,
+                                timeOffset: offsetData.timeOffset
+                            })
+                        });
+
+                        if (response.ok) {
+                            synced++;
+                            this.pendingChanges.offsets.delete(task.key);
+                        } else {
+                            const responseText = await response.text();
+                            console.error(`❌ 時間調整同步失敗: ${response.status} - ${responseText}`);
+                            failed++;
+                        }
                     }
+                } catch (taskError) {
+                    console.error(`❌ 同步任務失敗:`, taskError);
+                    failed++;
                 }
-            });
+            }
 
             this.syncStats.totalSynced += synced;
             this.syncStats.totalFailed += failed;
@@ -7217,12 +7932,12 @@ class OptimizedAutoSyncManager {
 
         } catch (error) {
             console.error(`❌ 批次同步失敗:`, error);
-            
+
             batch.forEach(task => {
-                const pendingItem = task.type === 'lyrics' ? 
+                const pendingItem = task.type === 'lyrics' ?
                     this.pendingChanges.lyrics.get(task.key) :
                     this.pendingChanges.offsets.get(task.key);
-                
+
                 if (pendingItem && pendingItem.retries < this.maxRetries) {
                     pendingItem.retries++;
                     console.log(`🔄 ${task.key} 將在下次同步時重試 (${pendingItem.retries}/${this.maxRetries})`);
@@ -7236,24 +7951,42 @@ class OptimizedAutoSyncManager {
         const pendingOffsets = this.pendingChanges.offsets.size;
         const totalPending = pendingLyrics + pendingOffsets;
 
-        document.getElementById('pending-count').textContent = totalPending;
-        document.getElementById('synced-count').textContent = this.syncStats.totalSynced;
-        document.getElementById('failed-count').textContent = this.syncStats.totalFailed;
+        // 安全地更新元素，檢查元素是否存在
+        const pendingCountEl = document.getElementById('pending-count');
+        if (pendingCountEl) {
+            pendingCountEl.textContent = totalPending;
+        }
+
+        const syncedCountEl = document.getElementById('synced-count');
+        if (syncedCountEl) {
+            syncedCountEl.textContent = this.syncStats.totalSynced;
+        }
+
+        const failedCountEl = document.getElementById('failed-count');
+        if (failedCountEl) {
+            failedCountEl.textContent = this.syncStats.totalFailed;
+        }
 
         const statusIcon = document.getElementById('sync-status-icon');
-        if (this.isSyncing) {
-            statusIcon.textContent = '⏳';
-        } else if (totalPending > 0) {
-            statusIcon.textContent = '🔔';
-        } else {
-            statusIcon.textContent = '✅';
+        if (statusIcon) {
+            if (this.isSyncing) {
+                statusIcon.textContent = '⏳';
+            } else if (totalPending > 0) {
+                statusIcon.textContent = '🔔';
+            } else {
+                statusIcon.textContent = '✅';
+            }
         }
     }
 
     updateProgressBar() {
         const totalItems = this.syncQueue.length + this.syncStats.totalSynced;
         const progress = totalItems > 0 ? (this.syncStats.totalSynced / totalItems * 100) : 0;
-        document.getElementById('sync-progress-bar').style.width = progress + '%';
+
+        const progressBar = document.getElementById('sync-progress-bar');
+        if (progressBar) {
+            progressBar.style.width = progress + '%';
+        }
     }
 
     delay(ms) {

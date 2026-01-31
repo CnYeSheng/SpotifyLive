@@ -1999,6 +1999,69 @@ body {
     font-size: 30px !important;
 }
 
+/* 全局同步進度指示器 */
+.global-sync-progress {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    padding: 16px 24px;
+    z-index: 9999;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    animation: slideInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    min-width: 200px;
+}
+
+.sync-progress-content {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.sync-spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid rgba(29, 185, 84, 0.3);
+    border-top-color: #1db954;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.sync-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+#sync-action-text {
+    color: white;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+#sync-count-text {
+    color: #b3b3b3;
+    font-size: 12px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 .lyrics-content.font-extra-large {
     font-size: 36px !important;
 }

@@ -207,28 +207,33 @@ class KVStorageManager {
         // 2. 如果 KV 可用，同時檢查 KV 數據 (可能更新)
         if (this.kvAvailable) {
             try {
-                const artist = encodeURIComponent(trackInfo.artist || '');
-                const title = encodeURIComponent(trackInfo.name || '');
-                const id = trackInfo.id || '';
+                // ✨ 修復：使用 POST 請求，將數據放在請求體中，避免 URL 過長
+                const response = await fetch(`${this.apiBase}/api/kv/user-lyrics/get`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id: trackInfo.id,
+                        artist: trackInfo.artist,
+                        name: trackInfo.name
+                    })
+                });
                 
-                const response = await fetch(
-                    `${this.apiBase}/api/kv/user-lyrics/${artist}/${title}?id=${encodeURIComponent(id)}`
-                );
-                
-                const data = await response.json();
-                if (data.success && data.data) {
-                    const kvData = data.data;
-                    console.log('🎯 KV: 找到用戶自定義歌詞');
-                    
-                    // 3. 比較兩個數據源，使用更新的版本
-                    if (!localData || kvData.lastUsed > localData.lastUsed) {
-                        console.log('🔄 KV 數據較新，同步到 localStorage');
-                        this.saveToLocalStorage('user_custom_lyrics', trackInfo, kvData);
-                        return kvData;
-                    } else if (localData.lastUsed > kvData.lastUsed) {
-                        console.log('🔄 localStorage 數據較新，同步到 KV');
-                        // 背景同步到 KV (不阻塞用戶)
-                        this.syncToKVBackground('user_custom_lyrics', trackInfo, localData);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success && data.data) {
+                        const kvData = data.data;
+                        console.log('🎯 KV: 找到用戶自定義歌詞');
+                        
+                        // 3. 比較兩個數據源，使用更新的版本
+                        if (!localData || kvData.lastUsed > localData.lastUsed) {
+                            console.log('🔄 KV 數據較新，同步到 localStorage');
+                            this.saveToLocalStorage('user_custom_lyrics', trackInfo, kvData);
+                            return kvData;
+                        } else if (localData.lastUsed > kvData.lastUsed) {
+                            console.log('🔄 localStorage 數據較新，同步到 KV');
+                            // 背景同步到 KV (不阻塞用戶)
+                            this.syncToKVBackground('user_custom_lyrics', trackInfo, localData);
+                        }
                     }
                 }
             } catch (error) {
@@ -319,28 +324,33 @@ class KVStorageManager {
         // 2. 如果 KV 可用，同時檢查 KV 數據 (可能更新)
         if (this.kvAvailable) {
             try {
-                const artist = encodeURIComponent(trackInfo.artist || '');
-                const title = encodeURIComponent(trackInfo.name || '');
-                const id = trackInfo.id || '';
+                // ✨ 修復：使用 POST 請求，將數據放在請求體中，避免 URL 過長
+                const response = await fetch(`${this.apiBase}/api/kv/user-provider/get`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id: trackInfo.id,
+                        artist: trackInfo.artist,
+                        name: trackInfo.name
+                    })
+                });
                 
-                const response = await fetch(
-                    `${this.apiBase}/api/kv/user-provider/${artist}/${title}?id=${encodeURIComponent(id)}`
-                );
-                
-                const data = await response.json();
-                if (data.success && data.data) {
-                    const kvData = data.data;
-                    console.log('🎯 KV: 找到用戶供應商偏好');
-                    
-                    // 3. 比較兩個數據源，使用更新的版本
-                    if (!localData || kvData.lastUsed > localData.lastUsed) {
-                        console.log('🔄 KV 數據較新，同步到 localStorage');
-                        this.saveToLocalStorage('user_lyrics_providers', trackInfo, kvData);
-                        return kvData.provider;
-                    } else if (localData.lastUsed > kvData.lastUsed) {
-                        console.log('🔄 localStorage 數據較新，同步到 KV');
-                        // 背景同步到 KV (不阻塞用戶)
-                        this.syncToKVBackground('user_lyrics_providers', trackInfo, localData);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success && data.data) {
+                        const kvData = data.data;
+                        console.log('🎯 KV: 找到用戶供應商偏好');
+                        
+                        // 3. 比較兩個數據源，使用更新的版本
+                        if (!localData || kvData.lastUsed > localData.lastUsed) {
+                            console.log('🔄 KV 數據較新，同步到 localStorage');
+                            this.saveToLocalStorage('user_lyrics_providers', trackInfo, kvData);
+                            return kvData.provider;
+                        } else if (localData.lastUsed > kvData.lastUsed) {
+                            console.log('🔄 localStorage 數據較新，同步到 KV');
+                            // 背景同步到 KV (不阻塞用戶)
+                            this.syncToKVBackground('user_lyrics_providers', trackInfo, localData);
+                        }
                     }
                 }
             } catch (error) {
@@ -901,8 +911,9 @@ class LyricsStorageManager {
 
         // 2️⃣ 若本地無數據，再查 Redis (雲端)
         try {
-            const trackInfoEncoded = encodeURIComponent(JSON.stringify(trackInfo));
-            const response = await fetch(`${this.apiBase}/api/kv/user-lyrics/${trackKey}?info=${trackInfoEncoded}`, {
+            // ✨ 修復：只傳遞必要的信息，避免 URL 過長
+            const response = await fetch(`${this.apiBase}/api/kv/user-lyrics/${trackKey}`, {
+                method: 'GET',
                 headers: { 'Content-Type': 'application/json' }
             });
 
@@ -933,8 +944,16 @@ class LyricsStorageManager {
         if (!navigator.onLine) return;
         
         try {
-            const trackInfoEncoded = encodeURIComponent(JSON.stringify(trackInfo));
-            const response = await fetch(`${this.apiBase}/api/kv/user-lyrics/${trackKey}?info=${trackInfoEncoded}`);
+            // ✨ 修復：使用 POST 請求避免 URL 過長
+            const response = await fetch(`${this.apiBase}/api/kv/user-lyrics/get`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: trackInfo.id,
+                    artist: trackInfo.artist,
+                    name: trackInfo.name
+                })
+            });
             
             if (response.ok) {
                 const cloudResult = await response.json();

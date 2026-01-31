@@ -2408,6 +2408,163 @@ app.post('/api/kv/user-provider', async (req, res) => {
     }
 });
 
+// ✨ 新增：獲取所有用戶歌詞列表
+app.get('/api/kv/user-lyrics', async (req, res) => {
+    try {
+        if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
+            return res.status(503).json({
+                success: false,
+                error: 'KV 存儲未配置'
+            });
+        }
+
+        const { Redis } = require('@upstash/redis');
+        const redis = new Redis({
+            url: process.env.KV_REST_API_URL,
+            token: process.env.KV_REST_API_TOKEN
+        });
+
+        // 獲取所有以 'lyrics:' 開頭的鍵
+        const keys = await redis.keys('lyrics:*');
+        
+        if (!keys || keys.length === 0) {
+            return res.json({
+                success: true,
+                data: []
+            });
+        }
+
+        // 批量獲取所有歌詞數據
+        const lyrics = [];
+        for (const key of keys) {
+            try {
+                const data = await redis.get(key);
+                if (data) {
+                    lyrics.push({
+                        key,
+                        data: typeof data === 'string' ? JSON.parse(data) : data
+                    });
+                }
+            } catch (e) {
+                console.warn(`⚠️ 獲取 ${key} 失敗:`, e.message);
+            }
+        }
+
+        res.json({
+            success: true,
+            data: lyrics
+        });
+    } catch (error) {
+        console.error('❌ 獲取歌詞列表失敗:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// ✨ 新增：通過 POST 獲取用戶自定義歌詞（避免 URL 過長）
+app.post('/api/kv/user-lyrics/get', async (req, res) => {
+    try {
+        const { id, artist, name } = req.body;
+        
+        if (!id) {
+            return res.status(400).json({
+                success: false,
+                error: '缺少必要參數：id'
+            });
+        }
+
+        const trackInfo = { id, artist, name };
+        const trackKey = `${id.toLowerCase()}--`;
+
+        if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
+            return res.status(503).json({
+                success: false,
+                error: 'KV 存儲未配置'
+            });
+        }
+
+        const { Redis } = require('@upstash/redis');
+        const redis = new Redis({
+            url: process.env.KV_REST_API_URL,
+            token: process.env.KV_REST_API_TOKEN
+        });
+
+        const key = `lyrics:${trackKey}`;
+        const data = await redis.get(key);
+
+        if (!data) {
+            return res.json({
+                success: false,
+                data: null
+            });
+        }
+
+        res.json({
+            success: true,
+            data: typeof data === 'string' ? JSON.parse(data) : data
+        });
+    } catch (error) {
+        console.error('❌ 獲取用戶歌詞失敗:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// ✨ 新增：通過 POST 獲取用戶提供商偏好（避免 URL 過長）
+app.post('/api/kv/user-provider/get', async (req, res) => {
+    try {
+        const { id, artist, name } = req.body;
+        
+        if (!id) {
+            return res.status(400).json({
+                success: false,
+                error: '缺少必要參數：id'
+            });
+        }
+
+        const trackInfo = { id, artist, name };
+        const trackKey = `${id.toLowerCase()}--`;
+
+        if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
+            return res.status(503).json({
+                success: false,
+                error: 'KV 存儲未配置'
+            });
+        }
+
+        const { Redis } = require('@upstash/redis');
+        const redis = new Redis({
+            url: process.env.KV_REST_API_URL,
+            token: process.env.KV_REST_API_TOKEN
+        });
+
+        const key = `user-provider:${trackKey}`;
+        const data = await redis.get(key);
+
+        if (!data) {
+            return res.json({
+                success: false,
+                data: null
+            });
+        }
+
+        res.json({
+            success: true,
+            data: typeof data === 'string' ? JSON.parse(data) : data
+        });
+    } catch (error) {
+        console.error('❌ 獲取用戶提供商失敗:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // 獲取用戶歌詞供應商偏好
 app.get('/api/kv/user-provider/:artist/:title', async (req, res) => {
     try {
