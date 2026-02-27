@@ -139,6 +139,42 @@
             align-items: center;
         }
 
+        .playback-controls {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .progress-container {
+            width: 100%;
+            margin-bottom: 16px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--accent-color);
+            border-radius: 3px;
+            width: 0%;
+        }
+
+        .time-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
         .btn {
             background: var(--input-bg);
             border: 1px solid transparent;
@@ -364,6 +400,23 @@
                     <div id="current-source" class="badge">Auto Source</div>
                 </div>
             </div>
+
+            <div class="progress-container" style="margin-top: 20px;">
+                <div class="progress-bar" id="progress-bar" onclick="seekTrack(event)">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+                <div class="time-info">
+                    <span id="current-time">0:00</span>
+                    <span id="total-time">0:00</span>
+                </div>
+            </div>
+
+            <div class="playback-controls">
+                <button class="btn" onclick="playbackControl('previous')" title="Previous">⏮</button>
+                <button class="btn btn-primary" id="play-pause-btn" onclick="playbackControl('play-pause')" title="Play/Pause">⏸</button>
+                <button class="btn" onclick="playbackControl('next')" title="Next">⏭</button>
+            </div>
+
             <button class="btn btn-danger" onclick="resetAll()">Reset All Settings</button>
         </div>
 
@@ -415,6 +468,33 @@
         let currentOffset = 0;
         let currentTrackId = null;
         let sessionId = new URLSearchParams(window.location.search).get('sessionId');
+        let isPlaying = false;
+        let trackDuration = 0;
+        let lastProgress = 0;
+        let lastUpdate = Date.now();
+
+        // Control Channel for real-time sync
+        const controlChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('spotify_control') : null;
+        if (controlChannel) {
+            controlChannel.onmessage = (ev) => {
+                const d = ev.data || {};
+                if (d.type === 'control-sync') {
+                    if (d.lyricsOffset !== undefined) {
+                        currentOffset = d.lyricsOffset;
+                        const offsetDisplay = document.getElementById('offset-display');
+                        offsetDisplay.innerText = (currentOffset > 0 ? '+' : '') + currentOffset + 'ms';
+                        offsetDisplay.style.color = currentOffset !== 0 ? 'var(--accent-color)' : 'var(--text-secondary)';
+                    }
+                    if (d.manualLyrics !== undefined) {
+                        update(); // Re-fetch track data to update UI
+                    }
+                }
+                if (d.type === 'track-sync' && d.track) {
+                    console.log('Received track sync:', d.track.name);
+                    updateUI(d.track);
+                }
+            };
+        }
 
         // Listen for session updates from main window (if open in another tab)
         const authChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('spotify_auth') : null;
@@ -433,6 +513,89 @@
                     update();
                 }
             };
+        }
+
+        function formatTime(ms) {
+            const seconds = Math.floor((ms / 1000) % 60);
+            const minutes = Math.floor((ms / (1000 * 60)) % 60);
+            return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        }
+
+        function updateProgress() {
+            if (isPlaying) {
+                const now = Date.now();
+                const dt = now - lastUpdate;
+                const projectedProgress = Math.min(trackDuration, lastProgress + dt);
+                
+                const percentage = (projectedProgress / trackDuration) * 100;
+                document.getElementById('progress-fill').style.width = `${percentage}%`;
+                document.getElementById('current-time').innerText = formatTime(projectedProgress);
+            }
+            requestAnimationFrame(updateProgress);
+        }
+
+        async function playbackControl(action) {
+            try {
+                const res = await fetch(`${API_BASE}/playback/${action}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId })
+                });
+                if (res.ok) {
+                    if (action === 'play-pause') {
+                        isPlaying = !isPlaying;
+                        lastUpdate = Date.now();
+                        document.getElementById('play-pause-btn').innerText = isPlaying ? '⏸' : '▶';
+                        
+                        // Broadcast playback state
+                        if (controlChannel) {
+                            controlChannel.postMessage({ 
+                                type: 'playback-sync', 
+                                isPlaying: isPlaying,
+                                lastProgress: lastProgress,
+                                timestamp: lastUpdate
+                            });
+                        }
+                    }
+                    setTimeout(update, 500); // Wait a bit for Spotify to update state
+                }
+            } catch (e) {
+                showToast(`Failed to ${action}`, 'error');
+            }
+        }
+
+        async function seekTrack(e) {
+            if (!trackDuration) return;
+            const bar = document.getElementById('progress-bar');
+            const rect = bar.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const percentage = x / rect.width;
+            const position_ms = Math.floor(percentage * trackDuration);
+
+            try {
+                const res = await fetch(`${API_BASE}/playback/seek`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ position_ms, sessionId })
+                });
+                if (res.ok) {
+                    lastProgress = position_ms;
+                    lastUpdate = Date.now();
+                    
+                    // Broadcast seek event
+                    if (controlChannel) {
+                        controlChannel.postMessage({ 
+                            type: 'seek-sync', 
+                            position_ms: position_ms,
+                            timestamp: lastUpdate
+                        });
+                    }
+                    
+                    showToast(`Seek to ${formatTime(position_ms)}`);
+                }
+            } catch (e) {
+                showToast('Failed to seek', 'error');
+            }
         }
 
         function handleEnter(e) {
@@ -478,6 +641,52 @@
             return false;
         }
 
+        function updateUI(data) {
+            if (data.name) {
+                // Always update labels if they differ to ensure "real-time" feeling
+                if (document.getElementById('track-title').innerText !== data.name) {
+                    document.getElementById('track-title').innerText = data.name;
+                }
+                if (document.getElementById('track-artist').innerText !== data.artist) {
+                    document.getElementById('track-artist').innerText = data.artist;
+                }
+                
+                isPlaying = data.isPlaying;
+                trackDuration = data.duration;
+                lastProgress = data.progress;
+                lastUpdate = Date.now();
+
+                document.getElementById('play-pause-btn').innerText = isPlaying ? '⏸' : '▶';
+                document.getElementById('total-time').innerText = formatTime(trackDuration);
+
+                if (data.id !== currentTrackId) {
+                    currentTrackId = data.id;
+                    if (data.image) {
+                        document.getElementById('track-art').src = data.image;
+                    }
+                    // Pre-fill search if empty
+                    if(!document.getElementById('search-query').value) {
+                        document.getElementById('search-query').value = `${data.artist} - ${data.name}`;
+                    }
+                }
+
+                // Update control state
+                currentOffset = data.lyricsOffset || 0;
+                const offsetDisplay = document.getElementById('offset-display');
+                offsetDisplay.innerText = (currentOffset > 0 ? '+' : '') + currentOffset + 'ms';
+                offsetDisplay.style.color = currentOffset !== 0 ? 'var(--accent-color)' : 'var(--text-secondary)';
+                
+                const sourceBadge = document.getElementById('current-source');
+                if (data.manualLyrics) {
+                    sourceBadge.innerText = `MANUAL: ${data.manualLyrics.source}`;
+                    sourceBadge.classList.add('active');
+                } else {
+                    sourceBadge.innerText = 'AUTO SOURCE';
+                    sourceBadge.classList.remove('active');
+                }
+            }
+        }
+
         async function update() {
             try {
                 const url = `${API_BASE}/current-track${sessionId ? '?sessionId=' + sessionId : ''}`;
@@ -502,42 +711,7 @@
                 }
 
                 const data = await res.json();
-
-                if (data.name) {
-                    // Always update labels if they differ to ensure "real-time" feeling
-                    if (document.getElementById('track-title').innerText !== data.name) {
-                        document.getElementById('track-title').innerText = data.name;
-                    }
-                    if (document.getElementById('track-artist').innerText !== data.artist) {
-                        document.getElementById('track-artist').innerText = data.artist;
-                    }
-                    
-                    if (data.id !== currentTrackId) {
-                        currentTrackId = data.id;
-                        if (data.image) {
-                            document.getElementById('track-art').src = data.image;
-                        }
-                        // Pre-fill search if empty
-                        if(!document.getElementById('search-query').value) {
-                            document.getElementById('search-query').value = `${data.artist} - ${data.name}`;
-                        }
-                    }
-
-                    // Update control state
-                    currentOffset = data.lyricsOffset || 0;
-                    const offsetDisplay = document.getElementById('offset-display');
-                    offsetDisplay.innerText = (currentOffset > 0 ? '+' : '') + currentOffset + 'ms';
-                    offsetDisplay.style.color = currentOffset !== 0 ? 'var(--accent-color)' : 'var(--text-secondary)';
-                    
-                    const sourceBadge = document.getElementById('current-source');
-                    if (data.manualLyrics) {
-                        sourceBadge.innerText = `MANUAL: ${data.manualLyrics.source}`;
-                        sourceBadge.classList.add('active');
-                    } else {
-                        sourceBadge.innerText = 'AUTO SOURCE';
-                        sourceBadge.classList.remove('active');
-                    }
-                }
+                updateUI(data);
             } catch (e) {
                 console.error(e);
             }
@@ -567,6 +741,15 @@
                 const data = await res.json();
                 if (data.success) {
                     currentOffset = data.lyricsOffset;
+                    
+                    // Broadcast to other tabs
+                    if (controlChannel) {
+                        controlChannel.postMessage({ 
+                            type: 'control-sync', 
+                            lyricsOffset: currentOffset 
+                        });
+                    }
+                    
                     update(); 
                     showToast(`Offset set to ${currentOffset}ms`);
                 }
@@ -582,6 +765,16 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ sessionId })
                 });
+                
+                // Broadcast to other tabs
+                if (controlChannel) {
+                    controlChannel.postMessage({ 
+                        type: 'control-sync', 
+                        lyricsOffset: 0,
+                        manualLyrics: null
+                    });
+                }
+                
                 showToast('Reset all settings');
                 update();
             } catch (e) {
@@ -604,10 +797,10 @@
                     resultsContainer.innerHTML = '';
                     data.results.forEach(result => {
                         // Safe string escaping for inline handler
-                        const safeTitle = result.title.replace(/\\/g, '\\\\').replace(/'/g, "\'");
-                        const safeArtist = result.artist.replace(/\\/g, '\\\\').replace(/'/g, "\'");
-                        const safeId = result.id.replace(/\\/g, '\\\\').replace(/'/g, "\'");
-                        const safeSource = result.source.replace(/\\/g, '\\\\').replace(/'/g, "\'");
+                        const safeTitle = result.title.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                        const safeArtist = result.artist.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                        const safeId = result.id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                        const safeSource = result.source.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
                         const div = document.createElement('div');
                         div.className = 'result-item';
@@ -640,6 +833,14 @@
                 });
                 const data = await res.json();
                 if (data.success) {
+                    // Broadcast to other tabs
+                    if (controlChannel) {
+                        controlChannel.postMessage({ 
+                            type: 'control-sync', 
+                            manualLyrics: { id, source, title, artist } 
+                        });
+                    }
+                    
                     showToast(`Selected lyrics from ${source}`);
                     update();
                 }
@@ -665,9 +866,9 @@
                     lyricsData.forEach(item => {
                         // Safe string escaping
                         const manual = item.manualLyrics || {};
-                        const title = (manual.title || item.trackId).replace(/\\/g, '\\\\').replace(/'/g, "\'");
-                        const artist = (manual.artist || 'Unknown').replace(/\\/g, '\\\\').replace(/'/g, "\'");
-                        const source = (manual.source || item.customLyricsMeta?.source || 'custom').replace(/\\/g, '\\\\').replace(/'/g, "\'");
+                        const title = (manual.title || item.trackId).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                        const artist = (manual.artist || 'Unknown').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                        const source = (manual.source || item.customLyricsMeta?.source || 'custom').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                         
                         // Try to find track name if manual info is missing (basic attempt)
                         let displayTitle = manual.title || item.trackId;
@@ -704,6 +905,9 @@
         update();
         // Load synced list initially
         loadSyncedLyrics();
+        // Start progress loop
+        updateProgress();
+        </script>
         </script>
 </body>
 </html>

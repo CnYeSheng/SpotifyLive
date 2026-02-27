@@ -501,6 +501,16 @@ SpotifyLyricsPlayer.prototype.overrideLyrics = function(lyrics, lyricsType, sour
     // 標記為手動覆蓋
     this.isLyricsOverridden = true;
     this.overriddenLyricsSource = source;
+
+    // 廣播歌詞數據給其他分頁
+    if (this.controlChannel) {
+        this.controlChannel.postMessage({
+            type: 'lyrics-sync',
+            lyrics: this.lyrics,
+            lyricsType: this.lyricsType,
+            trackId: this.currentTrack?.id
+        });
+    }
     
     // 重新顯示歌詞
     this.displayLyrics();

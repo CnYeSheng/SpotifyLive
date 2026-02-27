@@ -151,6 +151,39 @@
         // Session Management
         let sessionId = new URLSearchParams(window.location.search).get('sessionId');
         
+        // Control Channel for real-time sync
+        const controlChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('spotify_control') : null;
+        if (controlChannel) {
+            controlChannel.onmessage = (ev) => {
+                const d = ev.data || {};
+                if (d.type === 'control-sync') {
+                    if (d.lyricsOffset !== undefined) {
+                        lyricsOffset = d.lyricsOffset;
+                    }
+                    if (d.manualLyrics !== undefined) {
+                        update(); // Re-fetch to load new lyrics
+                    }
+                }
+                if (d.type === 'seek-sync' && d.position_ms !== undefined) {
+                    lastProgress = d.position_ms;
+                    lastUpdate = d.timestamp || Date.now();
+                }
+                if (d.type === 'playback-sync' && d.isPlaying !== undefined) {
+                    isPlaying = d.isPlaying;
+                    if (d.lastProgress !== undefined) lastProgress = d.lastProgress;
+                    lastUpdate = d.timestamp || Date.now();
+                }
+                if (d.type === 'lyrics-sync' && d.lyrics) {
+                    if (d.trackId === currentTrackId) {
+                        lyricsData = d.lyrics;
+                        isSynced = d.lyricsType === 'synced';
+                        // Force re-render if trackId matches
+                        document.getElementById('lyrics-content').innerHTML = '';
+                    }
+                }
+            };
+        }
+
         // Listen for session updates from main window
         const authChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('spotify_auth') : null;
         if (authChannel) {
@@ -318,38 +351,31 @@
                 lyricsOffset = trackData.lyricsOffset || 0;
                 const serverManualLyrics = trackData.manualLyrics;
 
-                // Check if song changed OR manual lyrics changed
+                // 🚀 關鍵同步邏輯：比對伺服器端的手動歌詞來源
                 let shouldFetchLyrics = false;
-                let fetchMode = 'auto'; // 'auto' or 'manual'
+                let fetchMode = 'auto'; 
 
                 if (trackData.id !== currentTrackId) {
                     currentTrackId = trackData.id;
                     shouldFetchLyrics = true;
                 }
 
-                // Logic to detect switch between auto <-> manual
                 if (serverManualLyrics) {
-                    // We are in manual mode
+                    // 如果伺服器有指定來源，且與本地目前載入的不同
                     if (manualLyricsId !== serverManualLyrics.id) {
-                        // New manual lyrics selected
+                        this?.console?.log?.(`🔄 同步：偵測到手動歌詞來源變更: ${serverManualLyrics.source}`);
                         shouldFetchLyrics = true;
                         fetchMode = 'manual';
                         manualLyricsId = serverManualLyrics.id;
-                    } else if (currentTrackId !== trackData.id) {
-                        shouldFetchLyrics = true;
+                    } else if (shouldFetchLyrics) {
                         fetchMode = 'manual';
                     }
-                } else {
-                    // We are in auto mode
-                    if (manualLyricsId !== null) {
-                        // We were in manual mode, now back to auto
-                        shouldFetchLyrics = true;
-                        fetchMode = 'auto';
-                        manualLyricsId = null;
-                    } else if (shouldFetchLyrics) {
-                        // Just song change in auto mode
-                        fetchMode = 'auto';
-                    }
+                } else if (manualLyricsId !== null) {
+                    // 如果伺服器端取消了手動歌詞，本地恢復自動抓取
+                    this?.console?.log?.('🔄 同步：手動歌詞已移除，恢復自動模式');
+                    shouldFetchLyrics = true;
+                    fetchMode = 'auto';
+                    manualLyricsId = null;
                 }
 
                 if (shouldFetchLyrics) {

@@ -96,6 +96,38 @@
         // Session Management
         let sessionId = new URLSearchParams(window.location.search).get('sessionId');
         
+        // Control Channel for real-time sync
+        const controlChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('spotify_control') : null;
+        if (controlChannel) {
+            controlChannel.onmessage = (ev) => {
+                const d = ev.data || {};
+                if (d.type === 'control-sync') {
+                    if (d.lyricsOffset !== undefined) {
+                        lyricsOffset = d.lyricsOffset;
+                    }
+                    if (d.manualLyrics !== undefined) {
+                        update(); // Re-fetch to load new lyrics
+                    }
+                }
+                if (d.type === 'seek-sync' && d.position_ms !== undefined) {
+                    lastProgress = d.position_ms;
+                    lastUpdate = d.timestamp || Date.now();
+                }
+                if (d.type === 'playback-sync' && d.isPlaying !== undefined) {
+                    isPlaying = d.isPlaying;
+                    if (d.lastProgress !== undefined) lastProgress = d.lastProgress;
+                    lastUpdate = d.timestamp || Date.now();
+                }
+                if (d.type === 'lyrics-sync' && d.lyrics) {
+                    if (d.trackId === currentTrackId) {
+                        lyricsData = d.lyrics;
+                        isSynced = d.lyricsType === 'synced';
+                        document.getElementById('lyrics-content').innerHTML = '';
+                    }
+                }
+            };
+        }
+
         // Listen for session updates from main window
         const authChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('spotify_auth') : null;
         if (authChannel) {
@@ -221,18 +253,13 @@
                         shouldFetchLyrics = true;
                         fetchMode = 'manual';
                         manualLyricsId = serverManualLyrics.id;
-                    } else if (currentTrackId !== trackData.id) {
-                        shouldFetchLyrics = true;
+                    } else if (shouldFetchLyrics) {
                         fetchMode = 'manual';
                     }
-                } else {
-                    if (manualLyricsId !== null) {
-                        shouldFetchLyrics = true;
-                        fetchMode = 'auto';
-                        manualLyricsId = null;
-                    } else if (shouldFetchLyrics) {
-                        fetchMode = 'auto';
-                    }
+                } else if (manualLyricsId !== null) {
+                    shouldFetchLyrics = true;
+                    fetchMode = 'auto';
+                    manualLyricsId = null;
                 }
 
                 if (shouldFetchLyrics) {

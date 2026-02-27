@@ -225,6 +225,29 @@ async function getUserSession(req) {
     return null;
 }
 
+// 獲取 Spotify User ID
+async function getSpotifyUserId(session, sessionId) {
+    if (session.userProfile && session.userProfile.data && session.userProfile.data.id) {
+        return session.userProfile.data.id;
+    }
+
+    try {
+        const response = await makeSpotifyAPICall('https://api.spotify.com/v1/me', {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        }, sessionId);
+        
+        session.userProfile = {
+            data: response.data,
+            timestamp: Date.now()
+        };
+        await saveUserSession(sessionId, session);
+        return response.data.id;
+    } catch (error) {
+        console.error('獲取 Spotify User ID 失敗:', error.message);
+        return null;
+    }
+}
+
 // 保存會話
 async function saveUserSession(sessionId, sessionData) {
     if (!sessionId || !sessionData) return;
@@ -248,8 +271,22 @@ async function saveUserSession(sessionId, sessionData) {
 }
 
 // Spotify authorization URL with enhanced scopes
-app.get('/api/auth', (req, res) => {
-    const sessionId = generateSessionId();
+app.get('/api/auth', async (req, res) => {
+    // Try to reuse existing session ID if available to keep devices synced
+    let sessionId = null;
+    try {
+        const session = await getUserSession(req);
+        if (session) {
+            sessionId = req.sessionId;
+        }
+    } catch (e) {
+        // Ignore session retrieval errors here
+    }
+    
+    if (!sessionId) {
+        sessionId = generateSessionId();
+    }
+    
     const scopes = [
         'user-read-currently-playing',
         'user-read-playback-state',
@@ -293,18 +330,46 @@ app.get('/callback', async (req, res) => {
             }
         );
         
-        await saveUserSession(sessionId, {
+        const sessionData = {
             accessToken: response.data.access_token,
             refreshToken: response.data.refresh_token,
             expiresAt: Date.now() + (response.data.expires_in * 1000)
-        });
-        res.cookie('spotify_session', sessionId, {
-            maxAge: 30 * 60 * 1000,
+        };
+
+        // Identify user to allow session reuse for synchronization
+        let finalSessionId = sessionId;
+        try {
+            const userProfileResponse = await axios.get('https://api.spotify.com/v1/me', {
+                headers: { 'Authorization': `Bearer ${sessionData.accessToken}` }
+            });
+            const userId = userProfileResponse.data.id;
+            sessionData.userProfile = {
+                data: userProfileResponse.data,
+                timestamp: Date.now()
+            };
+
+            // Look for existing session for this Spotify User ID
+            for (const [sid, existingSession] of userSessions.entries()) {
+                if (existingSession.userProfile && 
+                    existingSession.userProfile.data && 
+                    existingSession.userProfile.data.id === userId) {
+                    console.log(`♻️ Reusing existing session ${sid} for Spotify user ${userId}`);
+                    finalSessionId = sid;
+                    break;
+                }
+            }
+        } catch (profileError) {
+            console.error('⚠️ Could not fetch user profile during callback:', profileError.message);
+        }
+        
+        await saveUserSession(finalSessionId, sessionData);
+        res.cookie('spotify_session', finalSessionId, {
+            maxAge: 30 * 24 * 60 * 60 * 1000, // Extend to 30 days for better sync experience
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production'
         });
         
-        res.redirect(`/?auth=success&session=${sessionId}`);
+        res.redirect(`/?auth=success&session=${finalSessionId}`);
     } catch (error) {
         console.error('Error getting access token:', error.response?.data || error.message);
         res.status(500).send('Authentication failed');
@@ -426,8 +491,8 @@ app.get('/api/current-track', async (req, res) => {
         const device = data.device;
         const user = userResponse.data;
 
-        // Fetch saved settings for this track
-        const savedSettings = await enhancedStorage.getSongSettings(track.id) || {};
+        // Fetch saved settings for this track (using userId for synchronization)
+        const savedSettings = await enhancedStorage.getSongSettings(user.id, track.id) || {};
         
         const currentTrack = {
             isPlaying: data.is_playing,
@@ -562,6 +627,21 @@ app.get('/api/current-track', async (req, res) => {
     }
 });
 
+// 輔助函數：清除該使用者的所有會話快取
+async function invalidateUserCache(userId) {
+    if (!userId) return;
+    console.log(`🧹 清除使用者 ${userId} 的所有會話快取以進行同步`);
+    for (const [sid, session] of userSessions.entries()) {
+        if (session.userProfile && session.userProfile.data && session.userProfile.data.id === userId) {
+            delete session.currentTrackCache;
+            // 如果是 KV 存儲，也一併更新
+            if (typeof kvStorage !== 'undefined' && kvStorage.saveSession) {
+                await kvStorage.saveSession(sid, session);
+            }
+        }
+    }
+}
+
 // Control endpoints
 app.post('/api/control/offset', async (req, res) => {
     const session = await getUserSession(req);
@@ -583,12 +663,14 @@ app.post('/api/control/offset', async (req, res) => {
     const newOffset = parseInt(offset) || 0;
     session.lyricsOffset = newOffset; // Keep in session for backward compat/fast access if needed
     
-    // Save to persistent storage
-    await enhancedStorage.saveSongSettings(trackId, { offset: newOffset });
+    // Get user ID for cross-device synchronization
+    const userId = await getSpotifyUserId(session, req.sessionId);
     
-    // Clear cache to reflect change immediately
-    if (session.currentTrackCache) {
-        session.currentTrackCache.data.lyricsOffset = newOffset;
+    // Save to persistent storage
+    if (userId) {
+        await enhancedStorage.saveSongSettings(userId, trackId, { offset: newOffset });
+        // 清除所有相關會話的快取
+        await invalidateUserCache(userId);
     }
     
     await saveUserSession(req.sessionId, session);
@@ -617,14 +699,16 @@ app.post('/api/control/manual-lyrics', async (req, res) => {
     
     session.manualLyrics = manualLyricsData;
     
-    // Save to persistent storage
-    await enhancedStorage.saveSongSettings(trackId, { manualLyrics: manualLyricsData });
+    // Get user ID for cross-device synchronization
+    const userId = await getSpotifyUserId(session, req.sessionId);
     
-    // Clear cache to reflect change immediately
-    if (session.currentTrackCache) {
-        session.currentTrackCache.data.manualLyrics = manualLyricsData;
+    // Save to persistent storage
+    if (userId) {
+        await enhancedStorage.saveSongSettings(userId, trackId, { manualLyrics: manualLyricsData });
+        // 清除所有相關會話的快取
+        await invalidateUserCache(userId);
     }
-
+    
     await saveUserSession(req.sessionId, session);
     res.json({ success: true, manualLyrics: manualLyricsData });
 });
@@ -641,14 +725,13 @@ app.post('/api/control/reset', async (req, res) => {
     session.lyricsOffset = 0;
     session.manualLyrics = null;
     
-    if (trackId) {
-        await enhancedStorage.saveSongSettings(trackId, { offset: 0, manualLyrics: null, lyricsContent: null });
-    }
-
-    // Clear cache
-    if (session.currentTrackCache) {
-        session.currentTrackCache.data.lyricsOffset = 0;
-        session.currentTrackCache.data.manualLyrics = null;
+    const userId = await getSpotifyUserId(session, req.sessionId);
+    if (userId) {
+        if (trackId) {
+            await enhancedStorage.saveSongSettings(userId, trackId, { offset: 0, manualLyrics: null, lyricsContent: null });
+        }
+        // 清除所有相關會話的快取
+        await invalidateUserCache(userId);
     }
 
     await saveUserSession(req.sessionId, session);
@@ -699,19 +782,25 @@ app.get('/api/kv/status', (req, res) => {
 
 app.post('/api/kv/user-lyrics', async (req, res) => {
     try {
+        const session = await getUserSession(req);
+        if (!session) return res.status(401).json({ error: 'Not authenticated' });
+        
+        const userId = await getSpotifyUserId(session, req.sessionId);
+        if (!userId) return res.status(401).json({ error: 'Could not identify user' });
+
         const { trackInfo, lyrics, lyricsType, source } = req.body;
         if (!trackInfo || !trackInfo.id) {
             return res.status(400).json({ error: 'Missing trackInfo' });
         }
 
-        await enhancedStorage.saveSongSettings(trackInfo.id, {
-            lyricsContent: lyrics, // Save the actual lyrics array
-            // We also save metadata about the custom lyrics
+        await enhancedStorage.saveSongSettings(userId, trackInfo.id, {
+            lyricsContent: lyrics,
             customLyricsMeta: {
                 type: lyricsType,
                 source: source,
                 savedAt: Date.now()
-            }
+            },
+            trackInfo: trackInfo // Store original trackInfo for reference
         });
 
         res.json({ success: true });
@@ -723,6 +812,12 @@ app.post('/api/kv/user-lyrics', async (req, res) => {
 
 app.get('/api/kv/user-lyrics/:trackKey', async (req, res) => {
     try {
+        const session = await getUserSession(req);
+        if (!session) return res.status(401).json({ error: 'Not authenticated' });
+        
+        const userId = await getSpotifyUserId(session, req.sessionId);
+        if (!userId) return res.status(401).json({ error: 'Could not identify user' });
+
         const { info } = req.query;
         let trackId = null;
         
@@ -735,14 +830,16 @@ app.get('/api/kv/user-lyrics/:trackKey', async (req, res) => {
             }
         }
 
-        // Fallback: try to extract from trackKey if possible (not reliable for ID)
-        // For now, require trackId via info param which frontend sends.
+        // Fallback: try to extract from trackKey
+        if (!trackId && req.params.trackKey) {
+            trackId = req.params.trackKey.split('-')[0];
+        }
 
         if (!trackId) {
             return res.status(400).json({ error: 'Could not determine track ID' });
         }
 
-        const settings = await enhancedStorage.getSongSettings(trackId);
+        const settings = await enhancedStorage.getSongSettings(userId, trackId);
         
         if (settings && settings.lyricsContent) {
             res.json({
@@ -751,11 +848,12 @@ app.get('/api/kv/user-lyrics/:trackKey', async (req, res) => {
                     lyrics: settings.lyricsContent,
                     lyricsType: settings.customLyricsMeta?.type || 'plain',
                     source: settings.customLyricsMeta?.source || 'custom',
-                    lastModified: settings.updated_at || Date.now()
+                    lastModified: settings.updated_at || Date.now(),
+                    trackInfo: settings.trackInfo || { id: trackId }
                 }
             });
         } else {
-            res.json({ success: true, message: 'No custom lyrics found' });
+            res.json({ success: true, message: 'No custom lyrics found', data: null });
         }
     } catch (error) {
         console.error('Error getting user lyrics:', error);
@@ -763,17 +861,92 @@ app.get('/api/kv/user-lyrics/:trackKey', async (req, res) => {
     }
 });
 
+// Endpoint to get specific user lyrics via POST
+app.post('/api/kv/user-lyrics/get', async (req, res) => {
+    try {
+        const session = await getUserSession(req);
+        if (!session) return res.status(401).json({ error: 'Not authenticated' });
+        
+        const userId = await getSpotifyUserId(session, req.sessionId);
+        if (!userId) return res.status(401).json({ error: 'Could not identify user' });
+
+        const { id, trackInfo } = req.body;
+        const trackId = id || trackInfo?.id;
+
+        if (!trackId) {
+            return res.status(400).json({ error: 'Missing track ID' });
+        }
+
+        const settings = await enhancedStorage.getSongSettings(userId, trackId);
+        if (settings && settings.lyricsContent) {
+            res.json({
+                success: true,
+                data: {
+                    lyrics: settings.lyricsContent,
+                    lyricsType: settings.customLyricsMeta?.type || 'plain',
+                    source: settings.customLyricsMeta?.source || 'custom',
+                    lastModified: settings.updated_at || Date.now(),
+                    trackInfo: settings.trackInfo || trackInfo || { id: trackId }
+                }
+            });
+        } else {
+            res.json({ success: true, data: null });
+        }
+    } catch (error) {
+        console.error('Error in user-lyrics/get:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Endpoint to get specific user provider preference via POST
+app.post('/api/kv/user-provider/get', async (req, res) => {
+    try {
+        const session = await getUserSession(req);
+        if (!session) return res.status(401).json({ error: 'Not authenticated' });
+        
+        const userId = await getSpotifyUserId(session, req.sessionId);
+        if (!userId) return res.status(401).json({ error: 'Could not identify user' });
+
+        const { id, trackInfo } = req.body;
+        const trackId = id || trackInfo?.id;
+
+        if (!trackId) {
+            return res.status(400).json({ error: 'Missing track ID' });
+        }
+
+        const settings = await enhancedStorage.getSongSettings(userId, trackId);
+        if (settings && settings.manualLyrics?.source) {
+            res.json({
+                success: true,
+                data: {
+                    provider: settings.manualLyrics.source,
+                    lastUsed: settings.updated_at || Date.now()
+                }
+            });
+        } else {
+            res.json({ success: true, data: null });
+        }
+    } catch (error) {
+        console.error('Error in user-provider/get:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Export all lyrics
 app.get(['/api/export-lyrics', '/api/kv/export-all-lyrics'], async (req, res) => {
     try {
-        const allLyrics = await enhancedStorage.getAllLyrics();
+        const session = await getUserSession(req);
+        if (!session) return res.status(401).json({ error: 'Not authenticated' });
+        const userId = await getSpotifyUserId(session, req.sessionId);
+        if (!userId) return res.status(401).json({ error: 'Could not identify user' });
+
+        const userLyrics = await enhancedStorage.getAllLyrics(userId);
         
         if (req.path.includes('export-lyrics')) {
              res.setHeader('Content-Disposition', 'attachment; filename="lyrics-export.json"');
         }
         res.setHeader('Content-Type', 'application/json');
-        
-        res.json(allLyrics);
+        res.json(userLyrics);
     } catch (error) {
         console.error('Error exporting lyrics:', error);
         res.status(500).json({ error: 'Failed to export lyrics' });
@@ -782,13 +955,19 @@ app.get(['/api/export-lyrics', '/api/kv/export-all-lyrics'], async (req, res) =>
 
 app.post('/api/kv/save-time-offset', async (req, res) => {
     try {
+        const session = await getUserSession(req);
+        if (!session) return res.status(401).json({ error: 'Not authenticated' });
+        const userId = await getSpotifyUserId(session, req.sessionId);
+        if (!userId) return res.status(401).json({ error: 'Could not identify user' });
+
         const { trackInfo, timeOffset } = req.body;
         if (!trackInfo || !trackInfo.id) {
             return res.status(400).json({ error: 'Missing trackInfo' });
         }
 
-        await enhancedStorage.saveSongSettings(trackInfo.id, {
-            offset: timeOffset
+        await enhancedStorage.saveSongSettings(userId, trackInfo.id, {
+            offset: timeOffset,
+            trackInfo: trackInfo
         });
 
         res.json({ success: true });
@@ -799,52 +978,22 @@ app.post('/api/kv/save-time-offset', async (req, res) => {
 });
 
 app.get('/api/kv/get-time-offset/:trackKey', async (req, res) => {
-    // This endpoint in kv-storage-manager.js does NOT send ?info=... for GET usually?
-    // Let's check kv-storage-manager.js:
-    // fetch(`${this.apiBase}/api/kv/get-time-offset/${trackKey}`);
-    // It does NOT send info.
-    // However, trackKey is "id-artist-name". We can try to extract ID.
-    // Format: `${id}-${artist}-${name}`.
-    // If ID is simple, it works. If ID contains dashes, it might be tricky.
-    // Spotify IDs are alphanumeric.
-
-    // Strategy: Parse trackKey.
-    // But better strategy: The frontend calls this, but `server.js` /api/current-track already returns the offset!
-    // The frontend `kv-storage-manager.js` is a "manager" that syncs.
-    // If I implement this, I need to parse the ID.
-
     try {
+        const session = await getUserSession(req);
+        if (!session) return res.status(401).json({ error: 'Not authenticated' });
+        const userId = await getSpotifyUserId(session, req.sessionId);
+        if (!userId) return res.status(401).json({ error: 'Could not identify user' });
+
         const { trackKey } = req.params;
-        // Spotify ID is usually at the start.
-        // But `generateTrackKey` does `replace(/\s+/g, '_')`.
-        // It's not reversible reliably.
-
-        // workaround: We might not be able to implement this reliable without trackId.
-        // BUT, `enhancedStorage` relies on ID.
-        // Let's look at `kv-storage-manager.js` again.
-        // `getLyricsTimeOffset` tries Redis, then Local.
-
-        // Since we modified `/api/current-track` to return the correct offset from DB,
-        // the main player `script.js` uses `trackData.lyricsOffset`.
-        // `kv-storage-manager.js` is auxiliary.
-
-        // I will attempt to implement it if possible, but maybe return 404 if ambiguous.
-        // actually, for this specific request, I'll just return { timeOffset: 0 } or try to find by ID if I can guess it.
-        // Wait, if I can't parse ID, I can't look it up in SQL.
-
-        // However, looking at `kv-storage-manager.js`, it seems `saveLyricsTimeOffset` sends `trackInfo`.
-        // `getLyricsTimeOffset` calls `GET .../${trackKey}`.
-
-        // I will try to split by `-` and take the first part as ID?
-        const potentialId = trackKey.split('-')[0];
-        if (potentialId) {
-             const settings = await enhancedStorage.getSongSettings(potentialId);
-             if (settings) {
-                 return res.json({ timeOffset: settings.offset || 0 });
-             }
+        // Try to extract ID from trackKey (format: id-artist-name)
+        const trackId = trackKey.split('-')[0];
+        
+        if (!trackId) {
+            return res.json({ timeOffset: 0 });
         }
 
-        res.json({ timeOffset: 0 });
+        const settings = await enhancedStorage.getSongSettings(userId, trackId);
+        res.json({ timeOffset: settings?.offset || 0 });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -853,6 +1002,11 @@ app.get('/api/kv/get-time-offset/:trackKey', async (req, res) => {
 // Batch save lyrics endpoint
 app.post('/api/kv/batch-save-lyrics', async (req, res) => {
     try {
+        const session = await getUserSession(req);
+        if (!session) return res.status(401).json({ error: 'Not authenticated' });
+        const userId = await getSpotifyUserId(session, req.sessionId);
+        if (!userId) return res.status(401).json({ error: 'Could not identify user' });
+
         const { lyrics } = req.body;
         if (!lyrics || !Array.isArray(lyrics)) {
             return res.status(400).json({ error: 'Missing or invalid lyrics array' });
@@ -869,14 +1023,15 @@ app.post('/api/kv/batch-save-lyrics', async (req, res) => {
                     continue;
                 }
 
-                await enhancedStorage.saveSongSettings(trackInfo.id, {
+                await enhancedStorage.saveSongSettings(userId, trackInfo.id, {
                     lyricsContent: lyricData.lyrics,
                     lyricsType: lyricData.lyricsType,
                     customLyricsMeta: {
                         type: lyricData.customLyricsMeta?.type || 'plain',
                         source: lyricData.customLyricsMeta?.source || 'manual',
                         savedAt: Date.now()
-                    }
+                    },
+                    trackInfo: trackInfo
                 });
 
                 successCount++;
@@ -898,15 +1053,100 @@ app.post('/api/kv/batch-save-lyrics', async (req, res) => {
     }
 });
 
-// Endpoint to get all lyrics for export
-app.get('/api/kv/get-all-lyrics', async (req, res) => {
+// Endpoint to get all user lyrics (alias for get-all-lyrics for frontend compatibility)
+app.get('/api/kv/user-lyrics', async (req, res) => {
     try {
-        const allLyrics = await enhancedStorage.getAllLyrics();
+        const session = await getUserSession(req);
+        if (!session) return res.status(401).json({ error: 'Not authenticated' });
+        const userId = await getSpotifyUserId(session, req.sessionId);
+        if (!userId) return res.status(401).json({ error: 'Could not identify user' });
+
+        const userLyrics = await enhancedStorage.getAllLyrics(userId);
 
         res.json({
             success: true,
-            total: allLyrics.length,
-            lyrics: allLyrics
+            data: userLyrics
+        });
+    } catch (error) {
+        console.error('Error getting user lyrics:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Endpoint for batch synchronization (for compatibility with KVSyncManager)
+app.post('/api/kv/sync-all', async (req, res) => {
+    try {
+        const session = await getUserSession(req);
+        if (!session) return res.status(401).json({ error: 'Not authenticated' });
+        const userId = await getSpotifyUserId(session, req.sessionId);
+        if (!userId) return res.status(401).json({ error: 'Could not identify user' });
+
+        const syncData = req.body || {};
+        let successCount = 0;
+        let errorCount = 0;
+
+        // 1. Sync saved lyrics
+        if (syncData.savedLyrics && typeof syncData.savedLyrics === 'object') {
+            for (const [key, value] of Object.entries(syncData.savedLyrics)) {
+                try {
+                    const trackId = key.includes('-') ? key.split('-')[0] : key;
+                    await enhancedStorage.saveSongSettings(userId, trackId, {
+                        lyricsContent: value.lyrics,
+                        lyricsType: value.lyricsType,
+                        customLyricsMeta: value.source,
+                        trackInfo: value.trackInfo
+                    });
+                    successCount++;
+                } catch (e) {
+                    console.error(`Failed to sync lyric ${key}:`, e.message);
+                    errorCount++;
+                }
+            }
+        }
+
+        // 2. Sync time adjustments
+        if (syncData.timeAdjustments && typeof syncData.timeAdjustments === 'object') {
+            for (const [key, value] of Object.entries(syncData.timeAdjustments)) {
+                try {
+                    const trackId = key.includes('-') ? key.split('-')[0] : key;
+                    await enhancedStorage.saveSongSettings(userId, trackId, {
+                        offset: value.timeOffset
+                    });
+                    successCount++;
+                } catch (e) {
+                    console.error(`Failed to sync offset ${key}:`, e.message);
+                    errorCount++;
+                }
+            }
+        }
+
+        res.json({
+            success: errorCount === 0,
+            summary: {
+                synced: successCount,
+                failed: errorCount,
+                total: successCount + errorCount
+            }
+        });
+    } catch (error) {
+        console.error('Error in sync-all:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/kv/get-all-lyrics', async (req, res) => {
+    try {
+        const session = await getUserSession(req);
+        if (!session) return res.status(401).json({ error: 'Not authenticated' });
+        const userId = await getSpotifyUserId(session, req.sessionId);
+        if (!userId) return res.status(401).json({ error: 'Could not identify user' });
+
+        const userLyrics = await enhancedStorage.getAllLyrics(userId);
+
+        res.json({
+            success: true,
+            total: userLyrics.length,
+            lyrics: userLyrics
         });
     } catch (error) {
         console.error('Error getting all lyrics:', error);
@@ -915,16 +1155,21 @@ app.get('/api/kv/get-all-lyrics', async (req, res) => {
 });
 
 // Save user lyrics provider preference
-app.post('/api/kv/save-provider', async (req, res) => {
+app.post(['/api/kv/save-provider', '/api/kv/user-provider'], async (req, res) => {
     try {
+        const session = await getUserSession(req);
+        if (!session) return res.status(401).json({ error: 'Not authenticated' });
+        const userId = await getSpotifyUserId(session, req.sessionId);
+        if (!userId) return res.status(401).json({ error: 'Could not identify user' });
+
         const { trackInfo, provider } = req.body;
         if (!trackInfo || !trackInfo.id || !provider) {
             return res.status(400).json({ error: 'Missing trackInfo or provider' });
         }
 
-        // Save provider preference to storage
-        await enhancedStorage.saveSongSettings(trackInfo.id, {
-            manualLyrics: { source: provider } // Overload manualLyrics.source for provider pref
+        await enhancedStorage.saveSongSettings(userId, trackInfo.id, {
+            manualLyrics: { source: provider },
+            trackInfo: trackInfo
         });
 
         res.json({ success: true });
@@ -934,9 +1179,108 @@ app.post('/api/kv/save-provider', async (req, res) => {
     }
 });
 
+// Data migration endpoint from localStorage to KV/DB
+app.post('/api/kv/migrate', async (req, res) => {
+    try {
+        console.log('🔄 Starting data migration...');
+        const { localStorageData } = req.body;
+        
+        if (!localStorageData) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing localStorageData parameter'
+            });
+        }
+
+        const session = await getUserSession(req);
+        if (!session) {
+            return res.status(401).json({ 
+                success: false, 
+                error: 'Not authenticated' 
+            });
+        }
+
+        const userId = await getSpotifyUserId(session, req.sessionId);
+        if (!userId) {
+            return res.status(401).json({ 
+                success: false, 
+                error: 'Could not identify user' 
+            });
+        }
+
+        let migratedCount = 0;
+
+        // Migrate custom lyrics
+        if (localStorageData.user_custom_lyrics) {
+            try {
+                const lyricsData = JSON.parse(localStorageData.user_custom_lyrics);
+                for (const [trackKey, lyricEntry] of Object.entries(lyricsData)) {
+                    try {
+                        const trackId = trackKey.split('--')[0] || trackKey;
+                        await enhancedStorage.saveSongSettings(userId, trackId, {
+                            lyricsContent: lyricEntry.lyrics,
+                            customLyricsMeta: {
+                                type: lyricEntry.lyricsType || 'plain',
+                                source: lyricEntry.source || 'custom',
+                                savedAt: Date.now()
+                            },
+                            trackInfo: lyricEntry.trackInfo
+                        });
+                        migratedCount++;
+                        console.log(`✅ Migrated lyrics for track: ${trackKey}`);
+                    } catch (e) {
+                        console.error(`❌ Failed to migrate lyrics for ${trackKey}:`, e.message);
+                    }
+                }
+            } catch (parseError) {
+                console.error('❌ Failed to parse user_custom_lyrics:', parseError.message);
+            }
+        }
+
+        // Migrate lyrics providers
+        if (localStorageData.user_lyrics_providers) {
+            try {
+                const providersData = JSON.parse(localStorageData.user_lyrics_providers);
+                for (const [trackKey, providerEntry] of Object.entries(providersData)) {
+                    try {
+                        const trackId = trackKey.split('--')[0] || trackKey;
+                        await enhancedStorage.saveSongSettings(userId, trackId, {
+                            manualLyrics: { source: providerEntry.provider || providerEntry }
+                        });
+                        migratedCount++;
+                        console.log(`✅ Migrated provider for track: ${trackKey}`);
+                    } catch (e) {
+                        console.error(`❌ Failed to migrate provider for ${trackKey}:`, e.message);
+                    }
+                }
+            } catch (parseError) {
+                console.error('❌ Failed to parse user_lyrics_providers:', parseError.message);
+            }
+        }
+
+        console.log(`✅ Migration completed: ${migratedCount} items migrated`);
+        res.json({
+            success: true,
+            message: 'Data migration completed',
+            data: { migratedCount }
+        });
+    } catch (error) {
+        console.error('❌ Migration error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // Batch save lyrics endpoint (for compatibility with client)
 app.post('/api/kv/sync-lyrics', async (req, res) => {
     try {
+        const session = await getUserSession(req);
+        if (!session) return res.status(401).json({ error: 'Not authenticated' });
+        const userId = await getSpotifyUserId(session, req.sessionId);
+        if (!userId) return res.status(401).json({ error: 'Could not identify user' });
+
         const { lyrics } = req.body;
         if (!lyrics || !Array.isArray(lyrics)) {
             return res.status(400).json({ error: 'Missing or invalid lyrics array' });
@@ -953,14 +1297,15 @@ app.post('/api/kv/sync-lyrics', async (req, res) => {
                     continue;
                 }
 
-                await enhancedStorage.saveSongSettings(trackInfo.id, {
+                await enhancedStorage.saveSongSettings(userId, trackInfo.id, {
                     lyricsContent: lyricData.lyrics,
                     lyricsType: lyricData.lyricsType,
                     customLyricsMeta: {
                         type: lyricData.customLyricsMeta?.type || 'plain',
                         source: lyricData.customLyricsMeta?.source || 'manual',
                         savedAt: Date.now()
-                    }
+                    },
+                    trackInfo: trackInfo
                 });
 
                 successCount++;
@@ -985,6 +1330,11 @@ app.post('/api/kv/sync-lyrics', async (req, res) => {
 // Endpoint for time adjustments sync (for compatibility with client)
 app.post('/api/kv/sync-time-adjustments', async (req, res) => {
     try {
+        const session = await getUserSession(req);
+        if (!session) return res.status(401).json({ error: 'Not authenticated' });
+        const userId = await getSpotifyUserId(session, req.sessionId);
+        if (!userId) return res.status(401).json({ error: 'Could not identify user' });
+
         const { adjustments } = req.body;
         if (!adjustments || !Array.isArray(adjustments)) {
             return res.status(400).json({ error: 'Missing or invalid adjustments array' });
@@ -1003,8 +1353,9 @@ app.post('/api/kv/sync-time-adjustments', async (req, res) => {
                     continue;
                 }
 
-                await enhancedStorage.saveSongSettings(trackInfo.id, {
-                    offset: timeOffset
+                await enhancedStorage.saveSongSettings(userId, trackInfo.id, {
+                    offset: timeOffset,
+                    trackInfo: trackInfo
                 });
 
                 successCount++;
@@ -1029,15 +1380,20 @@ app.post('/api/kv/sync-time-adjustments', async (req, res) => {
 // Endpoint to get all time adjustments (for compatibility with client)
 app.get('/api/kv/time-adjustments', async (req, res) => {
     try {
-        const allLyrics = await enhancedStorage.getAllLyrics();
+        const session = await getUserSession(req);
+        if (!session) return res.status(401).json({ error: 'Not authenticated' });
+        const userId = await getSpotifyUserId(session, req.sessionId);
+        if (!userId) return res.status(401).json({ error: 'Could not identify user' });
 
-        // Extract time offsets from the lyrics data
-        const timeAdjustments = allLyrics
+        const userSettings = await enhancedStorage.getAllLyrics(userId);
+
+        // Extract time offsets
+        const timeAdjustments = userSettings
             .filter(item => item.offset !== undefined)
             .map(item => ({
-                key: item.trackId || item.id,
+                key: item.trackId,
                 timeOffset: item.offset,
-                trackInfo: item.trackInfo || { id: item.trackId || item.id }
+                trackInfo: item.trackInfo || { id: item.trackId }
             }));
 
         res.json({
@@ -1055,6 +1411,13 @@ async function authenticateSpotify(req, res, next) {
     const session = await getUserSession(req);
     if (!session) {
         return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    // Identify user and attach to request for synchronization
+    const userId = await getSpotifyUserId(session, req.sessionId);
+    if (userId) {
+        req.userId = userId;
+        req.headers['x-spotify-user-id'] = userId;
     }
     
     // Proactively refresh token if it expires within 5 minutes
@@ -1291,6 +1654,26 @@ app.post('/api/playback/play-pause', async (req, res) => {
     } catch (error) {
         console.error('Error controlling playback:', error.response?.data || error.message);
         res.status(500).json({ success: false, error: 'Failed to control playback' });
+    }
+});
+
+app.post('/api/playback/seek', async (req, res) => {
+    const session = await getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const { position_ms } = req.body;
+    const sessionId = req.headers['x-session-id'] || req.query.sessionId;
+    
+    try {
+        await axios.put(`https://api.spotify.com/v1/me/player/seek?position_ms=${position_ms}`, {}, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error seeking:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: 'Failed to seek' });
     }
 });
 
@@ -3068,6 +3451,27 @@ app.put('/api/player/transfer', async (req, res) => {
 });
 
 // Health check endpoint
+// Endpoint to clear all user data (for compatibility with client)
+app.delete('/api/kv/clear-all', async (req, res) => {
+    try {
+        // In local mode, we might want to clear the local JSON or just a specific session
+        // For now, clear all in enhancedStorage if it's JSON
+        if (enhancedStorage.dbType === 'json') {
+            enhancedStorage.localData = {};
+            await new Promise((resolve, reject) => {
+                fs.writeFile(enhancedStorage.localFilePath, JSON.stringify({}, null, 2), (err) => {
+                    if (err) reject(err);
+                    else resolve();
+                });
+            });
+        }
+        res.json({ success: true, message: 'All data cleared' });
+    } catch (error) {
+        console.error('Error clearing data:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.get('/api/health', async (req, res) => {
     try {
         const sessionId = req.headers['x-session-id'];

@@ -18,6 +18,23 @@ function initUserLyricsManager() {
     console.log('🔧 初始化用戶自定義歌詞管理系統');
 
     // =================
+    // 自動同步功能
+    // =================
+    
+    // 在頁面加載時自動執行一次雙向同步
+    if (typeof SpotifyLyricsPlayer !== 'undefined' && SpotifyLyricsPlayer.prototype) {
+        // 延遲執行，確保 player 實例已經創建
+        setTimeout(() => {
+            if (window.player && window.player.sessionId) {
+                console.log('🔄 自動執行雙向同步...');
+                window.player.syncAndMergeAllData().catch(err => {
+                    console.warn('⚠️ 自動同步失敗:', err.message);
+                });
+            }
+        }, 2000); // 延遲2秒確保所有組件都已初始化
+    }
+
+    // =================
     // 用戶歌詞存儲管理
     // =================
     
@@ -357,6 +374,53 @@ function initUserLyricsManager() {
         // 如果有provider信息且當前有歌曲，保存供應商選擇
         if (result.provider && this.currentTrack) {
             this.saveUserLyricsProvider(this.currentTrack, result.provider);
+
+            // 廣播到其他分頁 (控制台)
+            if (this.controlChannel) {
+                this.controlChannel.postMessage({ 
+                    type: 'control-sync', 
+                    manualLyrics: { 
+                        id: result.id, 
+                        source: result.provider, 
+                        title: result.title, 
+                        artist: result.artist 
+                    } 
+                });
+            }
+        }
+    };
+
+    // 清除特定歌曲的用戶設置
+    const originalClearUserSettingsForTrack = SpotifyLyricsPlayer.prototype.clearUserSettingsForTrack;
+    SpotifyLyricsPlayer.prototype.clearUserSettingsForTrack = function(trackInfo) {
+        // 先執行廣播 (在數據被刪除前)
+        if (this.controlChannel) {
+            this.controlChannel.postMessage({ 
+                type: 'control-sync', 
+                lyricsOffset: 0,
+                manualLyrics: null
+            });
+        }
+
+        // 調用原始邏輯 (如果有的話，如果沒有則手動實現)
+        if (typeof originalClearUserSettingsForTrack === 'function') {
+            originalClearUserSettingsForTrack.call(this, trackInfo);
+        } else {
+            // 手動實現 (剛才讀到的邏輯)
+            if (!trackInfo) trackInfo = this.currentTrack;
+            if (!trackInfo) return;
+            const trackKey = this.generateTrackKey(trackInfo);
+            try {
+                const customLyrics = JSON.parse(localStorage.getItem('user_custom_lyrics') || '{}');
+                if (customLyrics[trackKey]) delete customLyrics[trackKey];
+                localStorage.setItem('user_custom_lyrics', JSON.stringify(customLyrics));
+                
+                const providers = JSON.parse(localStorage.getItem('user_lyrics_providers') || '{}');
+                if (providers[trackKey]) delete providers[trackKey];
+                localStorage.setItem('user_lyrics_providers', JSON.stringify(providers));
+                
+                this.showSuccessMessage('✅ 已清除該歌曲的用戶設置');
+            } catch (e) {}
         }
     };
 
@@ -667,7 +731,7 @@ function initUserLyricsManager() {
                 <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border-color, #333);">
                     <h3 style="color: var(--accent-color, #1db954); margin-bottom: 15px;">🔄 同步操作</h3>
                     <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                        <button onclick="window.player.syncAllUserLyrics()" style="
+                        <button onclick="window.player.syncAndMergeAllData()" style="
                             background: #28a745;
                             color: white;
                             border: none;
@@ -703,17 +767,50 @@ function initUserLyricsManager() {
     };
 
     // 刪除特定的用戶自定義歌詞
-    SpotifyLyricsPlayer.prototype.deleteUserCustomLyrics = function(trackKey) {
+    SpotifyLyricsPlayer.prototype.deleteUserCustomLyrics = async function(trackKey) {
+        if (!confirm('確定要刪除這首歌的自定義歌詞嗎？此操作將從本地和雲端刪除。')) {
+            return;
+        }
+
         try {
+            // 1. 從服務器刪除
+            if (this.sessionId) {
+                this.log(`🗑️ 正在從雲端刪除歌詞: ${trackKey}`);
+                const response = await fetch(`/api/kv/user-lyrics/${trackKey}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-Id': this.sessionId
+                    }
+                });
+
+                if (!response.ok && response.status !== 404) {
+                    const errorData = await response.json().catch(() => ({ error: '服務器錯誤' }));
+                    throw new Error(errorData.error || `服務器錯誤 (${response.status})`);
+                }
+                this.log(`✅ 雲端刪除請求完成 (狀態: ${response.status})`);
+            }
+            
+            // 2. 從本地存儲刪除
             const customLyrics = JSON.parse(localStorage.getItem('user_custom_lyrics') || '{}');
             if (customLyrics[trackKey]) {
                 delete customLyrics[trackKey];
                 localStorage.setItem('user_custom_lyrics', JSON.stringify(customLyrics));
-                this.populateUserLyricsManagerContent(); // 重新加載內容
-                this.showSuccessMessage('✅ 自定義歌詞已刪除');
+                this.log(`🗑️ 已從本地存儲刪除歌詞: ${trackKey}`);
             }
+
+            // Also remove from memory
+            if (this.savedLyrics && this.savedLyrics.has(trackKey)) {
+                this.savedLyrics.delete(trackKey);
+            }
+            
+            // 3. 更新UI
+            this.populateUserLyricsManagerContent();
+            this.showSuccessMessage('✅ 自定義歌詞已刪除');
+
         } catch (error) {
             this.showErrorMessage('刪除失敗: ' + error.message);
+            this.log(`❌ 刪除歌詞時出錯: ${error.message}`);
         }
     };
 
@@ -846,141 +943,130 @@ function initUserLyricsManager() {
         }
     };
 
-    // 同步所有用戶歌詞設置到雲端
-    SpotifyLyricsPlayer.prototype.syncAllUserLyrics = async function() {
+    // 同步並合併所有用戶數據 (雙向同步策略)
+    SpotifyLyricsPlayer.prototype.syncAndMergeAllData = async function() {
+        if (this.isSyncingAll) return;
+        this.isSyncingAll = true;
+
         try {
-            // 從 localStorage 獲取本地數據
+            this.log('🔄 開始執行全量雙向同步...');
+            this.showSyncProgress(0, 0, '正在獲取雲端數據...');
+
+            // 1. 從 localStorage 獲取本地數據
             const localCustomLyrics = JSON.parse(localStorage.getItem('user_custom_lyrics') || '{}');
             const localProviders = JSON.parse(localStorage.getItem('user_lyrics_providers') || '{}');
 
-            // 獲取雲端數據以進行比較和同步
-            let cloudCustomLyrics = {};
-            let cloudProviders = {};
+            // 2. 獲取雲端數據
+            let cloudLyrics = [];
+            let cloudTimeAdjustments = [];
 
             if (this.sessionId) {
                 try {
-                    // 獲取雲端自定義歌詞
-                    const lyricsResponse = await fetch('/api/kv/get-all-lyrics', {
+                    // 獲取雲端所有歌詞和時間調整
+                    const response = await fetch('/api/kv/get-all-lyrics', {
                         headers: { 'X-Session-Id': this.sessionId }
                     });
-                    if (lyricsResponse.ok) {
-                        const lyricsData = await lyricsResponse.json();
-                        if (lyricsData.success && lyricsData.lyrics) {
-                            lyricsData.lyrics.forEach(item => {
-                                const trackKey = this.generateTrackCacheKey(item.trackInfo);
-                                cloudCustomLyrics[trackKey] = item;
-                            });
+                    if (response.ok) {
+                        const result = await response.json();
+                        if (result.success && result.lyrics) {
+                            cloudLyrics = result.lyrics;
                         }
                     }
                 } catch (error) {
-                    console.warn('獲取雲端歌詞數據失敗:', error.message);
+                    this.log(`⚠️ 獲取雲端數據失敗: ${error.message}`);
                 }
             }
 
-            // 準備同步項目 - 只同步本地有但雲端沒有的，或本地更新的
-            const allEntries = [];
+            // 3. 合併邏輯 (Merge)
+            // 合併規則：如果兩邊都有，比較 lastModified，本地優先 (相等或本地較新)
+            const mergedLyrics = { ...localCustomLyrics };
+            
+            cloudLyrics.forEach(cloudItem => {
+                if (!cloudItem.trackInfo || !cloudItem.trackInfo.id) return;
+                
+                const trackKey = this.generateTrackCacheKey(cloudItem.trackInfo);
+                const localItem = mergedLyrics[trackKey];
+                
+                const cloudTS = cloudItem.updated_at || cloudItem.timestamp || 0;
+                
+                if (!localItem) {
+                    // 本地無，直接加入
+                    mergedLyrics[trackKey] = {
+                        trackInfo: cloudItem.trackInfo,
+                        lyrics: cloudItem.lyricsContent || cloudItem.lyrics,
+                        lyricsType: cloudItem.lyricsType || 'synced',
+                        source: cloudItem.customLyricsMeta || { source: 'custom' },
+                        lastModified: cloudTS,
+                        timestamp: cloudTS
+                    };
+                } else {
+                    // 本地有，比較時間戳
+                    const localTS = localItem.lastModified || localItem.timestamp || 0;
+                    
+                    if (new Date(cloudTS) > new Date(localTS)) {
+                        // 雲端較新，更新本地
+                        mergedLyrics[trackKey] = {
+                            trackInfo: cloudItem.trackInfo,
+                            lyrics: cloudItem.lyricsContent || cloudItem.lyrics,
+                            lyricsType: cloudItem.lyricsType || 'synced',
+                            source: cloudItem.customLyricsMeta || { source: 'custom' },
+                            lastModified: cloudTS,
+                            timestamp: cloudTS
+                        };
+                    }
+                }
+            });
 
-            // 添加自定義歌詞
-            for (const [key, value] of Object.entries(localCustomLyrics)) {
-                allEntries.push({ type: 'lyrics', data: value, trackKey: key });
-            }
+            // 4. 保存合併後的數據到本地
+            localStorage.setItem('user_custom_lyrics', JSON.stringify(mergedLyrics));
+            this.savedLyrics = new Map(Object.entries(mergedLyrics));
 
-            // 添加供應商設置
-            for (const [key, value] of Object.entries(localProviders)) {
-                allEntries.push({ type: 'provider', data: value, trackKey: key });
-            }
+            // 5. 批次上傳回雲端 (確保雲端也是最新的合併結果)
+            const entriesToUpload = Object.values(mergedLyrics).filter(item => item && item.trackInfo && item.trackInfo.id);
+            this.log(`📤 開始上傳合併後的數據到雲端: 共 ${entriesToUpload.length} 項`);
+            this.showSyncProgress(0, entriesToUpload.length, '正在上傳合併數據...');
 
-            if (allEntries.length === 0) {
-                this.showSuccessMessage('✅ 沒有需要同步的設置');
-                return;
-            }
-
-            this.log(`🔄 開始同步 ${allEntries.length} 個用戶設置到雲端`);
-
-            // 顯示同步進度
-            this.showSyncProgress(0, allEntries.length);
-
-            let syncedCount = 0;
+            const batchSize = 20;
+            let successCount = 0;
             let failedCount = 0;
 
-            // 分批同步，避免一次性請求太多
-            const batchSize = 10;
-            for (let i = 0; i < allEntries.length; i += batchSize) {
-                const batch = allEntries.slice(i, i + batchSize);
+            for (let i = 0; i < entriesToUpload.length; i += batchSize) {
+                const batch = entriesToUpload.slice(i, i + batchSize);
+                try {
+                    const response = await fetch('/api/kv/sync-lyrics', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Session-Id': this.sessionId
+                        },
+                        body: JSON.stringify({ lyrics: batch })
+                    });
 
-                for (const entry of batch) {
-                    try {
-                        if (entry.type === 'lyrics') {
-                            const response = await fetch('/api/kv/user-lyrics', {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'X-Session-Id': this.sessionId
-                                },
-                                body: JSON.stringify({
-                                    trackInfo: entry.data.trackInfo,
-                                    lyrics: entry.data.lyrics,
-                                    lyricsType: entry.data.lyricsType,
-                                    source: entry.data.source
-                                })
-                            });
-
-                            if (response.ok) {
-                                syncedCount++;
-                            } else {
-                                failedCount++;
-                                // Log the response for debugging
-                                const responseText = await response.text();
-                                this.log(`❌ 歌詞同步失敗: ${response.status} - ${responseText}`);
-                            }
-                        } else if (entry.type === 'provider') {
-                            const response = await fetch('/api/kv/save-provider', {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'X-Session-Id': this.sessionId
-                                },
-                                body: JSON.stringify({
-                                    trackInfo: entry.data.trackInfo,
-                                    provider: entry.data.provider
-                                })
-                            });
-
-                            if (response.ok) {
-                                syncedCount++;
-                            } else {
-                                failedCount++;
-                                // Log the response for debugging
-                                const responseText = await response.text();
-                                this.log(`❌ 供應商同步失敗: ${response.status} - ${responseText}`);
-                            }
-                        }
-                    } catch (error) {
-                        this.log(`❌ 同步單個項目失敗: ${error.message}`);
-                        failedCount++;
+                    if (response.ok) {
+                        successCount += batch.length;
+                    } else {
+                        failedCount += batch.length;
                     }
-
-                    // 更新進度顯示
-                    this.showSyncProgress(syncedCount + failedCount, allEntries.length);
+                } catch (e) {
+                    failedCount += batch.length;
                 }
+                this.showSyncProgress(i + batch.length, entriesToUpload.length, `正在同步...`);
             }
 
-            // 隱藏進度顯示
             this.hideSyncProgress();
+            this.showSuccessMessage(`✅ 全量同步完成！成功: ${successCount}, 失敗: ${failedCount}`);
+            this.log(`✅ 全量同步完成: ${successCount} 成功, ${failedCount} 失敗`);
 
-            const successMessage = `✅ 同步完成！成功: ${syncedCount}, 失敗: ${failedCount}`;
-            this.showSuccessMessage(successMessage);
-
-            // 更新同步狀態以反映最新的本地歌詞數量
             if (typeof this.updateSyncStatus === 'function') {
                 this.updateSyncStatus();
             }
 
-            this.log(`✅ 用戶設置同步完成: 成功 ${syncedCount}, 失敗 ${failedCount}`);
         } catch (error) {
             this.hideSyncProgress();
             this.showErrorMessage(`❌ 同步失敗: ${error.message}`);
             this.log(`❌ 同步過程中發生錯誤: ${error.message}`);
+        } finally {
+            this.isSyncingAll = false;
         }
     };
 

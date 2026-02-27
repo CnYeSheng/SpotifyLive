@@ -34,12 +34,13 @@ class StorageFacade {
     }
 
     // --- Song Settings & Lyrics (Persistent) ---
-    async saveLyrics(req, trackInfo, lyrics, lyricsType, source) {
+    async saveLyrics(userId, trackInfo, lyrics, lyricsType, source) {
+        if (!userId) throw new Error("User ID is required to save lyrics.");
         if (this.isVercel && this.kvManager.isKVAvailable) {
-            return await this.kvManager.saveUserCustomLyrics(req, trackInfo, lyrics, lyricsType, source);
+            // Vercel path needs to be made user-aware too if used
+            return await this.kvManager.saveUserCustomLyrics({ headers: { 'x-spotify-user-id': userId } }, trackInfo, lyrics, lyricsType, source);
         } else {
-            // Local: Sync to both Redis and DB via EnhancedStorage
-            await this.enhancedStorage.saveSongSettings(trackInfo.id, {
+            await this.enhancedStorage.saveSongSettings(userId, trackInfo.id, {
                 lyricsContent: lyrics,
                 customLyricsMeta: {
                     type: lyricsType,
@@ -47,20 +48,16 @@ class StorageFacade {
                     savedAt: Date.now()
                 }
             });
-            // Also update KV/Redis cache if available in KVManager
-            if (this.kvManager.isKVAvailable) {
-                await this.kvManager.saveUserCustomLyrics(req, trackInfo, lyrics, lyricsType, source);
-            }
             return true;
         }
     }
 
-    async getLyrics(req, trackInfo) {
+    async getLyrics(userId, trackInfo) {
+        if (!userId) throw new Error("User ID is required to get lyrics.");
         if (this.isVercel && this.kvManager.isKVAvailable) {
-            return await this.kvManager.getUserCustomLyrics(req, trackInfo);
+            return await this.kvManager.getUserCustomLyrics({ headers: { 'x-spotify-user-id': userId } }, trackInfo);
         } else {
-            // Try EnhancedStorage (DB/Redis sync)
-            const settings = await this.enhancedStorage.getSongSettings(trackInfo.id);
+            const settings = await this.enhancedStorage.getSongSettings(userId, trackInfo.id);
             if (settings && settings.lyricsContent) {
                 return {
                     trackInfo,
@@ -75,49 +72,47 @@ class StorageFacade {
         }
     }
 
-    async saveOffset(trackInfo, timeOffset) {
+    async saveOffset(userId, trackInfo, timeOffset) {
+        if (!userId) throw new Error("User ID is required to save offset.");
         if (this.isVercel && this.kvManager.isKVAvailable) {
-            return await this.kvManager.saveLyricsTimeOffset(trackInfo, timeOffset);
+            return await this.kvManager.saveLyricsTimeOffset(trackInfo, timeOffset); // This also needs to be user-aware
         } else {
-            await this.enhancedStorage.saveSongSettings(trackInfo.id, {
+            await this.enhancedStorage.saveSongSettings(userId, trackInfo.id, {
                 offset: timeOffset
             });
-            if (this.kvManager.isKVAvailable) {
-                await this.kvManager.saveLyricsTimeOffset(trackInfo, timeOffset);
-            }
             return true;
         }
     }
 
-    async getOffset(trackInfo) {
+    async getOffset(userId, trackInfo) {
+        if (!userId) throw new Error("User ID is required to get offset.");
         if (this.isVercel && this.kvManager.isKVAvailable) {
             return await this.kvManager.getLyricsTimeOffset(trackInfo);
         } else {
-            const settings = await this.enhancedStorage.getSongSettings(trackInfo.id);
+            const settings = await this.enhancedStorage.getSongSettings(userId, trackInfo.id);
             return settings ? (settings.offset || 0) : 0;
         }
     }
 
     // --- Provider Preferences ---
-    async saveProvider(req, trackInfo, provider) {
+    async saveProvider(userId, trackInfo, provider) {
+        if (!userId) throw new Error("User ID is required to save provider.");
         if (this.isVercel && this.kvManager.isKVAvailable) {
-            return await this.kvManager.saveUserLyricsProvider(req, trackInfo, provider);
+            return await this.kvManager.saveUserLyricsProvider({ headers: { 'x-spotify-user-id': userId } }, trackInfo, provider);
         } else {
-            await this.enhancedStorage.saveSongSettings(trackInfo.id, {
+            await this.enhancedStorage.saveSongSettings(userId, trackInfo.id, {
                 manualLyrics: { source: provider } // Overload manualLyrics.source for provider pref
             });
-            if (this.kvManager.isKVAvailable) {
-                await this.kvManager.saveUserLyricsProvider(req, trackInfo, provider);
-            }
             return true;
         }
     }
 
-    async getProvider(req, trackInfo) {
+    async getProvider(userId, trackInfo) {
+        if (!userId) throw new Error("User ID is required to get provider.");
         if (this.isVercel && this.kvManager.isKVAvailable) {
-            return await this.kvManager.getUserLyricsProvider(req, trackInfo);
+            return await this.kvManager.getUserLyricsProvider({ headers: { 'x-spotify-user-id': userId } }, trackInfo);
         } else {
-            const settings = await this.enhancedStorage.getSongSettings(trackInfo.id);
+            const settings = await this.enhancedStorage.getSongSettings(userId, trackInfo.id);
             return settings?.manualLyrics?.source || null;
         }
     }
@@ -136,35 +131,36 @@ class StorageFacade {
         return await this.kvManager.migrateFromLocalStorage(req, localStorageData);
     }
 
-    async getSettings(trackInfo) {
+    async getSettings(userId, trackInfo) {
+        if (!userId) throw new Error("User ID is required to get settings.");
         if (this.isVercel && this.kvManager.isKVAvailable) {
             const offset = await this.kvManager.getLyricsTimeOffset(trackInfo);
-            // KV currently mostly stores content, but we can expand if needed.
-            // For now return offset.
             return { offset };
         } else {
-            return await this.enhancedStorage.getSongSettings(trackInfo.id);
+            return await this.enhancedStorage.getSongSettings(userId, trackInfo.id);
         }
     }
 
-    async saveSettings(trackInfo, settings) {
+    async saveSettings(userId, trackInfo, settings) {
+        if (!userId) throw new Error("User ID is required to save settings.");
         if (this.isVercel && this.kvManager.isKVAvailable) {
             if (settings.offset !== undefined) {
                 await this.kvManager.saveLyricsTimeOffset(trackInfo, settings.offset);
             }
-            // Future: Implement saving manualLyrics pointer in KV if needed
         } else {
-            await this.enhancedStorage.saveSongSettings(trackInfo.id, settings);
-            
-            // Sync offset to KV if available (hybrid)
-            if (this.kvManager.isKVAvailable && settings.offset !== undefined) {
-                await this.kvManager.saveLyricsTimeOffset(trackInfo, settings.offset);
-            }
+            await this.enhancedStorage.saveSongSettings(userId, trackInfo.id, settings);
         }
     }
 
-    async getAllLyrics() {
-        return await this.enhancedStorage.getAllLyrics();
+    async getAllLyrics(userId) {
+        if (!userId) throw new Error("User ID is required to get all lyrics.");
+        return await this.enhancedStorage.getAllLyrics(userId);
+    }
+
+    async deleteLyrics(userId, trackId) {
+        if (!userId || !trackId) return;
+        // For now, only implementing for the non-Vercel path
+        return await this.enhancedStorage.deleteSongSettings(userId, trackId);
     }
 }
 

@@ -120,6 +120,11 @@ class KVStorageManager {
 
     // 保存用戶自定義歌詞 (雙存儲策略：KV + localStorage)
     async saveUserCustomLyrics(trackInfo, lyrics, lyricsType, source) {
+        if (!trackInfo || !trackInfo.id || !trackInfo.name || !trackInfo.artist) {
+            console.warn('⚠️ 嘗試保存無效的 trackInfo，已取消保存。', trackInfo);
+            return false;
+        }
+
         const data = {
             trackInfo, lyrics, lyricsType, source,
             timestamp: Date.now(), lastUsed: Date.now()
@@ -368,13 +373,12 @@ class KVStorageManager {
 
     // 生成歌曲唯一標識符
     generateTrackKey(trackInfo) {
+        if (!trackInfo) return '';
         const artist = trackInfo.artist || trackInfo.artists?.[0]?.name || '';
         const name = trackInfo.name || trackInfo.title || '';
         const id = trackInfo.id || '';
         
-        return `${id}-${artist}-${name}`.toLowerCase()
-            .replace(/\s+/g, '_')
-            .replace(/[^\w\-_]/g, '');
+        return `${id}-${name}-${artist}`.toLowerCase().replace(/\s+/g, '_');
     }
 
     // 保存到 localStorage
