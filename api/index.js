@@ -412,6 +412,64 @@ app.post('/api/kv/sync-all', checkSessionValidity, async (req, res) => {
     }
 });
 
+// Library management endpoints
+app.get('/api/library/check/:trackId', checkSessionValidity, async (req, res) => {
+    const session = await getUserSession(req);
+    try {
+        const response = await axios.get(`https://api.spotify.com/v1/me/tracks/contains?ids=${req.params.trackId}`, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json({ isSaved: response.data[0] });
+    } catch (error) {
+        console.error('Error checking library:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to check library' });
+    }
+});
+
+app.post('/api/library/save/:trackId', checkSessionValidity, async (req, res) => {
+    const session = await getUserSession(req);
+    try {
+        await axios.put(`https://api.spotify.com/v1/me/tracks?ids=${req.params.trackId}`, {}, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to save track' });
+    }
+});
+
+app.delete('/api/library/remove/:trackId', checkSessionValidity, async (req, res) => {
+    const session = await getUserSession(req);
+    try {
+        await axios.delete(`https://api.spotify.com/v1/me/tracks?ids=${req.params.trackId}`, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to remove track' });
+    }
+});
+
+// KV user-lyrics GET endpoint (legacy support)
+app.get('/api/kv/user-lyrics/:trackKey', checkSessionValidity, async (req, res) => {
+    const userId = await getUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'Not authenticated' });
+    
+    try {
+        // storage.getLyrics might need to handle trackKey or trackId
+        // In storage-facade, getLyrics takes (userId, trackId)
+        // If trackKey is passed, we might need a lookup or just try using it as trackId
+        const lyrics = await storage.getLyrics(userId, req.params.trackKey);
+        if (lyrics) {
+            res.json({ success: true, data: lyrics });
+        } else {
+            res.status(404).json({ success: false, message: 'Lyrics not found' });
+        }
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
     try {
@@ -440,5 +498,132 @@ app.post('/api/kv/save-time-offset', enhancedLyricsEndpoints.saveTimeOffset);
 app.get('/api/kv/time-offset/:trackId/:trackName/:artist', enhancedLyricsEndpoints.getTimeOffset);
 app.delete('/api/kv/cleanup-cache', enhancedLyricsEndpoints.cleanupExpiredCache);
 app.get('/api/kv/cache-stats', enhancedLyricsEndpoints.getCacheStats);
+
+// Missing Player & Lyrics Search Endpoints
+app.get('/api/player/queue', checkSessionValidity, async (req, res) => {
+    const session = await getUserSession(req);
+    try {
+        const response = await axios.get('https://api.spotify.com/v1/me/player/queue', {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json(response.data);
+    } catch (error) {
+        console.error('Error fetching queue:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to fetch queue' });
+    }
+});
+
+app.post('/api/player/play', checkSessionValidity, async (req, res) => {
+    const session = await getUserSession(req);
+    try {
+        await axios.put('https://api.spotify.com/v1/me/player/play', {}, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.response?.data || error.message });
+    }
+});
+
+app.post('/api/player/pause', checkSessionValidity, async (req, res) => {
+    const session = await getUserSession(req);
+    try {
+        await axios.put('https://api.spotify.com/v1/me/player/pause', {}, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.response?.data || error.message });
+    }
+});
+
+app.get('/api/lyrics-search-provider/:provider/:artist/:title', checkSessionValidity, async (req, res) => {
+    const { provider, artist, title } = req.params;
+    try {
+        // Basic search logic bridge
+        // In a real Vercel app, this might call another service or internal module
+        res.json({ success: false, message: 'Search not implemented in Vercel bridge yet' });
+    } catch (error) {
+        res.status(500).json({ error: 'Search failed' });
+    }
+});
+
+// KV GET via POST to avoid long URLs
+app.post('/api/kv/user-lyrics/get', checkSessionValidity, async (req, res) => {
+    const { id, artist, name } = req.body;
+    const userId = await getUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'Not authenticated' });
+    
+    try {
+        const lyrics = await storage.getLyrics(userId, id);
+        res.json({ success: true, data: lyrics });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/kv/user-provider/get', checkSessionValidity, async (req, res) => {
+    const { id, artist, name } = req.body;
+    const userId = await getUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'Not authenticated' });
+    
+    try {
+        const settings = await storage.getSettings(userId, id);
+        res.json({ success: true, data: { provider: settings?.provider } });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/kv/user-lyrics', checkSessionValidity, async (req, res) => {
+    const userId = await getUserId(req);
+    const { trackInfo, lyrics, lyricsType, source } = req.body;
+    try {
+        await storage.saveLyrics(userId, trackInfo, lyrics, lyricsType, source);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/kv/user-provider', checkSessionValidity, async (req, res) => {
+    const userId = await getUserId(req);
+    const { trackInfo, provider } = req.body;
+    try {
+        await storage.saveSettings(userId, trackInfo.id, { provider });
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Alias for save-provider
+app.post('/api/kv/save-provider', checkSessionValidity, async (req, res) => {
+    const userId = await getUserId(req);
+    const { trackInfo, provider } = req.body;
+    try {
+        await storage.saveSettings(userId, trackInfo.id, { provider });
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Get all lyrics for user
+app.get('/api/kv/get-all-lyrics', checkSessionValidity, async (req, res) => {
+    const userId = await getUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'Not authenticated' });
+    try {
+        const allLyrics = await storage.getAllLyrics(userId);
+        // Format to match frontend expectation if needed
+        const formattedLyrics = Object.entries(allLyrics).map(([id, data]) => ({
+            trackId: id,
+            ...data
+        }));
+        res.json({ success: true, lyrics: formattedLyrics });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 module.exports = app;

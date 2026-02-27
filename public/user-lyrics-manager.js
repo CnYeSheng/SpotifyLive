@@ -106,9 +106,12 @@ function initUserLyricsManager() {
         try {
             const provider = await window.kvStorageManager.getUserLyricsProvider(trackInfo);
             
-            if (provider) {
-                this.log(`🎯 找到用戶指定供應商: ${provider} for ${trackInfo.artist} - ${trackInfo.name}`);
-                return provider;
+            // Ensure provider is a string, not a promise or object
+            const providerName = (provider && typeof provider === 'object' && provider.then) ? await provider : provider;
+            
+            if (providerName) {
+                this.log(`🎯 找到用戶指定供應商: ${providerName} for ${trackInfo.artist} - ${trackInfo.name}`);
+                return providerName;
             }
             
             return null;

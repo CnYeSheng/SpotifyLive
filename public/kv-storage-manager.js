@@ -347,11 +347,11 @@ class KVStorageManager {
                         console.log('🎯 KV: 找到用戶供應商偏好');
                         
                         // 3. 比較兩個數據源，使用更新的版本
-                        if (!localData || kvData.lastUsed > localData.lastUsed) {
+                        if (!localData || (kvData.lastUsed || 0) > (localData.lastUsed || 0)) {
                             console.log('🔄 KV 數據較新，同步到 localStorage');
                             this.saveToLocalStorage('user_lyrics_providers', trackInfo, kvData);
                             return kvData.provider;
-                        } else if (localData.lastUsed > kvData.lastUsed) {
+                        } else if ((localData.lastUsed || 0) > (kvData.lastUsed || 0)) {
                             console.log('🔄 localStorage 數據較新，同步到 KV');
                             // 背景同步到 KV (不阻塞用戶)
                             this.syncToKVBackground('user_lyrics_providers', trackInfo, localData);
