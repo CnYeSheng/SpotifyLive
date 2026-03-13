@@ -934,6 +934,9 @@ app.post('/api/kv/user-provider/get', async (req, res) => {
 
 // Export all lyrics
 app.get(['/api/export-lyrics', '/api/kv/export-all-lyrics'], async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     try {
         const session = await getUserSession(req);
         if (!session) return res.status(401).json({ error: 'Not authenticated' });
@@ -969,6 +972,7 @@ app.post('/api/kv/save-time-offset', async (req, res) => {
             offset: timeOffset,
             trackInfo: trackInfo
         });
+        await invalidateUserCache(userId);
 
         res.json({ success: true });
     } catch (error) {
@@ -1040,6 +1044,7 @@ app.post('/api/kv/batch-save-lyrics', async (req, res) => {
                 errorCount++;
             }
         }
+        await invalidateUserCache(userId);
 
         res.json({
             success: true,
@@ -1055,6 +1060,9 @@ app.post('/api/kv/batch-save-lyrics', async (req, res) => {
 
 // Endpoint to get all user lyrics (alias for get-all-lyrics for frontend compatibility)
 app.get('/api/kv/user-lyrics', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     try {
         const session = await getUserSession(req);
         if (!session) return res.status(401).json({ error: 'Not authenticated' });
@@ -1120,6 +1128,7 @@ app.post('/api/kv/sync-all', async (req, res) => {
             }
         }
 
+        await invalidateUserCache(userId);
         res.json({
             success: errorCount === 0,
             summary: {
@@ -1171,6 +1180,7 @@ app.post(['/api/kv/save-provider', '/api/kv/user-provider'], async (req, res) =>
             manualLyrics: { source: provider },
             trackInfo: trackInfo
         });
+        await invalidateUserCache(userId);
 
         res.json({ success: true });
     } catch (error) {
@@ -1259,6 +1269,7 @@ app.post('/api/kv/migrate', async (req, res) => {
         }
 
         console.log(`✅ Migration completed: ${migratedCount} items migrated`);
+        await invalidateUserCache(userId);
         res.json({
             success: true,
             message: 'Data migration completed',
@@ -1314,6 +1325,7 @@ app.post('/api/kv/sync-lyrics', async (req, res) => {
                 errorCount++;
             }
         }
+        await invalidateUserCache(userId);
 
         res.json({
             success: true,
@@ -1364,6 +1376,7 @@ app.post('/api/kv/sync-time-adjustments', async (req, res) => {
                 errorCount++;
             }
         }
+        await invalidateUserCache(userId);
 
         res.json({
             success: true,
@@ -1379,6 +1392,9 @@ app.post('/api/kv/sync-time-adjustments', async (req, res) => {
 
 // Endpoint to get all time adjustments (for compatibility with client)
 app.get('/api/kv/time-adjustments', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     try {
         const session = await getUserSession(req);
         if (!session) return res.status(401).json({ error: 'Not authenticated' });
