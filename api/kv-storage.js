@@ -54,12 +54,19 @@ class KVStorageManager {
         return `user:${cookieId}`;
     }
     
-    // 生成 track 專屬 key
+    // 生成 track 專屬 key (不含用戶前綴，用於全局緩存)
     generateTrackKey(trackInfo) {
         if (!trackInfo || !trackInfo.id) {
             throw new Error('无效的 trackInfo，需要 track ID');
         }
-        return `lyrics:${trackInfo.id}:${trackInfo.name}:${trackInfo.artist}`;
+        return `lyrics:${trackInfo.id}`;
+    }
+
+    // 生成用戶+軌道 專屬 key (用於個人設置)
+    generateUserTrackKey(req, trackInfo) {
+        const userKey = this.generateUserKey(req);
+        const trackKey = this.generateTrackKey(trackInfo);
+        return `${userKey}:${trackKey}`;
     }
     
     // 獲取 session
@@ -77,8 +84,8 @@ class KVStorageManager {
                 const data = await this.redis.get(`session:${sessionId}`);
                 if (data) {
                     const sessionData = typeof data === 'string' ? JSON.parse(data) : data;
-                    // 檢查 session 是否過期
-                    if (sessionData.expiresAt && Date.now() < sessionData.expiresAt + (7 * 24 * 60 * 60 * 1000)) { // 增加一個禮拜的寬容期
+                    // 檢查 session 是否過期 (30天)
+                    if (sessionData.expiresAt && Date.now() < sessionData.expiresAt + (30 * 24 * 60 * 60 * 1000)) {
                         this.cache.set(`session:${sessionId}`, sessionData);
                         return sessionData;
                     }
@@ -107,7 +114,7 @@ class KVStorageManager {
                 };
                 
                 await this.redis.set(`session:${sessionId}`, JSON.stringify(data), {
-                    ex: 7 * 24 * 60 * 60 // 7天過期
+                    ex: 30 * 24 * 60 * 60 // 30天過期，與 Cookie 同步
                 });
                 
                 return true;
@@ -125,19 +132,13 @@ class KVStorageManager {
         if (!sessionId) return false;
         
         // 1. 從內存緩存刪除
-        this.cache.delete(sessionId);
+        this.cache.delete(`session:${sessionId}`);
         
         // 2. 從 KV 刪除
-        if (this.isKVAvailable) {
+        if (this.isKVAvailable && this.redis) {
             try {
-                const response = await fetch(`${process.env.KV_REST_API_URL}/${encodeURIComponent(`session:${sessionId}`)}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}`
-                    }
-                });
-                
-                return response.ok;
+                await this.redis.del(`session:${sessionId}`);
+                return true;
             } catch (error) {
                 console.error('KV 刪除 session 失敗:', error);
                 return false;
@@ -147,7 +148,7 @@ class KVStorageManager {
         return true;
     }
     
-    // 保存用戶自定義歌詞
+    // 保存用戶自定義歌詞 (用戶專屬)
     async saveUserCustomLyrics(req, trackInfo, lyrics, lyricsType, source) {
         if (!trackInfo || !lyrics) {
             return false;
@@ -164,7 +165,7 @@ class KVStorageManager {
         };
 
         try {
-            const key = this.generateTrackKey(trackInfo);
+            const key = this.generateUserTrackKey(req, trackInfo);
             
             // 同时保存到 Redis 和内存
             if (this.isKVAvailable && this.redis) {
@@ -180,12 +181,12 @@ class KVStorageManager {
         }
     }
     
-    // 獲取用戶自定義歌詞
+    // 獲取用戶自定義歌詞 (用戶專屬)
     async getUserCustomLyrics(req, trackInfo) {
         if (!trackInfo) return null;
 
         try {
-            const key = this.generateTrackKey(trackInfo);
+            const key = this.generateUserTrackKey(req, trackInfo);
             
             // 1. 先从内存缓存查找
             if (this.cache.has(key)) {
@@ -211,8 +212,8 @@ class KVStorageManager {
         }
     }
 
-    // ✨ 保存时间偏移（永久保存）
-    async saveLyricsTimeOffset(trackInfo, timeOffset) {
+    // ✨ 保存时间偏移（用戶專屬）
+    async saveLyricsTimeOffset(req, trackInfo, timeOffset) {
         if (!trackInfo || timeOffset === undefined) {
             return false;
         }
@@ -225,12 +226,13 @@ class KVStorageManager {
         };
 
         try {
-            const key = `offset:${trackInfo.id}:${trackInfo.name}:${trackInfo.artist}`;
+            const userKey = this.generateUserKey(req);
+            const key = `offset:${userKey}:${trackInfo.id}`;
             
             // 同时保存到 Redis 和内存
             if (this.isKVAvailable && this.redis) {
                 await this.redis.set(key, JSON.stringify(offsetData), { ex: 2592000 }); // 30天过期
-                console.log(`✅ 时间偏移已保存到 KV: ${key}`);
+                console.log(`✅ 時間偏移已保存到 KV: ${key}`);
             }
             
             this.cache.set(key, offsetData);
@@ -241,80 +243,13 @@ class KVStorageManager {
         }
     }
 
-    // ✨ 30天歌词缓存
-    async cacheLyricsFor30Days(trackInfo, lyrics, lyricsType, source = 'auto') {
-        if (!trackInfo || !lyrics) {
-            return false;
-        }
-
-        const cacheData = {
-            trackInfo,
-            lyrics,
-            lyricsType,
-            source,
-            timestamp: Date.now(),
-            cached_until: Date.now() + (30 * 24 * 60 * 60 * 1000), // 30天
-            version: 3
-        };
-
-        try {
-            const key = `cache:${this.generateTrackKey(trackInfo)}`;
-            
-            // 保存到 Redis，设置30天过期
-            if (this.isKVAvailable && this.redis) {
-                await this.redis.set(key, JSON.stringify(cacheData), { ex: 2592000 }); // 30天
-                console.log(`✅ 歌词已缓存30天: ${key}`);
-            }
-            
-            this.cache.set(key, cacheData);
-            return true;
-        } catch (error) {
-            console.error('❌ 30天缓存失败:', error.message);
-            return false;
-        }
-    }
-
-    // ✨ 获取30天缓存的歌词
-    async get30DayCachedLyrics(trackInfo) {
-        if (!trackInfo) return null;
-
-        try {
-            const key = `cache:${this.generateTrackKey(trackInfo)}`;
-            
-            // 1. 先从内存缓存查找
-            if (this.cache.has(key)) {
-                const data = this.cache.get(key);
-                if (Date.now() < data.cached_until) {
-                    console.log(`✅ 从30天缓存获取歌词: ${key}`);
-                    return data;
-                }
-            }
-            
-            // 2. 从 Redis 查找
-            if (this.isKVAvailable && this.redis) {
-                const data = await this.redis.get(key);
-                if (data) {
-                    const cacheData = typeof data === 'string' ? JSON.parse(data) : data;
-                    if (Date.now() < cacheData.cached_until) {
-                        this.cache.set(key, cacheData);
-                        console.log(`✅ 从 KV 获取30天缓存歌词: ${key}`);
-                        return cacheData;
-                    }
-                }
-            }
-            
-            return null;
-        } catch (error) {
-            console.error('❌ 获取30天缓存失败:', error.message);
-            return null;
-        }
-    }
-
-        async getLyricsTimeOffset(trackInfo) {
+    // ✨ 獲取時間偏移 (用戶專屬)
+    async getLyricsTimeOffset(req, trackInfo) {
         if (!trackInfo) return 0;
 
         try {
-            const key = `offset:${trackInfo.id}:${trackInfo.name}:${trackInfo.artist}`;
+            const userKey = this.generateUserKey(req);
+            const key = `offset:${userKey}:${trackInfo.id}`;
             
             // 1. 先从内存缓存查找
             if (this.cache.has(key)) {
@@ -339,10 +274,79 @@ class KVStorageManager {
         }
     }
 
-        // ✨ 数据迁移：从 localStorage 到 KV
+    // ✨ 30天歌词缓存 (全局共享)
+    async cacheLyricsFor30Days(trackInfo, lyrics, lyricsType, source = 'auto') {
+        if (!trackInfo || !lyrics) {
+            return false;
+        }
+
+        const cacheData = {
+            trackInfo,
+            lyrics,
+            lyricsType,
+            source,
+            timestamp: Date.now(),
+            cached_until: Date.now() + (30 * 24 * 60 * 60 * 1000), // 30天
+            version: 3
+        };
+
+        try {
+            const key = `cache:${this.generateTrackKey(trackInfo)}`;
+            
+            // 保存到 Redis，设置30天过期
+            if (this.isKVAvailable && this.redis) {
+                await this.redis.set(key, JSON.stringify(cacheData), { ex: 2592000 }); // 30天
+                console.log(`✅ 歌词已快取30天: ${key}`);
+            }
+            
+            this.cache.set(key, cacheData);
+            return true;
+        } catch (error) {
+            console.error('❌ 30天快取失敗:', error.message);
+            return false;
+        }
+    }
+
+    // ✨ 获取30天缓存的歌词 (全局共享)
+    async get30DayCachedLyrics(trackInfo) {
+        if (!trackInfo) return null;
+
+        try {
+            const key = `cache:${this.generateTrackKey(trackInfo)}`;
+            
+            // 1. 先从内存缓存查找
+            if (this.cache.has(key)) {
+                const data = this.cache.get(key);
+                if (Date.now() < data.cached_until) {
+                    console.log(`✅ 从30天快取获取歌词: ${key}`);
+                    return data;
+                }
+            }
+            
+            // 2. 从 Redis 查找
+            if (this.isKVAvailable && this.redis) {
+                const data = await this.redis.get(key);
+                if (data) {
+                    const cacheData = typeof data === 'string' ? JSON.parse(data) : data;
+                    if (Date.now() < cacheData.cached_until) {
+                        this.cache.set(key, cacheData);
+                        console.log(`✅ 从 KV 获取30天快取歌词: ${key}`);
+                        return cacheData;
+                    }
+                }
+            }
+            
+            return null;
+        } catch (error) {
+            console.error('❌ 获取30天快取失败:', error.message);
+            return null;
+        }
+    }
+
+    // ✨ 数据迁移：从 localStorage 到 KV
     async migrateFromLocalStorage(req, localStorageData) {
         console.log('🔄 开始数据迁移...');
-        
+        const userKey = this.generateUserKey(req);
         let migratedCount = 0;
         
         try {
@@ -351,9 +355,9 @@ class KVStorageManager {
                 const lyricsObj = JSON.parse(localStorageData.user_custom_lyrics);
                 for (const [trackKey, lyricsData] of Object.entries(lyricsObj)) {
                     if (this.isKVAvailable && this.redis) {
-                        const kvKey = `lyrics:${trackKey}`;
+                        const trackId = trackKey.split('--')[0];
+                        const kvKey = `${userKey}:lyrics:${trackId}`;
                         await this.redis.set(kvKey, JSON.stringify(lyricsData));
-                        console.log(`✅ 已迁移歌词: ${kvKey}`);
                         migratedCount++;
                     }
                 }
@@ -364,15 +368,14 @@ class KVStorageManager {
                 const providersObj = JSON.parse(localStorageData.user_lyrics_providers);
                 for (const [trackKey, providerData] of Object.entries(providersObj)) {
                     if (this.isKVAvailable && this.redis) {
-                        const kvKey = `provider:${trackKey}`;
+                        const trackId = trackKey.split('--')[0];
+                        const kvKey = `${userKey}:provider:${trackId}`;
                         await this.redis.set(kvKey, JSON.stringify(providerData));
-                        console.log(`✅ 已迁移供应商: ${kvKey}`);
                         migratedCount++;
                     }
                 }
             }
             
-            console.log(`✅ 数据迁移完成，共 ${migratedCount} 条记录`);
             return { success: true, migratedCount };
         } catch (error) {
             console.error('❌ 数据迁移失败:', error.message);
@@ -380,22 +383,21 @@ class KVStorageManager {
         }
     }
 
-        // ✨ 清除所有用户数据
+    // ✨ 清除所有用户数据
     async clearAllUserData(req) {
         try {
             const userKey = this.generateUserKey(req);
             console.log(`🗑️ 清除用户数据: ${userKey}`);
             
             if (this.isKVAvailable && this.redis) {
-                // 获取所有相关的 key 并删除
-                const pattern = `${userKey}:*`;
-                // 由于 Redis 不直接支持通配符删除，需要逐一删除
-                // 这里简化处理，实际应该保留重要数据
+                // Get all keys for this user
+                const keys = await this.redis.keys(`${userKey}:*`);
+                if (keys.length > 0) {
+                    await this.redis.del(...keys);
+                }
             }
-            
             return true;
         } catch (error) {
-            console.error('❌ 清除数据失败:', error.message);
             return false;
         }
     }
@@ -403,8 +405,8 @@ class KVStorageManager {
     // 保存用戶歌詞供應商偏好
     async saveUserLyricsProvider(req, trackInfo, provider) {
         const userKey = this.generateUserKey(req);
-        const trackKey = this.generateTrackKey(trackInfo);
-        const providerKey = `${userKey}:provider:${trackKey}`;
+        const trackId = trackInfo.id;
+        const providerKey = `${userKey}:provider:${trackId}`;
         
         const providerData = {
             trackInfo,
@@ -412,53 +414,32 @@ class KVStorageManager {
             createdAt: Date.now()
         };
         
-        if (this.isKVAvailable) {
+        if (this.isKVAvailable && this.redis) {
             try {
-                const response = await fetch(`${process.env.KV_REST_API_URL}/${encodeURIComponent(providerKey)}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ metadata: JSON.stringify(providerData) })
-                });
-                
-                return response.ok;
+                await this.redis.set(providerKey, JSON.stringify(providerData));
+                return true;
             } catch (error) {
-                console.error('KV 保存供應商偏好失敗:', error);
                 return false;
             }
         }
-        
         return false;
     }
     
     // 獲取用戶歌詞供應商偏好
     async getUserLyricsProvider(req, trackInfo) {
         const userKey = this.generateUserKey(req);
-        const trackKey = this.generateTrackKey(trackInfo);
-        const providerKey = `${userKey}:provider:${trackKey}`;
+        const trackId = trackInfo.id;
+        const providerKey = `${userKey}:provider:${trackId}`;
         
-        if (!this.isKVAvailable) return null;
+        if (!this.isKVAvailable || !this.redis) return null;
         
         try {
-            const response = await fetch(`${process.env.KV_REST_API_URL}/${encodeURIComponent(providerKey)}`, {
-                headers: {
-                    'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}`
-                }
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                if (data && data.metadata) {
-                    const providerData = JSON.parse(data.metadata);
-                    return providerData.provider;
-                }
+            const data = await this.redis.get(providerKey);
+            if (data) {
+                const providerData = typeof data === 'string' ? JSON.parse(data) : data;
+                return providerData.provider;
             }
-        } catch (error) {
-            console.error('KV 獲取供應商偏好失敗:', error);
-        }
-        
+        } catch (error) {}
         return null;
     }
 }
