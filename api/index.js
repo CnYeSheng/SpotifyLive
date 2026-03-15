@@ -238,6 +238,11 @@ app.post('/api/refresh-token', async (req, res) => {
     res.json({ success: refreshed });
 });
 
+app.get('/api/force-relogin', (req, res) => {
+    res.clearCookie('spotify_session');
+    res.redirect('/api/auth');
+});
+
 // --- Player Endpoints ---
 app.get('/api/current-track', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');

@@ -59,10 +59,10 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            max-width: 100vw; /* Enforce viewport width limit */
+            max-width: 100vw;
             width: 100%;
             text-align: center;
-            box-sizing: border-box; /* Ensure padding is included in width */
+            box-sizing: border-box;
             padding-left: 20px;
             padding-right: 20px;
         }
@@ -72,7 +72,7 @@
             color: var(--text-primary);
         }
         
-        /* Word-by-word karaoke effect from main player styles.css */
+        /* Word-by-word karaoke effect */
         .lyrics-line .lyric-word {
             display: inline-block;
             border-radius: 4px;
@@ -89,7 +89,7 @@
         }
 
         .lyrics-line.current .lyric-word {
-            opacity: 0.6; /* Base opacity for unplayed words in current line */
+            opacity: 0.6;
             transform: scale(1);
         }
 
@@ -99,7 +99,6 @@
             font-weight: 700;
             z-index: 2;
             
-            /* Karaoke Fill Gradient exactly from main player */
             background-image: linear-gradient(90deg, 
                 var(--spotify-green) var(--word-progress, 0%), 
                 rgba(255, 255, 255, 0.6) var(--word-progress, 0%)
@@ -134,102 +133,63 @@
         <div id="status">Waiting for music...</div>
     </div>
 
+    <script src="spotify-player-manager.js"></script>
     <script>
-        const API_BASE = window.location.origin + '/api';
         let currentTrackId = null;
         let lyricsData = [];
         let isSynced = false;
-        let lastProgress = 0;
-        let lastUpdate = Date.now();
-        let trackDuration = 0;
-        let isPlaying = false;
-        
-        // Control state
         let lyricsOffset = 0;
         let manualLyricsId = null;
-        
-        // Session Management
-        let sessionId = new URLSearchParams(window.location.search).get('sessionId');
-        
-        // Control Channel for real-time sync
-        const controlChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('spotify_control') : null;
-        if (controlChannel) {
-            controlChannel.onmessage = (ev) => {
-                const d = ev.data || {};
-                if (d.type === 'control-sync') {
-                    if (d.lyricsOffset !== undefined) {
-                        lyricsOffset = d.lyricsOffset;
-                    }
-                    if (d.manualLyrics !== undefined) {
-                        update(); // Re-fetch to load new lyrics
-                    }
-                }
-                if (d.type === 'seek-sync' && d.position_ms !== undefined) {
-                    lastProgress = d.position_ms;
-                    lastUpdate = d.timestamp || Date.now();
-                }
-                if (d.type === 'playback-sync' && d.isPlaying !== undefined) {
-                    isPlaying = d.isPlaying;
-                    if (d.lastProgress !== undefined) lastProgress = d.lastProgress;
-                    lastUpdate = d.timestamp || Date.now();
-                }
-                if (d.type === 'lyrics-sync' && d.lyrics) {
-                    if (d.trackId === currentTrackId) {
-                        lyricsData = d.lyrics;
-                        isSynced = d.lyricsType === 'synced';
-                        // Force re-render if trackId matches
-                        document.getElementById('lyrics-content').innerHTML = '';
-                    }
-                }
-            };
-        }
 
-        // Listen for session updates from main window
-        const authChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('spotify_auth') : null;
-        if (authChannel) {
-            authChannel.onmessage = (ev) => {
-                const d = ev.data || {};
-                if (d.type === 'session-update' && d.sessionId) {
-                    sessionId = d.sessionId;
-                }
-            };
-        }
-
-        async function fetchCurrentTrack() {
-            try {
-                const url = `${API_BASE}/current-track${sessionId ? '?sessionId=' + sessionId : ''}`;
-                const response = await fetch(url);
-                if (!response.ok) return null;
-                return await response.json();
-            } catch (e) {
-                return null;
+        // Unified control message handler
+        spotifyManager.onControlMessage = (d) => {
+            if (d.type === 'control-sync') {
+                if (d.lyricsOffset !== undefined) lyricsOffset = d.lyricsOffset;
+                if (d.manualLyrics !== undefined) update();
             }
-        }
+            if (d.type === 'lyrics-sync' && d.lyrics) {
+                if (d.trackId === currentTrackId) {
+                    lyricsData = d.lyrics;
+                    isSynced = d.lyricsType === 'synced';
+                    document.getElementById('lyrics-content').innerHTML = '';
+                }
+            }
+        };
+
+        // Update URL and local session when broadcasted
+        spotifyManager.onSessionUpdate = (newId) => {
+            const newUrl = new URL(window.location);
+            newUrl.searchParams.set('sessionId', newId);
+            window.history.pushState({}, '', newUrl);
+        };
 
         async function fetchLyrics(artist, title) {
             try {
-                const response = await fetch(`${API_BASE}/lyrics/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
+                const url = `${spotifyManager.API_BASE}/lyrics/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`;
+                const response = await fetch(url, {
+                    credentials: 'include',
+                    headers: { 'X-Session-Id': spotifyManager.sessionId || '' }
+                });
                 if (!response.ok) return null;
                 return await processLyricsResponse(response);
-            } catch (e) {
-                return null;
-            }
+            } catch (e) { return null; }
         }
 
         async function fetchManualLyrics(source, id) {
             try {
-                const response = await fetch(`${API_BASE}/get-lyrics/${source}/${encodeURIComponent(id)}`);
+                const url = `${spotifyManager.API_BASE}/get-lyrics/${source}/${encodeURIComponent(id)}`;
+                const response = await fetch(url, {
+                    credentials: 'include',
+                    headers: { 'X-Session-Id': spotifyManager.sessionId || '' }
+                });
                 if (!response.ok) return null;
                 return await processLyricsResponse(response);
-            } catch (e) {
-                return null;
-            }
+            } catch (e) { return null; }
         }
 
         async function processLyricsResponse(response) {
             const data = await response.json();
             if (data.success && data.lyrics && Array.isArray(data.lyrics)) {
-                // Normalize data structure
                 data.lyrics = data.lyrics.map(line => {
                     let processedLine = { ...line };
                     if (processedLine.words && Array.isArray(processedLine.words)) {
@@ -261,17 +221,12 @@
             }
             if(status) status.style.display = 'none';
 
-            // Find current line
             let activeIndex = -1;
             for (let i = 0; i < lyricsData.length; i++) {
-                if (lyricsData[i].time <= currentTime) {
-                    activeIndex = i;
-                } else {
-                    break;
-                }
+                if (lyricsData[i].time <= currentTime) activeIndex = i;
+                else break;
             }
 
-            // Rebuild DOM if track/lyrics changed
             const existingLines = document.getElementsByClassName('lyrics-line');
             if (existingLines.length !== lyricsData.length) {
                 container.innerHTML = '';
@@ -299,14 +254,12 @@
                 });
             }
 
-            // Update word-by-word progress
             for (let i = 0; i < lyricsData.length; i++) {
                 const lineDiv = container.querySelector(`.lyrics-line[data-index="${i}"]`);
                 if (!lineDiv) continue;
 
                 if (i === activeIndex) {
                     lineDiv.classList.add('current');
-                    
                     const words = lineDiv.querySelectorAll('.lyric-word');
                     words.forEach(word => {
                         const wordTime = parseInt(word.getAttribute('data-time'));
@@ -314,17 +267,12 @@
                         
                         if (currentTime >= wordTime) {
                             word.classList.add('active');
-                            
                             if (duration > 0) {
                                 const elapsed = currentTime - wordTime;
                                 const percentage = Math.min(100, Math.max(0, (elapsed / duration) * 100));
                                 word.style.setProperty('--word-progress', `${percentage}%`);
-                                
-                                if (percentage >= 100) {
-                                    word.classList.add('finished');
-                                } else {
-                                    word.classList.remove('finished');
-                                }
+                                if (percentage >= 100) word.classList.add('finished');
+                                else word.classList.remove('finished');
                             } else {
                                 word.style.setProperty('--word-progress', '100%');
                                 word.classList.add('finished');
@@ -341,17 +289,35 @@
         }
 
         async function update() {
-            const trackData = await fetchCurrentTrack();
+            const trackData = await spotifyManager.fetchCurrentTrack();
+            
+            if (trackData && trackData.error === 'unauthorized') {
+                document.getElementById('lyrics-content').innerHTML = `
+                    <div id="status" style="color: #ff6b6b; font-size: 1.2em;">
+                        Session expired.<br>
+                        <span style="font-size: 0.8em; opacity: 0.8;">Attempting to reconnect...</span><br>
+                        <a href="/api/force-relogin" target="_blank" style="
+                            display: inline-block;
+                            margin-top: 15px;
+                            padding: 8px 20px;
+                            background: #1ed760;
+                            color: white;
+                            text-decoration: none;
+                            border-radius: 20px;
+                            font-size: 0.7em;
+                            font-weight: bold;
+                            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                        ">Login Again</a>
+                    </div>
+                `;
+                setTimeout(() => spotifyManager.fetchSessionId(true), 2000);
+                return;
+            }
             
             if (trackData && (trackData.isPlaying || trackData.name)) {
-                isPlaying = trackData.isPlaying;
-                const now = Date.now();
-                
-                // Update control state
                 lyricsOffset = trackData.lyricsOffset || 0;
                 const serverManualLyrics = trackData.manualLyrics;
 
-                // 🚀 關鍵同步邏輯：比對伺服器端的手動歌詞來源
                 let shouldFetchLyrics = false;
                 let fetchMode = 'auto'; 
 
@@ -361,9 +327,7 @@
                 }
 
                 if (serverManualLyrics) {
-                    // 如果伺服器有指定來源，且與本地目前載入的不同
                     if (manualLyricsId !== serverManualLyrics.id) {
-                        this?.console?.log?.(`🔄 同步：偵測到手動歌詞來源變更: ${serverManualLyrics.source}`);
                         shouldFetchLyrics = true;
                         fetchMode = 'manual';
                         manualLyricsId = serverManualLyrics.id;
@@ -371,8 +335,6 @@
                         fetchMode = 'manual';
                     }
                 } else if (manualLyricsId !== null) {
-                    // 如果伺服器端取消了手動歌詞，本地恢復自動抓取
-                    this?.console?.log?.('🔄 同步：手動歌詞已移除，恢復自動模式');
                     shouldFetchLyrics = true;
                     fetchMode = 'auto';
                     manualLyricsId = null;
@@ -392,37 +354,26 @@
                     if (lrc && lrc.success) {
                         lyricsData = lrc.lyrics;
                         isSynced = lrc.type === 'synced';
+                        document.getElementById('lyrics-content').innerHTML = '';
                     } else {
                         document.getElementById('lyrics-content').innerHTML = '<div id="status">No lyrics available</div>';
                     }
                 }
-                
-                lastProgress = trackData.progress;
-                lastUpdate = now;
-                trackDuration = trackData.duration;
             } else {
-                isPlaying = false;
                 document.getElementById('lyrics-content').innerHTML = '<div id="status">Paused / No Music</div>';
             }
         }
         
         function loop() {
-            if (isPlaying && isSynced) {
-                const now = Date.now();
-                const dt = now - lastUpdate;
-                let projectedProgress = lastProgress + dt;
-                if (projectedProgress > trackDuration) projectedProgress = trackDuration;
-                
-                // Apply offset here
-                renderLyrics(projectedProgress + lyricsOffset);
+            if (spotifyManager.isPlaying && isSynced) {
+                renderLyrics(spotifyManager.getProjectedProgress() + lyricsOffset);
             } else if (isSynced && currentTrackId) {
-                // Keep rendering current progress even if paused to show state
-                renderLyrics(lastProgress + lyricsOffset);
+                renderLyrics(spotifyManager.lastProgress + lyricsOffset);
             }
             requestAnimationFrame(loop);
         }
 
-        setInterval(update, 1000);
+        setInterval(update, 2000);
         update();
         loop();
     </script>

@@ -1,6 +1,8 @@
 // api/kv-storage.js
 
 const { Redis } = require('@upstash/redis');
+const fs = require('fs');
+const path = require('path');
 
 class KVStorageManager {
     constructor() {
@@ -8,12 +10,19 @@ class KVStorageManager {
         this.isKVAvailable = !!process.env.KV_REST_API_URL && !!process.env.KV_REST_API_TOKEN;
         this.redis = null;
         this.cache = new Map();
+        this.isVercel = !!process.env.VERCEL;
+        this.localSessionsPath = path.join(process.cwd(), 'sessions.json');
         this.initialize();
     }
     
     async initialize() {
+        // 1. 如果不在 Vercel 且 Redis 不可用，嘗試從本地文件加載
+        if (!this.isKVAvailable && !this.isVercel) {
+            this.loadSessionsFromLocalFile();
+        }
+
         if (!this.isKVAvailable) {
-            console.log('⚠️ KV Storage 未配置，将使用内存存储');
+            console.log('⚠️ KV Storage 未配置，將使用內存/本地文件存儲');
             return;
         }
         
@@ -23,13 +32,55 @@ class KVStorageManager {
                 token: process.env.KV_REST_API_TOKEN
             });
             
-            // 测试连接
+            // 測試連接
             await this.redis.set('init_test', 'ok');
             await this.redis.del('init_test');
             console.log('✅ KV Storage 初始化成功');
         } catch (error) {
-            console.error('❌ KV Storage 初始化失败:', error.message);
+            console.error('❌ KV Storage 初始化失敗:', error.message);
             this.isKVAvailable = false;
+            // 失敗後同樣嘗試加載本地文件
+            if (!this.isVercel) {
+                this.loadSessionsFromLocalFile();
+            }
+        }
+    }
+
+    // 從本地文件加載 Session
+    loadSessionsFromLocalFile() {
+        try {
+            if (fs.existsSync(this.localSessionsPath)) {
+                const data = fs.readFileSync(this.localSessionsPath, 'utf8');
+                const sessions = JSON.parse(data);
+                let count = 0;
+                for (const [key, value] of Object.entries(sessions)) {
+                    // 只恢復未過期的 session (30天)
+                    if (value.expiresAt && Date.now() < value.expiresAt + (30 * 24 * 60 * 60 * 1000)) {
+                        this.cache.set(key, value);
+                        count++;
+                    }
+                }
+                console.log(`✅ 已從本地文件恢復 ${count} 個 Session`);
+            }
+        } catch (error) {
+            console.error('⚠️ 從本地文件加載 Session 失敗:', error.message);
+        }
+    }
+
+    // 保存 Session 到本地文件
+    _saveSessionsToLocalFile() {
+        if (this.isVercel) return;
+        
+        try {
+            const sessions = {};
+            for (const [key, value] of this.cache.entries()) {
+                if (key.startsWith('session:')) {
+                    sessions[key] = value;
+                }
+            }
+            fs.writeFileSync(this.localSessionsPath, JSON.stringify(sessions, null, 2));
+        } catch (error) {
+            console.error('⚠️ 保存 Session 到本地文件失敗:', error.message);
         }
     }
     
@@ -116,12 +167,14 @@ class KVStorageManager {
                 await this.redis.set(`session:${sessionId}`, JSON.stringify(data), {
                     ex: 30 * 24 * 60 * 60 // 30天過期，與 Cookie 同步
                 });
-                
-                return true;
             } catch (error) {
                 console.error('KV 保存 session 失敗:', error);
-                return false;
             }
+        }
+
+        // 無論 Redis 是否可用，只要不在 Vercel，就保存到本地文件作為備份
+        if (!this.isVercel) {
+            this._saveSessionsToLocalFile();
         }
         
         return true;
@@ -138,11 +191,14 @@ class KVStorageManager {
         if (this.isKVAvailable && this.redis) {
             try {
                 await this.redis.del(`session:${sessionId}`);
-                return true;
             } catch (error) {
                 console.error('KV 刪除 session 失敗:', error);
-                return false;
             }
+        }
+
+        // 同步更新本地文件
+        if (!this.isVercel) {
+            this._saveSessionsToLocalFile();
         }
         
         return true;

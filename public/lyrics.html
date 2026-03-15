@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Full Lyrics View</title>
+    <style>
+        @font-face {
+            font-family: 'Spotify Mix';
+            src: url('font/SpotifyMix-Extrabold.woff2') format('woff2'),
+                 url('font/SpotifyMix-Extrabold.woff') format('woff'),
+                 url('font/SpotifyMix-Extrabold.ttf') format('truetype');
+            font-weight: bold;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        :root {
+            --background-primary: #121212;
+            --text-primary: #FFFFFF;
+            --text-secondary: rgba(255, 255, 255, 0.4);
+            --spotify-green: #1ed760;
+            --card-bg: rgba(255, 255, 255, 0.05);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Spotify Mix', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--background-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* Header / Track Info */
+        .header {
+            width: 100%;
+            padding: 40px 20px;
+            max-width: 800px;
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            box-sizing: border-box;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, transparent 100%);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .album-art {
+            width: 100px;
+            height: 100px;
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+        }
+
+        .track-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .track-title {
+            font-size: 2rem;
+            font-weight: 800;
+            margin: 0 0 8px 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .track-artist {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            margin: 0;
+        }
+
+        /* Lyrics Container */
+        .lyrics-container {
+            width: 100%;
+            max-width: 800px;
+            padding: 40px 20px 200px 20px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 32px;
+        }
+
+        .lyrics-line {
+            font-size: 2.5rem;
+            font-weight: 700;
+            line-height: 1.3;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            transform-origin: left center;
+            padding: 8px 0;
+        }
+
+        .lyrics-line:hover {
+            color: var(--text-primary);
+        }
+
+        .lyrics-line.active {
+            color: var(--text-primary);
+            transform: scale(1.05);
+        }
+
+        /* Karaoke Effect */
+        .lyric-word {
+            display: inline-block;
+            margin-right: 0.2em;
+            transition: all 0.2s ease;
+        }
+
+        .active .lyric-word.played {
+            color: var(--spotify-green);
+        }
+
+        /* Status / Loading */
+        #status {
+            font-size: 1.5rem;
+            opacity: 0.5;
+            margin-top: 100px;
+            text-align: center;
+        }
+
+        /* Scroll Progress Indicator */
+        .scroll-progress {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 4px;
+            background: var(--spotify-green);
+            z-index: 1000;
+            width: 0%;
+            transition: width 0.1s linear;
+        }
+
+        @media (max-width: 600px) {
+            .track-title { font-size: 1.5rem; }
+            .lyrics-line { font-size: 1.8rem; }
+            .album-art { width: 60px; height: 60px; }
+            .header { padding: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="scroll-progress" id="scroll-progress"></div>
+    
+    <div class="header" id="header" style="display: none;">
+        <img id="track-art" src="" alt="" class="album-art">
+        <div class="track-info">
+            <h1 id="track-title" class="track-title">Loading...</h1>
+            <p id="track-artist" class="track-artist"></p>
+        </div>
+    </div>
+
+    <div id="status">Waiting for music...</div>
+    <div id="lyrics-container" class="lyrics-container"></div>
+
+    <script src="spotify-player-manager.js"></script>
+    <script>
+        let currentTrackId = null;
+        let lyricsData = [];
+        let isSynced = false;
+        let lyricsOffset = 0;
+        let manualLyricsId = null;
+        let autoScroll = true;
+
+        // Unified control message handler
+        spotifyManager.onControlMessage = (d) => {
+            if (d.type === 'control-sync') {
+                if (d.lyricsOffset !== undefined) lyricsOffset = d.lyricsOffset;
+                if (d.manualLyrics !== undefined) update();
+            }
+        };
+
+        async function fetchLyrics(artist, title) {
+            try {
+                const url = `${spotifyManager.API_BASE}/lyrics/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`;
+                const response = await fetch(url, {
+                    credentials: 'include',
+                    headers: { 'X-Session-Id': spotifyManager.sessionId || '' }
+                });
+                if (!response.ok) return null;
+                return await response.json();
+            } catch (e) { return null; }
+        }
+
+        async function fetchManualLyrics(source, id) {
+            try {
+                const url = `${spotifyManager.API_BASE}/get-lyrics/${source}/${encodeURIComponent(id)}`;
+                const response = await fetch(url, {
+                    credentials: 'include',
+                    headers: { 'X-Session-Id': spotifyManager.sessionId || '' }
+                });
+                if (!response.ok) return null;
+                return await response.json();
+            } catch (e) { return null; }
+        }
+
+        function renderLyricsList(lyrics) {
+            const container = document.getElementById('lyrics-container');
+            container.innerHTML = '';
+            
+            lyrics.forEach((line, index) => {
+                const div = document.createElement('div');
+                div.className = 'lyrics-line';
+                div.setAttribute('data-index', index);
+                div.innerText = line.text;
+                
+                // Add click to seek (optional, but nice)
+                div.onclick = () => {
+                    if (line.time !== undefined) {
+                        spotifyManager.sendControl('/playback/seek', { position_ms: line.time });
+                        autoScroll = true; // Resume autoscroll on click
+                    }
+                };
+                
+                container.appendChild(div);
+            });
+        }
+
+        function updateLyricsUI(currentTime) {
+            if (!lyricsData || lyricsData.length === 0) return;
+
+            let activeIndex = -1;
+            for (let i = 0; i < lyricsData.length; i++) {
+                if (lyricsData[i].time <= currentTime) activeIndex = i;
+                else break;
+            }
+
+            const lines = document.getElementsByClassName('lyrics-line');
+            for (let i = 0; i < lines.length; i++) {
+                if (i === activeIndex) {
+                    if (!lines[i].classList.contains('active')) {
+                        lines[i].classList.add('active');
+                        if (autoScroll) {
+                            lines[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                    }
+                } else {
+                    lines[i].classList.remove('active');
+                }
+            }
+            
+            // Update scroll progress bar
+            const progress = (currentTime / spotifyManager.trackDuration) * 100;
+            document.getElementById('scroll-progress').style.width = `${Math.min(100, progress)}%`;
+        }
+
+        async function update() {
+            const trackData = await spotifyManager.fetchCurrentTrack();
+            
+            if (trackData && trackData.error === 'unauthorized') {
+                document.getElementById('status').innerHTML = 'Session expired. Please <a href="/api/force-relogin" style="color:var(--spotify-green)">Login Again</a>';
+                return;
+            }
+            
+            if (trackData && (trackData.isPlaying || trackData.name)) {
+                document.getElementById('status').style.display = 'none';
+                document.getElementById('header').style.display = 'flex';
+                
+                document.getElementById('track-title').innerText = trackData.name;
+                document.getElementById('track-artist').innerText = trackData.artist;
+                document.getElementById('track-art').src = trackData.image;
+                
+                lyricsOffset = trackData.lyricsOffset || 0;
+                const serverManualLyrics = trackData.manualLyrics;
+
+                if (trackData.id !== currentTrackId || (serverManualLyrics && serverManualLyrics.id !== manualLyricsId)) {
+                    currentTrackId = trackData.id;
+                    manualLyricsId = serverManualLyrics?.id || null;
+                    
+                    let lrc;
+                    if (serverManualLyrics) {
+                        lrc = await fetchManualLyrics(serverManualLyrics.source, serverManualLyrics.id);
+                    } else {
+                        lrc = await fetchLyrics(trackData.artist, trackData.name);
+                    }
+
+                    if (lrc && lrc.success) {
+                        lyricsData = lrc.lyrics;
+                        isSynced = lrc.type === 'synced';
+                        renderLyricsList(lyricsData);
+                    } else {
+                        document.getElementById('lyrics-container').innerHTML = '<div id="status">No lyrics found</div>';
+                    }
+                }
+            } else {
+                document.getElementById('status').innerText = 'Paused / No Music';
+                document.getElementById('status').style.display = 'block';
+                document.getElementById('header').style.display = 'none';
+                document.getElementById('lyrics-container').innerHTML = '';
+            }
+        }
+
+        // Disable autoscroll on user scroll
+        window.addEventListener('wheel', () => {
+            autoScroll = false;
+            // Re-enable after 5 seconds of inactivity
+            clearTimeout(window.scrollTimeout);
+            window.scrollTimeout = setTimeout(() => { autoScroll = true; }, 5000);
+        });
+
+        function loop() {
+            if (spotifyManager.isPlaying && isSynced) {
+                updateLyricsUI(spotifyManager.getProjectedProgress() + lyricsOffset);
+            } else if (isSynced && currentTrackId) {
+                updateLyricsUI(spotifyManager.lastProgress + lyricsOffset);
+            }
+            requestAnimationFrame(loop);
+        }
+
+        setInterval(update, 2000);
+        update();
+        loop();
+    </script>
+</body>
+</html>

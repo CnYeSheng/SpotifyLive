@@ -70,7 +70,7 @@
 
         .track-meta {
             flex: 1;
-            min-width: 0; /* Text truncation fix */
+            min-width: 0;
         }
 
         .track-title {
@@ -463,57 +463,33 @@
         <span id="toast-message">Action successful</span>
     </div>
 
+    <script src="spotify-player-manager.js"></script>
     <script>
-        const API_BASE = window.location.origin + '/api';
         let currentOffset = 0;
         let currentTrackId = null;
-        let sessionId = new URLSearchParams(window.location.search).get('sessionId');
-        let isPlaying = false;
-        let trackDuration = 0;
-        let lastProgress = 0;
-        let lastUpdate = Date.now();
 
-        // Control Channel for real-time sync
-        const controlChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('spotify_control') : null;
-        if (controlChannel) {
-            controlChannel.onmessage = (ev) => {
-                const d = ev.data || {};
-                if (d.type === 'control-sync') {
-                    if (d.lyricsOffset !== undefined) {
-                        currentOffset = d.lyricsOffset;
-                        const offsetDisplay = document.getElementById('offset-display');
-                        offsetDisplay.innerText = (currentOffset > 0 ? '+' : '') + currentOffset + 'ms';
-                        offsetDisplay.style.color = currentOffset !== 0 ? 'var(--accent-color)' : 'var(--text-secondary)';
-                    }
-                    if (d.manualLyrics !== undefined) {
-                        update(); // Re-fetch track data to update UI
-                    }
-                }
-                if (d.type === 'track-sync' && d.track) {
-                    console.log('Received track sync:', d.track.name);
-                    updateUI(d.track);
-                }
-            };
-        }
+        // Sync local state when session updates
+        spotifyManager.onSessionUpdate = (newId) => {
+            const newUrl = new URL(window.location);
+            newUrl.searchParams.set('sessionId', newId);
+            window.history.pushState({}, '', newUrl);
+            document.getElementById('auth-overlay').style.display = 'none';
+            update();
+        };
 
-        // Listen for session updates from main window (if open in another tab)
-        const authChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('spotify_auth') : null;
-        if (authChannel) {
-            authChannel.onmessage = (ev) => {
-                const d = ev.data || {};
-                if (d.type === 'session-update' && d.sessionId) {
-                    console.log('Received session ID from broadcast:', d.sessionId);
-                    sessionId = d.sessionId;
-                    // Update URL without reloading
-                    const newUrl = new URL(window.location);
-                    newUrl.searchParams.set('sessionId', sessionId);
-                    window.history.pushState({}, '', newUrl);
-                    // Hide overlay if it was shown
-                    document.getElementById('auth-overlay').style.display = 'none';
-                    update();
+        // Sync UI when other tabs send control messages
+        spotifyManager.onControlMessage = (d) => {
+            if (d.type === 'control-sync') {
+                if (d.lyricsOffset !== undefined) {
+                    currentOffset = d.lyricsOffset;
+                    updateOffsetUI();
                 }
-            };
-        }
+                if (d.manualLyrics !== undefined) update();
+            }
+            if (d.type === 'track-sync' && d.track) {
+                updateUI(d.track);
+            }
+        };
 
         function formatTime(ms) {
             const seconds = Math.floor((ms / 1000) % 60);
@@ -521,160 +497,86 @@
             return `${minutes}:${seconds.toString().padStart(2, '0')}`;
         }
 
-        function updateProgress() {
-            if (isPlaying) {
-                const now = Date.now();
-                const dt = now - lastUpdate;
-                const projectedProgress = Math.min(trackDuration, lastProgress + dt);
-                
-                const percentage = (projectedProgress / trackDuration) * 100;
+        function updateProgressUI() {
+            if (spotifyManager.isPlaying) {
+                const projectedProgress = spotifyManager.getProjectedProgress();
+                const percentage = (projectedProgress / spotifyManager.trackDuration) * 100;
                 document.getElementById('progress-fill').style.width = `${percentage}%`;
                 document.getElementById('current-time').innerText = formatTime(projectedProgress);
             }
-            requestAnimationFrame(updateProgress);
+            requestAnimationFrame(updateProgressUI);
         }
 
         async function playbackControl(action) {
-            try {
-                const res = await fetch(`${API_BASE}/playback/${action}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sessionId })
-                });
-                if (res.ok) {
-                    if (action === 'play-pause') {
-                        isPlaying = !isPlaying;
-                        lastUpdate = Date.now();
-                        document.getElementById('play-pause-btn').innerText = isPlaying ? '⏸' : '▶';
-                        
-                        // Broadcast playback state
-                        if (controlChannel) {
-                            controlChannel.postMessage({ 
-                                type: 'playback-sync', 
-                                isPlaying: isPlaying,
-                                lastProgress: lastProgress,
-                                timestamp: lastUpdate
-                            });
-                        }
-                    }
-                    setTimeout(update, 500); // Wait a bit for Spotify to update state
+            const data = await spotifyManager.sendControl(`/playback/${action}`);
+            if (data.success || data.ok) {
+                if (action === 'play-pause') {
+                    spotifyManager.isPlaying = !spotifyManager.isPlaying;
+                    spotifyManager.lastUpdate = Date.now();
+                    document.getElementById('play-pause-btn').innerText = spotifyManager.isPlaying ? '⏸' : '▶';
+                    
+                    spotifyManager.broadcast('playback-sync', {
+                        isPlaying: spotifyManager.isPlaying,
+                        lastProgress: spotifyManager.lastProgress,
+                        timestamp: spotifyManager.lastUpdate
+                    });
                 }
-            } catch (e) {
+                setTimeout(update, 500);
+            } else {
                 showToast(`Failed to ${action}`, 'error');
             }
         }
 
         async function seekTrack(e) {
-            if (!trackDuration) return;
+            if (!spotifyManager.trackDuration) return;
             const bar = document.getElementById('progress-bar');
             const rect = bar.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const percentage = x / rect.width;
-            const position_ms = Math.floor(percentage * trackDuration);
+            const position_ms = Math.floor(((e.clientX - rect.left) / rect.width) * spotifyManager.trackDuration);
 
-            try {
-                const res = await fetch(`${API_BASE}/playback/seek`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ position_ms, sessionId })
-                });
-                if (res.ok) {
-                    lastProgress = position_ms;
-                    lastUpdate = Date.now();
-                    
-                    // Broadcast seek event
-                    if (controlChannel) {
-                        controlChannel.postMessage({ 
-                            type: 'seek-sync', 
-                            position_ms: position_ms,
-                            timestamp: lastUpdate
-                        });
-                    }
-                    
-                    showToast(`Seek to ${formatTime(position_ms)}`);
-                }
-            } catch (e) {
+            const data = await spotifyManager.sendControl('/playback/seek', { position_ms });
+            if (data.success || data.ok) {
+                spotifyManager.lastProgress = position_ms;
+                spotifyManager.lastUpdate = Date.now();
+                spotifyManager.broadcast('seek-sync', { position_ms, timestamp: spotifyManager.lastUpdate });
+                showToast(`Seek to ${formatTime(position_ms)}`);
+            } else {
                 showToast('Failed to seek', 'error');
             }
         }
 
-        function handleEnter(e) {
-            if(e.key === 'Enter') searchLyrics();
-        }
+        function handleEnter(e) { if(e.key === 'Enter') searchLyrics(); }
 
         function showToast(msg, type = 'success') {
             const toast = document.getElementById('toast');
-            const msgEl = document.getElementById('toast-message');
-            const iconEl = document.getElementById('toast-icon');
-            
-            msgEl.innerText = msg;
+            document.getElementById('toast-message').innerText = msg;
             toast.className = `toast show ${type === 'success' ? 'toast-success' : 'toast-error'}`;
-            iconEl.innerText = type === 'success' ? '✓' : '✕';
-            
-            setTimeout(() => {
-                toast.classList.remove('show');
-            }, 3000);
+            document.getElementById('toast-icon').innerText = type === 'success' ? '✓' : '✕';
+            setTimeout(() => toast.classList.remove('show'), 3000);
         }
 
-        let isRefreshing = false;
-
-        async function attemptTokenRefresh() {
-            if (isRefreshing) return false;
-            isRefreshing = true;
-            try {
-                const res = await fetch(`${API_BASE}/refresh-token`, {
-                    method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'x-session-id': sessionId 
-                    }
-                });
-                const data = await res.json();
-                isRefreshing = false;
-                if (data.success) {
-                    return true;
-                }
-            } catch (e) {
-                console.error('Refresh failed', e);
-            }
-            isRefreshing = false;
-            return false;
+        function updateOffsetUI() {
+            const offsetDisplay = document.getElementById('offset-display');
+            offsetDisplay.innerText = (currentOffset > 0 ? '+' : '') + currentOffset + 'ms';
+            offsetDisplay.style.color = currentOffset !== 0 ? 'var(--accent-color)' : 'var(--text-secondary)';
         }
 
         function updateUI(data) {
             if (data.name) {
-                // Always update labels if they differ to ensure "real-time" feeling
-                if (document.getElementById('track-title').innerText !== data.name) {
-                    document.getElementById('track-title').innerText = data.name;
-                }
-                if (document.getElementById('track-artist').innerText !== data.artist) {
-                    document.getElementById('track-artist').innerText = data.artist;
-                }
-                
-                isPlaying = data.isPlaying;
-                trackDuration = data.duration;
-                lastProgress = data.progress;
-                lastUpdate = Date.now();
-
-                document.getElementById('play-pause-btn').innerText = isPlaying ? '⏸' : '▶';
-                document.getElementById('total-time').innerText = formatTime(trackDuration);
+                document.getElementById('track-title').innerText = data.name;
+                document.getElementById('track-artist').innerText = data.artist;
+                document.getElementById('play-pause-btn').innerText = data.isPlaying ? '⏸' : '▶';
+                document.getElementById('total-time').innerText = formatTime(data.duration);
 
                 if (data.id !== currentTrackId) {
                     currentTrackId = data.id;
-                    if (data.image) {
-                        document.getElementById('track-art').src = data.image;
-                    }
-                    // Pre-fill search if empty
+                    if (data.image) document.getElementById('track-art').src = data.image;
                     if(!document.getElementById('search-query').value) {
                         document.getElementById('search-query').value = `${data.artist} - ${data.name}`;
                     }
                 }
 
-                // Update control state
                 currentOffset = data.lyricsOffset || 0;
-                const offsetDisplay = document.getElementById('offset-display');
-                offsetDisplay.innerText = (currentOffset > 0 ? '+' : '') + currentOffset + 'ms';
-                offsetDisplay.style.color = currentOffset !== 0 ? 'var(--accent-color)' : 'var(--text-secondary)';
+                updateOffsetUI();
                 
                 const sourceBadge = document.getElementById('current-source');
                 if (data.manualLyrics) {
@@ -688,96 +590,42 @@
         }
 
         async function update() {
-            try {
-                const url = `${API_BASE}/current-track${sessionId ? '?sessionId=' + sessionId : ''}`;
-                const res = await fetch(url);
-                
-                if (res.status === 401) {
-                    console.log('Token expired, attempting refresh...');
-                    const refreshed = await attemptTokenRefresh();
-                    if (refreshed) {
-                        console.log('Token refreshed, retrying update...');
-                        // Retry immediately
-                        return update();
-                    } else {
-                        document.getElementById('auth-overlay').style.display = 'flex';
-                        return; // Stop processing
-                    }
-                }
-                
-                // Hide overlay if successful
-                if (res.ok) {
-                    document.getElementById('auth-overlay').style.display = 'none';
-                }
-
-                const data = await res.json();
+            const data = await spotifyManager.fetchCurrentTrack();
+            if (data && data.error === 'unauthorized') {
+                document.getElementById('auth-overlay').style.display = 'flex';
+                return;
+            }
+            if (data) {
+                document.getElementById('auth-overlay').style.display = 'none';
                 updateUI(data);
-            } catch (e) {
-                console.error(e);
             }
         }
 
-
-        async function adjustOffset(delta) {
-            const newOffset = currentOffset + delta;
-            await setOffset(newOffset);
-        }
-
+        async function adjustOffset(delta) { await setOffset(currentOffset + delta); }
         async function applyCustomOffset() {
             const val = parseInt(document.getElementById('custom-offset').value);
-            if (!isNaN(val)) {
-                await setOffset(val);
-                document.getElementById('custom-offset').value = '';
-            }
+            if (!isNaN(val)) { await setOffset(val); document.getElementById('custom-offset').value = ''; }
         }
 
         async function setOffset(offset) {
-            try {
-                const res = await fetch(`${API_BASE}/control/offset`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ offset, sessionId })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    currentOffset = data.lyricsOffset;
-                    
-                    // Broadcast to other tabs
-                    if (controlChannel) {
-                        controlChannel.postMessage({ 
-                            type: 'control-sync', 
-                            lyricsOffset: currentOffset 
-                        });
-                    }
-                    
-                    update(); 
-                    showToast(`Offset set to ${currentOffset}ms`);
-                }
-            } catch (e) {
+            const data = await spotifyManager.sendControl('/control/offset', { offset });
+            if (data.success) {
+                currentOffset = offset;
+                spotifyManager.broadcast('control-sync', { lyricsOffset: currentOffset });
+                updateOffsetUI();
+                showToast(`Offset set to ${currentOffset}ms`);
+            } else {
                 showToast('Failed to set offset', 'error');
             }
         }
 
         async function resetAll() {
-            try {
-                await fetch(`${API_BASE}/control/reset`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sessionId })
-                });
-                
-                // Broadcast to other tabs
-                if (controlChannel) {
-                    controlChannel.postMessage({ 
-                        type: 'control-sync', 
-                        lyricsOffset: 0,
-                        manualLyrics: null
-                    });
-                }
-                
+            const data = await spotifyManager.sendControl('/control/reset');
+            if (data.success) {
+                spotifyManager.broadcast('control-sync', { lyricsOffset: 0, manualLyrics: null });
                 showToast('Reset all settings');
                 update();
-            } catch (e) {
+            } else {
                 showToast('Failed to reset', 'error');
             }
         }
@@ -785,129 +633,66 @@
         async function searchLyrics() {
             const query = document.getElementById('search-query').value;
             if (!query) return;
-
-            const resultsContainer = document.getElementById('search-results');
-            resultsContainer.innerHTML = '<div class="empty-state"><div style="display:inline-block; width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite;"></div> Searching...</div><style>@keyframes spin { to { transform: rotate(360deg); } }</style>';
-
+            const container = document.getElementById('search-results');
+            container.innerHTML = '<div class="empty-state">Searching...</div>';
             try {
-                const res = await fetch(`${API_BASE}/search-lyrics/${encodeURIComponent(query)}`);
+                const res = await fetch(`${spotifyManager.API_BASE}/search-lyrics/${encodeURIComponent(query)}`);
                 const data = await res.json();
-
-                if (data.success && data.results && data.results.length > 0) {
-                    resultsContainer.innerHTML = '';
-                    data.results.forEach(result => {
-                        // Safe string escaping for inline handler
-                        const safeTitle = result.title.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                        const safeArtist = result.artist.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                        const safeId = result.id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                        const safeSource = result.source.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-
+                if (data.success && data.results?.length > 0) {
+                    container.innerHTML = '';
+                    data.results.forEach(r => {
                         const div = document.createElement('div');
                         div.className = 'result-item';
                         div.innerHTML = `
                             <div class="result-info">
-                                <div class="result-title">${result.title}</div>
-                                <div class="result-meta">
-                                    <span class="source-tag">${result.source}</span>
-                                    <span>${result.artist}</span>
-                                </div>
+                                <div class="result-title">${r.title}</div>
+                                <div class="result-meta"><span class="source-tag">${r.source}</span><span>${r.artist}</span></div>
                             </div>
-                            <button class="btn btn-primary btn-sm" onclick="selectLyrics('${safeId}', '${safeSource}', '${safeTitle}', '${safeArtist}')">Select</button>
+                            <button class="btn btn-primary btn-sm" onclick="selectLyrics('${r.id.replace(/'/g, "\\'")}', '${r.source.replace(/'/g, "\\'")}', '${r.title.replace(/'/g, "\\'")}', '${r.artist.replace(/'/g, "\\'")}')">Select</button>
                         `;
-                        resultsContainer.appendChild(div);
+                        container.appendChild(div);
                     });
-                } else {
-                    resultsContainer.innerHTML = '<div class="empty-state">No lyrics found</div>';
-                }
-            } catch (e) {
-                resultsContainer.innerHTML = '<div class="empty-state">Search failed</div>';
-            }
+                } else container.innerHTML = '<div class="empty-state">No lyrics found</div>';
+            } catch (e) { container.innerHTML = '<div class="empty-state">Search failed</div>'; }
         }
 
         async function selectLyrics(id, source, title, artist) {
-            try {
-                const res = await fetch(`${API_BASE}/control/manual-lyrics`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id, source, title, artist, sessionId })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    // Broadcast to other tabs
-                    if (controlChannel) {
-                        controlChannel.postMessage({ 
-                            type: 'control-sync', 
-                            manualLyrics: { id, source, title, artist } 
-                        });
-                    }
-                    
-                    showToast(`Selected lyrics from ${source}`);
-                    update();
-                }
-            } catch (e) {
-                showToast('Failed to select lyrics', 'error');
-            }
+            const data = await spotifyManager.sendControl('/control/manual-lyrics', { id, source, title, artist });
+            if (data.success) {
+                spotifyManager.broadcast('control-sync', { manualLyrics: { id, source, title, artist } });
+                showToast(`Selected lyrics from ${source}`);
+                update();
+            } else showToast('Failed to select lyrics', 'error');
         }
 
         async function loadSyncedLyrics() {
-            const listContainer = document.getElementById('synced-lyrics-list');
-            listContainer.innerHTML = '<div class="empty-state">Loading synced lyrics...</div>';
-
+            const container = document.getElementById('synced-lyrics-list');
+            container.innerHTML = '<div class="empty-state">Loading...</div>';
             try {
-                // Use the endpoint we unified in server.js
-                const res = await fetch(`${API_BASE}/kv/export-all-lyrics`);
-                const lyricsData = await res.json(); // It returns an array directly
-
-                if (lyricsData && lyricsData.length > 0) {
-                    listContainer.innerHTML = '';
-                    // Sort by updated time desc
-                    lyricsData.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
-
-                    lyricsData.forEach(item => {
-                        // Safe string escaping
+                const res = await fetch(`${spotifyManager.API_BASE}/kv/export-all-lyrics`);
+                const data = await res.json();
+                if (data?.length > 0) {
+                    container.innerHTML = '';
+                    data.sort((a,b) => new Date(b.updatedAt) - new Date(a.updatedAt)).forEach(item => {
                         const manual = item.manualLyrics || {};
-                        const title = (manual.title || item.trackId).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                        const artist = (manual.artist || 'Unknown').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                        const source = (manual.source || item.customLyricsMeta?.source || 'custom').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                        
-                        // Try to find track name if manual info is missing (basic attempt)
-                        let displayTitle = manual.title || item.trackId;
-                        if(displayTitle.includes('-')) displayTitle = displayTitle.split('-').slice(2).join('-'); // crude fallback
-
                         const div = document.createElement('div');
                         div.className = 'result-item';
                         div.innerHTML = `
                             <div class="result-info">
-                                <div class="result-title">${manual.title || displayTitle || 'Unknown Track'}</div>
-                                <div class="result-meta">
-                                    <span class="source-tag">${source}</span>
-                                    <span>${manual.artist || 'Unknown Artist'}</span>
-                                    <span style="margin-left:8px; font-size:0.7em;">${new Date(item.updatedAt).toLocaleDateString()}</span>
-                                </div>
+                                <div class="result-title">${manual.title || item.trackId}</div>
+                                <div class="result-meta"><span class="source-tag">${manual.source || 'custom'}</span><span>${manual.artist || ''}</span></div>
                             </div>
                         `;
-                        // Optional: Add a "Use" button if we can map it back to the current track, 
-                        // but since these are saved *per track ID*, they are automatically used when that song plays.
-                        // So we just list them here for verification.
-                        listContainer.appendChild(div);
+                        container.appendChild(div);
                     });
-                } else {
-                    listContainer.innerHTML = '<div class="empty-state">No synced lyrics found</div>';
-                }
-            } catch (e) {
-                console.error(e);
-                listContainer.innerHTML = '<div class="empty-state">Failed to load lyrics</div>';
-            }
+                } else container.innerHTML = '<div class="empty-state">None found</div>';
+            } catch (e) { container.innerHTML = '<div class="empty-state">Failed</div>'; }
         }
 
-        // Poll every 1 second
-        setInterval(update, 1000);
+        setInterval(update, 2000);
         update();
-        // Load synced list initially
         loadSyncedLyrics();
-        // Start progress loop
-        updateProgress();
-        </script>
-        </script>
+        updateProgressUI();
+    </script>
 </body>
 </html>

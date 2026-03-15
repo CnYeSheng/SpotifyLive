@@ -270,6 +270,21 @@ async function saveUserSession(sessionId, sessionData) {
     }
 }
 
+// Proactive re-authentication endpoint
+app.get('/api/force-relogin', (req, res) => {
+    console.log('🔄 Force re-login requested, clearing cookies and session...');
+    res.clearCookie('spotify_session');
+    // Also clear from memory/KV if sessionId is known
+    const sessionId = req.headers['x-session-id'] || req.query.sessionId || req.cookies?.spotify_session;
+    if (sessionId) {
+        userSessions.delete(sessionId);
+        if (typeof kvStorage !== 'undefined') {
+            kvStorage.deleteSession(sessionId).catch(() => {});
+        }
+    }
+    res.redirect('/api/auth');
+});
+
 // Spotify authorization URL with enhanced scopes
 app.get('/api/auth', async (req, res) => {
     // Try to reuse existing session ID if available to keep devices synced
