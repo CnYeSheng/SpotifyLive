@@ -381,19 +381,74 @@ class KVStorageManager {
         return `${id}-${name}-${artist}`.toLowerCase().replace(/\s+/g, '_');
     }
 
-    // 保存到 localStorage
+    // 保存到 localStorage (帶配額管理和自動清理)
     saveToLocalStorage(storageKey, trackInfo, data) {
         try {
             const trackKey = this.generateTrackKey(trackInfo);
             const existingData = JSON.parse(localStorage.getItem(storageKey) || '{}');
             existingData[trackKey] = { ...data, trackKey };
+            
+            // 檢查是否會超出配額 (localStorage 通常限制為 5MB)
+            const estimatedSize = JSON.stringify(existingData).length;
+            const maxAllowedSize = 4 * 1024 * 1024; // 4MB 安全上限
+            
+            if (estimatedSize > maxAllowedSize) {
+                console.warn(`⚠️ ${storageKey} 數據大小 (${Math.round(estimatedSize/1024)}KB) 接近配額限制，執行自動清理...`);
+                this.cleanupOldData(storageKey, existingData, 100); // 保留最近 100 條記錄
+            }
+            
             localStorage.setItem(storageKey, JSON.stringify(existingData));
             console.log(`💾 localStorage: 已保存 ${storageKey}`);
             return true;
         } catch (error) {
             console.error(`❌ localStorage 保存失敗:`, error);
+            
+            // 如果是配額超限錯誤，嘗試自動清理後重試
+            if (error.name === 'QuotaExceededError') {
+                console.warn('⚠️ localStorage 配額超限，嘗試清理舊數據...');
+                try {
+                    const existingData = JSON.parse(localStorage.getItem(storageKey) || '{}');
+                    this.cleanupOldData(storageKey, existingData, 50); // 激進清理，只保留 50 條
+                    localStorage.setItem(storageKey, JSON.stringify(existingData));
+                    console.log('✅ 清理完成，重新保存...');
+                    const trackKey = this.generateTrackKey(trackInfo);
+                    existingData[trackKey] = { ...data, trackKey };
+                    localStorage.setItem(storageKey, JSON.stringify(existingData));
+                    return true;
+                } catch (retryError) {
+                    console.error('❌ 清理後仍無法保存:', retryError);
+                }
+            }
             return false;
         }
+    }
+    
+    // 清理舊數據，保留最近的 maxItems 條記錄
+    cleanupOldData(storageKey, data, maxItems = 100) {
+        const entries = Object.entries(data);
+        if (entries.length <= maxItems) {
+            return data;
+        }
+        
+        // 按 lastUsed 時間排序，保留最新的記錄
+        entries.sort((a, b) => {
+            const timeA = a[1].lastUsed || a[1].timestamp || 0;
+            const timeB = b[1].lastUsed || b[1].timestamp || 0;
+            return timeB - timeA; // 降序排列
+        });
+        
+        // 保留前 maxItems 條記錄
+        const keptEntries = entries.slice(0, maxItems);
+        const removedCount = entries.length - maxItems;
+        
+        // 重建對象
+        const cleanedData = {};
+        for (const [key, value] of keptEntries) {
+            cleanedData[key] = value;
+        }
+        
+        console.log(`🧹 ${storageKey}: 已清理 ${removedCount} 條舊記錄，保留 ${maxItems} 條最新記錄`);
+        return cleanedData;
     }
 
     // 從 localStorage 獲取

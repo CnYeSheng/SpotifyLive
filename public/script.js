@@ -1513,6 +1513,14 @@ async initializeStorage() {
         this.closeDevicesModalBtn = document.getElementById('close-devices-modal');
         this.devicesContent = document.getElementById('devices-content');
         
+        // 設置模態框元素
+        this.settingsBtn = document.getElementById('settings-btn');
+        this.settingsModal = document.getElementById('settings-modal');
+        this.saveSettingsBtn = document.getElementById('save-settings-btn');
+        this.closeSettingsModalBtn = document.getElementById('close-settings-modal');
+        this.languageSelect = document.getElementById('language-select');
+        this.themeSelect = document.getElementById('theme-select');
+        
         // 播放狀態
         this.shuffleState = false;
         this.repeatState = 'off';
@@ -1565,6 +1573,28 @@ async initializeStorage() {
         this.fontSizeModal?.addEventListener('click', (e) => {
             if (e.target === this.fontSizeModal) {
                 this.fontSizeModal.style.display = 'none';
+            }
+        });
+
+        // 設置按鈕事件
+        this.settingsBtn?.addEventListener('click', () => {
+            this.openSettingsModal();
+        });
+
+        // 關閉設置模態框
+        this.closeSettingsModalBtn?.addEventListener('click', () => {
+            this.closeSettingsModal();
+        });
+
+        // 保存設置
+        this.saveSettingsBtn?.addEventListener('click', () => {
+            this.saveSettings();
+        });
+
+        // 點擊設置模態框背景關閉
+        this.settingsModal?.addEventListener('click', (e) => {
+            if (e.target === this.settingsModal) {
+                this.closeSettingsModal();
             }
         });
 
@@ -4725,6 +4755,111 @@ async loadLyrics() {
         if (fontSizeMap[this.fontSize]) {
             this.lyricsContent.style.fontSize = fontSizeMap[this.fontSize];
         }
+    }
+
+    // 打開設置模態框
+    openSettingsModal() {
+        if (!this.settingsModal) return;
+        
+        // 從 localStorage 載入當前設置
+        const currentLanguage = localStorage.getItem('app_language') || 'zh-TW';
+        const currentTheme = localStorage.getItem('app_theme') || 'dark';
+        
+        if (this.languageSelect) {
+            this.languageSelect.value = currentLanguage;
+        }
+        if (this.themeSelect) {
+            this.themeSelect.value = currentTheme;
+        }
+        
+        this.settingsModal.style.display = 'flex';
+        this.log('⚙️ 設置模態框已打開');
+    }
+
+    // 關閉設置模態框
+    closeSettingsModal() {
+        if (!this.settingsModal) return;
+        this.settingsModal.style.display = 'none';
+        this.log('⚙️ 設置模態框已關閉');
+    }
+
+    // 保存設置
+    saveSettings() {
+        const language = this.languageSelect?.value || 'zh-TW';
+        const theme = this.themeSelect?.value || 'dark';
+        
+        // 保存到 localStorage
+        localStorage.setItem('app_language', language);
+        localStorage.setItem('app_theme', theme);
+        
+        this.log(`✅ 設置已保存 - 語言：${language}, 主題：${theme}`);
+        
+        // 應用主題
+        this.applyTheme(theme);
+        
+        // 如果語言改變，重新加載語言包
+        if (language !== (localStorage.getItem('current_language') || 'zh-TW')) {
+            this.loadLanguage(language);
+        }
+        
+        // 關閉模態框
+        this.closeSettingsModal();
+        
+        // 顯示提示
+        this.showToast('設置已保存');
+    }
+
+    // 應用主題
+    applyTheme(theme) {
+        document.body.setAttribute('data-theme', theme);
+        document.documentElement.setAttribute('data-theme', theme);
+        this.log(`🎨 主題已應用：${theme}`);
+    }
+
+    // 加載語言
+    async loadLanguage(lang) {
+        try {
+            localStorage.setItem('current_language', lang);
+            // 這裡可以添加實際的語言包加載邏輯
+            this.log(`🌐 語言已切換：${lang}`);
+            // 重新翻譯頁面元素
+            if (typeof this.translatePage === 'function') {
+                this.translatePage();
+            }
+        } catch (error) {
+            this.log(`❌ 加載語言失敗：${error.message}`);
+        }
+    }
+
+    // 顯示提示消息
+    showToast(message, duration = 2000) {
+        // 檢查是否已有 toast 元素
+        let toast = document.getElementById('toast-message');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'toast-message';
+            toast.style.cssText = `
+                position: fixed;
+                bottom: 80px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(0, 0, 0, 0.8);
+                color: white;
+                padding: 12px 24px;
+                border-radius: 8px;
+                z-index: 10000;
+                display: none;
+                font-size: 14px;
+            `;
+            document.body.appendChild(toast);
+        }
+        
+        toast.textContent = message;
+        toast.style.display = 'block';
+        
+        setTimeout(() => {
+            toast.style.display = 'none';
+        }, duration);
     }
 
     // 调整歌词时间偏移
