@@ -20,7 +20,7 @@ class SessionManager {
     }
 
     async getSession(sessionId) {
-        if (!sessionId) return null;
+        if (!sessionId) {return null;}
 
         // 優先檢查內存緩存
         if (this.sessions.has(sessionId)) {
@@ -56,7 +56,7 @@ class SessionManager {
     }
 
     async saveSession(sessionId, sessionData) {
-        if (!sessionId || !sessionData) return false;
+        if (!sessionId || !sessionData) {return false;}
 
         // 清除缓存的轨道信息，强制下次请求获取最新状态
         if (sessionData.currentTrackCache) {
@@ -83,7 +83,7 @@ class SessionManager {
     }
 
     async deleteSession(sessionId) {
-        if (!sessionId) return false;
+        if (!sessionId) {return false;}
 
         // 從內存中刪除
         this.sessions.delete(sessionId);
