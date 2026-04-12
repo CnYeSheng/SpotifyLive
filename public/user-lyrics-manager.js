@@ -537,7 +537,7 @@ function initUserLyricsManager() {
             if (this.sessionId) {
                 try {
                     // 獲取雲端自定義歌詞
-                    const lyricsResponse = await fetch('/api/kv/get-all-lyrics', {
+                    const lyricsResponse = await fetch('/api/kv/all-lyrics', {
                         headers: { 'X-Session-Id': this.sessionId }
                     });
                     if (lyricsResponse.ok) {
@@ -966,13 +966,13 @@ function initUserLyricsManager() {
             if (this.sessionId) {
                 try {
                     // 獲取雲端所有歌詞和時間調整
-                    const response = await fetch('/api/kv/get-all-lyrics', {
+                    const response = await fetch('/api/kv/all-lyrics', {
                         headers: { 'X-Session-Id': this.sessionId }
                     });
                     if (response.ok) {
                         const result = await response.json();
-                        if (result.success && result.lyrics) {
-                            cloudLyrics = result.lyrics;
+                        if (result.success && result.data) {
+                            cloudLyrics = result.data;
                         }
                     }
                 } catch (error) {
@@ -1090,7 +1090,7 @@ function initUserLyricsManager() {
             if (this.sessionId) {
                 try {
                     // 獲取雲端自定義歌詞
-                    const lyricsResponse = await fetch('/api/kv/get-all-lyrics', {
+                    const lyricsResponse = await fetch('/api/kv/all-lyrics', {
                         headers: { 'X-Session-Id': this.sessionId }
                     });
                     if (lyricsResponse.ok) {
