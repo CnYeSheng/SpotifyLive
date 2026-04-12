@@ -455,6 +455,149 @@ class KVStorageManager {
             return true;
         } catch (error) {
             return false;
+    }
+        }
+
+    // ✨ 獲取用戶所有歌詞（用於管理頁面和雲端同步）
+    async getAllUserLyrics(req) {
+        try {
+            const userKey = this.generateUserKey(req);
+            const allLyrics = [];
+            
+            if (this.isKVAvailable && this.redis) {
+                // 獲取所有用戶歌詞 key
+                const keys = await this.redis.keys(`${userKey}:lyrics:*`);
+                
+                for (const key of keys) {
+                    try {
+                        const data = await this.redis.get(key);
+                        if (data) {
+                            const lyricsData = typeof data === 'string' ? JSON.parse(data) : data;
+                            // 提取 trackId 從 key
+                            const trackId = key.split(':').pop();
+                            allLyrics.push({
+                                trackId,
+                                trackInfo: lyricsData.trackInfo,
+                                lyrics: lyricsData.lyrics,
+                                lyricsType: lyricsData.lyricsType,
+                                source: lyricsData.source,
+                                timestamp: lyricsData.timestamp,
+                                lastModified: lyricsData.lastModified
+                            });
+                        }
+                    } catch (e) {
+                        console.error(`解析歌詞數據失敗 ${key}:`, e);
+                    }
+                }
+            }
+            
+            return allLyrics;
+        } catch (error) {
+            console.error('獲取用戶所有歌詞失敗:', error.message);
+            return [];
+        }
+    }
+    
+    // ✨ 批量同步歌詞到雲端（支持相同 Spotify ID 互相同步）
+    async syncLyricsToCloud(req, lyricsDataArray) {
+        try {
+            const userKey = this.generateUserKey(req);
+            let successCount = 0;
+            let failedCount = 0;
+            
+            if (!this.isKVAvailable || !this.redis) {
+                return { success: false, error: 'KV 不可用', successCount: 0, failedCount: lyricsDataArray.length };
+            }
+            
+            for (const item of lyricsDataArray) {
+                try {
+                    const { trackInfo, lyrics, lyricsType, source } = item;
+                    if (!trackInfo || !trackInfo.id || !lyrics) {
+                        failedCount++;
+                        continue;
+                    }
+                    
+                    const key = `${userKey}:lyrics:${trackInfo.id}`;
+                    const lyricsData = {
+                        trackInfo,
+                        lyrics,
+                        lyricsType,
+                        source: source || { type: 'sync', syncedAt: Date.now() },
+                        timestamp: Date.now(),
+                        lastModified: Date.now(),
+                        version: 3
+                    };
+                    
+                    await this.redis.set(key, JSON.stringify(lyricsData));
+                    this.cache.set(key, lyricsData);
+                    successCount++;
+                } catch (e) {
+                    console.error(`同步歌詞失敗 ${item.trackInfo?.id}:`, e);
+                    failedCount++;
+                }
+            }
+            
+            return { 
+                success: true, 
+                successCount, 
+                failedCount,
+                total: lyricsDataArray.length 
+            };
+        } catch (error) {
+            console.error('批量同步歌詞失敗:', error.message);
+            return { success: false, error: error.message, successCount: 0, failedCount: lyricsDataArray.length };
+        }
+    }
+    
+    // ✨ 獲取歌詞統計信息
+    async getLyricsStats(req) {
+        try {
+            const userKey = this.generateUserKey(req);
+            const stats = {
+                totalLyrics: 0,
+                syncedLyrics: 0,
+                plainLyrics: 0,
+                withTimeOffset: 0,
+                lastSyncedAt: null
+            };
+            
+            if (this.isKVAvailable && this.redis) {
+                // 獲取所有用戶歌詞 key
+                const lyricsKeys = await this.redis.keys(`${userKey}:lyrics:*`);
+                stats.totalLyrics = lyricsKeys.length;
+                
+                // 獲取時間偏移 key
+                const offsetKeys = await this.redis.keys(`offset:${userKey}:*`);
+                stats.withTimeOffset = offsetKeys.length;
+                
+                // 分析歌詞類型
+                for (const key of lyricsKeys) {
+                    try {
+                        const data = await this.redis.get(key);
+                        if (data) {
+                            const lyricsData = typeof data === 'string' ? JSON.parse(data) : data;
+                            if (lyricsData.lyricsType === 'synced') {
+                                stats.syncedLyrics++;
+                            } else {
+                                stats.plainLyrics++;
+                            }
+                            
+                            // 檢查最後同步時間
+                            const lastModified = lyricsData.lastModified || lyricsData.timestamp;
+                            if (lastModified && (!stats.lastSyncedAt || lastModified > stats.lastSyncedAt)) {
+                                stats.lastSyncedAt = lastModified;
+                            }
+                        }
+                    } catch (e) {
+                        // 忽略解析錯誤
+                    }
+                }
+            }
+            
+            return stats;
+        } catch (error) {
+            console.error('獲取歌詞統計失敗:', error.message);
+            return null;
         }
     }
     
