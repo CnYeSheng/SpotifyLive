@@ -1,9 +1,17 @@
+# Build artifacts
+dist/
+build/
+*.min.js
+*.min.css
+*.bundle.js
+*.map
 # Dependencies
 node_modules/
 
 # Logs and temp files
 *.log
 *.tmp
+*.swp
 
 # Environment
 .env
@@ -13,7 +21,6 @@ node_modules/
 # Editors
 .vscode/
 .idea/
-
 # Python
 __pycache__/
 *.pyc
@@ -50,3 +57,6 @@ build/
 *.tar.xz
 *.tar.zst
 sessions.json
+# OS specific
+.DS_Store
+Thumbs.db

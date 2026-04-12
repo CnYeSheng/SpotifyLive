@@ -1,0 +1,420 @@
+/* 移動端優化樣式 */
+
+/* ========== 主題變數（由 theme-manager.js 動態設置）========== */
+:root {
+    /* 默認深色主題 */
+    --bg-primary: #121212;
+    --bg-secondary: #1a1a1a;
+    --bg-tertiary: #282828;
+    --text-primary: #ffffff;
+    --text-secondary: #b3b3b3;
+    --text-tertiary: #8a8a8a;
+    --accent-color: #1db954;
+    --accent-hover: #1ed760;
+    --border-color: #333333;
+    --shadow-color: rgba(0, 0, 0, 0.3);
+    --card-bg: #181818;
+    --player-bg: #121212;
+    --lyrics-text: #ffffff;
+    --lyrics-highlight: #1db954;
+    --scrollbar-thumb: #5a5a5a;
+    --scrollbar-track: #2a2a2a;
+    
+    /* 字體大小 */
+    --font-size-base: 16px;
+    --font-size-lg: 18px;
+    --font-size-xl: 20px;
+    --font-size-xxl: 24px;
+}
+
+/* ========== 設備類型標記 ========== */
+body.device-mobile {
+    /* 移動端特定樣式 */
+}
+
+body.device-tablet {
+    /* 平板特定樣式 */
+}
+
+body.touch-device {
+    /* 觸摸設備優化 */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+body.touch-device input,
+body.touch-device textarea {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+/* ========== 主題類 ========== */
+.theme-light {
+    color-scheme: light;
+}
+
+.theme-dark {
+    color-scheme: dark;
+}
+
+.theme-ocean {
+    color-scheme: dark;
+}
+
+.theme-sunset {
+    color-scheme: dark;
+}
+
+/* ========== 響應式斷點 ========== */
+@media (max-width: 768px) {
+    /* 移動端全局優化 */
+    html {
+        font-size: var(--font-size-base, 14px);
+    }
+    
+    body {
+        overflow-x: hidden;
+        -webkit-text-size-adjust: 100%;
+    }
+    
+    /* 容器內邊距調整 */
+    .container {
+        padding-left: 15px !important;
+        padding-right: 15px !important;
+    }
+    
+    /* 卡片間距縮小 */
+    .music-card,
+    .auth-card,
+    .settings-card {
+        margin: 10px !important;
+        border-radius: 12px !important;
+    }
+    
+    /* 專輯封面縮小 */
+    .album-art {
+        width: 280px !important;
+        height: 280px !important;
+        margin: 0 auto 15px !important;
+    }
+    
+    .album-art img {
+        max-width: 100%;
+        max-height: 100%;
+    }
+    
+    /* 歌曲信息字體調整 */
+    .track-info h2 {
+        font-size: 18px !important;
+        line-height: 1.3 !important;
+    }
+    
+    .track-info p {
+        font-size: 14px !important;
+    }
+    
+    /* 播放控制按鈕 */
+    .player-controls {
+        gap: 10px !important;
+        margin-top: 20px !important;
+    }
+    
+    .control-btn {
+        min-width: 44px !important;
+        min-height: 44px !important;
+        padding: 10px !important;
+    }
+    
+    .control-btn.play-pause {
+        min-width: 56px !important;
+        min-height: 56px !important;
+    }
+    
+    /* 額外控制按鈕橫向排列 */
+    .extra-controls {
+        flex-wrap: wrap !important;
+        justify-content: center !important;
+        gap: 8px !important;
+    }
+    
+    .extra-controls .control-btn {
+        min-width: 40px !important;
+        min-height: 40px !important;
+    }
+    
+    /* 音量滑塊優化 */
+    .volume-slider {
+        width: 120px !important;
+    }
+    
+    /* 歌詞區域優化 */
+    .lyrics-container,
+    #lyrics {
+        max-height: 40vh !important;
+        padding: 15px !important;
+        font-size: 15px !important;
+        line-height: 1.8 !important;
+    }
+    
+    .lyrics-line {
+        padding: 8px 10px !important;
+        margin: 4px 0 !important;
+    }
+    
+    /* 下一首預覽 */
+    .next-song-preview {
+        margin: 10px !important;
+        padding: 12px !important;
+    }
+    
+    .next-song-cover {
+        width: 50px !important;
+        height: 50px !important;
+    }
+    
+    .next-song-title {
+        font-size: 14px !important;
+    }
+    
+    .next-song-artist {
+        font-size: 12px !important;
+    }
+    
+    /* 導航欄移動端樣式 */
+    .navbar,
+    .nav,
+    header {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 1000 !important;
+    }
+    
+    /* 模態框優化 */
+    .modal-content,
+    .dialog {
+        margin: 10px !important;
+        max-height: calc(100vh - 20px) !important;
+        border-radius: 12px !important;
+    }
+    
+    .modal-header,
+    .dialog-header {
+        padding: 15px !important;
+    }
+    
+    .modal-body,
+    .dialog-body {
+        padding: 15px !important;
+    }
+    
+    /* 表單元素優化 */
+    input[type="text"],
+    input[type="search"],
+    input[type="email"],
+    input[type="password"],
+    textarea,
+    select {
+        font-size: 16px !important; /* 防止 iOS 縮放 */
+        min-height: 44px !important;
+        padding: 12px !important;
+    }
+    
+    /* 按鈕優化 */
+    button,
+    .btn {
+        min-height: 44px !important;
+        padding: 12px 16px !important;
+        font-size: 15px !important;
+    }
+    
+    /* 列表項目優化 */
+    .list-item,
+    .playlist-item,
+    .queue-item {
+        padding: 12px !important;
+        min-height: 60px !important;
+    }
+    
+    /* 滾動條優化 */
+    ::-webkit-scrollbar {
+        width: 6px !important;
+        height: 6px !important;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        border-radius: 3px !important;
+    }
+}
+
+/* ========== 平板優化 (768px - 1024px) ========== */
+@media (min-width: 769px) and (max-width: 1024px) {
+    html {
+        font-size: var(--font-size-base, 15px);
+    }
+    
+    .container {
+        padding-left: 20px;
+        padding-right: 20px;
+    }
+    
+    .music-card {
+        margin: 15px;
+    }
+    
+    .album-art {
+        width: 320px;
+        height: 320px;
+    }
+    
+    .track-info h2 {
+        font-size: 20px;
+    }
+    
+    .player-controls .control-btn {
+        min-width: 48px;
+        min-height: 48px;
+    }
+    
+    .lyrics-container {
+        max-height: 45vh;
+        font-size: 16px;
+    }
+}
+
+/* ========== 觸控優化類 ========== */
+.touch-optimized {
+    touch-action: manipulation;
+}
+
+.touch-optimized:active {
+    transform: scale(0.98);
+    transition: transform 0.1s ease;
+}
+
+/* ========== 漢堡菜單（移動端導航）========== */
+.nav-toggle {
+    display: none;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 10px;
+    z-index: 1001;
+}
+
+.hamburger-line {
+    display: block;
+    width: 24px;
+    height: 2px;
+    background: var(--text-primary);
+    margin: 5px 0;
+    transition: all 0.3s ease;
+    border-radius: 2px;
+}
+
+@media (max-width: 768px) {
+    .nav-toggle {
+        display: block;
+    }
+    
+    .nav-toggle.active .hamburger-line:nth-child(1) {
+        transform: rotate(45deg) translate(5px, 5px);
+    }
+    
+    .nav-toggle.active .hamburger-line:nth-child(2) {
+        opacity: 0;
+    }
+    
+    .nav-toggle.active .hamburger-line:nth-child(3) {
+        transform: rotate(-45deg) translate(7px, -6px);
+    }
+    
+    .mobile-nav .nav-menu {
+        position: fixed;
+        top: 0;
+        left: -100%;
+        width: 80%;
+        max-width: 300px;
+        height: 100vh;
+        background: var(--bg-secondary);
+        transition: left 0.3s ease;
+        padding: 60px 20px 20px;
+        box-shadow: 2px 0 10px var(--shadow-color);
+    }
+    
+    .mobile-nav.nav-open .nav-menu {
+        left: 0;
+    }
+    
+    .mobile-nav .nav-menu a,
+    .mobile-nav .nav-menu button {
+        display: block;
+        padding: 15px;
+        margin: 5px 0;
+        border-radius: 8px;
+        min-height: 50px;
+    }
+}
+
+/* ========== 移動端歌詞特殊樣式 ========== */
+.mobile-lyrics {
+    -webkit-overflow-scrolling: touch;
+}
+
+.mobile-lyrics .lyrics-line {
+    transition: none !important;
+}
+
+.mobile-lyrics .lyrics-line.active {
+    transform: scale(1.05);
+}
+
+/* ========== 安全區域支持（iPhone X+）========== */
+@supports (padding: max(0px)) {
+    body {
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+    }
+    
+    .navbar,
+    header {
+        padding-top: env(safe-area-inset-top);
+    }
+    
+    .bottom-nav,
+    footer {
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+}
+
+/* ========== 橫屏模式優化 ========== */
+@media (max-height: 500px) and (orientation: landscape) {
+    .album-art {
+        width: 150px !important;
+        height: 150px !important;
+    }
+    
+    .lyrics-container {
+        max-height: 60vh !important;
+    }
+    
+    .player-controls {
+        margin-top: 10px !important;
+    }
+}
+
+/* ========== 打印樣式 ========== */
+@media print {
+    .player-controls,
+    .extra-controls,
+    .navbar,
+    button {
+        display: none !important;
+    }
+    
+    .lyrics-container {
+        max-height: none !important;
+        overflow: visible !important;
+    }
+}
