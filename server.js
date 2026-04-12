@@ -1088,6 +1088,30 @@ app.post('/api/kv/batch-save-lyrics', async (req, res) => {
     }
 });
 
+// Get all lyrics - for Vercel/KV deployment
+app.get('/api/kv/all-lyrics', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    try {
+        const session = await getUserSession(req);
+        if (!session) return res.status(401).json({ error: 'Not authenticated' });
+        const userId = await getSpotifyUserId(session, req.sessionId);
+        if (!userId) return res.status(401).json({ error: 'Could not identify user' });
+
+        const userLyrics = await enhancedStorage.getAllLyrics(userId);
+
+        res.json({
+            success: true,
+            total: userLyrics.length,
+            lyrics: userLyrics
+        });
+    } catch (error) {
+        console.error('Error getting all lyrics:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Endpoint to get all user lyrics (alias for get-all-lyrics for frontend compatibility)
 app.get('/api/kv/user-lyrics', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
