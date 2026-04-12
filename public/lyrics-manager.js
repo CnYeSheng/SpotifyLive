@@ -390,7 +390,88 @@ function initLyricsManager() {
     // =================
     // 工具函數
     // =================
+
+    // 檢查是否為 SRT 格式
+    SpotifyLyricsPlayer.prototype.isSrtFormat = function(content) {
+        const srtPattern = /^\d+\s*\n\d{2}:\d{2}:\d{2},\d{3}\s*-->\s*\d{2}:\d{2}:\d{2},\d{3}/m;
+        return srtPattern.test(content);
+    };
+
+    // 解析 SRT 歌詞
+    SpotifyLyricsPlayer.prototype.parseSrtLyrics = function(content) {
+        const lines = content.split(/\r?\n/);
+        const lyrics = [];
+        let currentEntry = null;
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            
+            if (!line) {
+                if (currentEntry && currentEntry.startTime !== undefined && currentEntry.text) {
+                    lyrics.push({
+                        time: currentEntry.startTime,
+                        text: currentEntry.text.trim()
+                    });
+                }
+                currentEntry = null;
+                continue;
+            }
+            
+            // 檢查序號行
+            if (/^\d+$/.test(line)) {
+                if (currentEntry && currentEntry.startTime !== undefined && currentEntry.text) {
+                    lyrics.push({
+                        time: currentEntry.startTime,
+                        text: currentEntry.text.trim()
+                    });
+                }
+                currentEntry = { index: parseInt(line) };
+                continue;
+            }
+            
+            // 檢查時間軸行
+            const timeMatch = line.match(/(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})/);
+            if (timeMatch && currentEntry) {
+                const startHours = parseInt(timeMatch[1]);
+                const startMinutes = parseInt(timeMatch[2]);
+                const startSeconds = parseInt(timeMatch[3]);
+                const startMs = parseInt(timeMatch[4]);
+                
+                currentEntry.startTime = (startHours * 3600 + startMinutes * 60 + startSeconds) * 1000 + startMs;
+                continue;
+            }
+            
+            // 歌詞內容
+            if (currentEntry && currentEntry.startTime !== undefined) {
+                if (!currentEntry.text) {
+                    currentEntry.text = line;
+                } else {
+                    currentEntry.text += '\n' + line;
+                }
+            }
+        }
+        
+        // 處理最後一筆
+        if (currentEntry && currentEntry.startTime !== undefined && currentEntry.text) {
+            lyrics.push({
+                time: currentEntry.startTime,
+                text: currentEntry.text.trim()
+            });
+        }
+        
+        return {
+            type: lyrics.length > 0 ? 'synced' : 'plain',
+            lyrics: lyrics
+        };
+    };
+
+    // 解析歌詞內容（LRC、ASS 等格式）
     SpotifyLyricsPlayer.prototype.parseLyricsContent = function(content) {
+        // 先檢查是否為 SRT 格式
+        if (this.isSrtFormat(content)) {
+            return this.parseSrtLyrics(content);
+        }
+        
         const lines = content.split('\n');
         const lyrics = [];
         let isSynced = false;
@@ -470,7 +551,7 @@ function initLyricsManager() {
 
             // 2b. 檢查 LRC 格式 (包含標準、[] 增強版、<> 增強版)
             // 允許時間戳周圍有空格，允許 . 或 : 作為秒和毫秒的分隔符
-            const timeMatch = trimmedLine.match(/^\[\s*(\d{1,2})\s*:\s*(\d{2})\s*(?:[\.:]\s*(\d{1,3}))?\s*\]/);
+            const timeMatch = trimmedLine.match(/^\[\s*(\d{1,2})\s*:\s*(\d{2})\s*(?:[\.:\]\s*(\d{1,3}))?\s*\]/);
             
             if (timeMatch) {
                 const minutes = parseInt(timeMatch[1]);
@@ -479,14 +560,16 @@ function initLyricsManager() {
                 const timeMs = minutes * 60000 + seconds * 1000 + milliseconds;
                 
                 // 移除行首時間戳，獲取剩餘內容
-                const textContent = trimmedLine.replace(/^\[\s*\d{1,2}\s*:\s*\d{2}\s*(?:[\.:]\s*\d{1,3})?\s*\]/, '').trim();
+                const textContent = trimmedLine.replace(/^\[\s*\d{1,2}\s*:\s*\d{2}\s*(?:[\.:\]\s*\d{1,3})?\s*\]/, '').trim();
                 
                 let words = [];
                 let hasInternalTimestamps = false;
 
-                // 檢查是否有逐字時間戳 (括號或角括號)
-                const bracketMatches = Array.from(textContent.matchAll(/\[\s*(\d{1,2})\s*:\s*(\d{2})\s*(?:[\.:]\s*(\d{1,3}))?\s*\]([^\[]*)/g));
-                const angleMatches = Array.from(textContent.matchAll(/<\s*(\d{1,2})\s*:\s*(\d{2})\s*(?:[\.:]\s*(\d{1,3}))?\s*>([^<]*)/g));
+                // 2a. 檢查 [] 增強版：[mm:ss.xx]Word
+                const bracketMatches = Array.from(textContent.matchAll(/\[\s*(\d{1,2})\s*:\s*(\d{2})\s*(?:[\.:\]\s*(\d{1,3}))?\s*\]([^\[]*)/g));
+                
+                // 2b. 檢查 <> 增強版：<mm:ss.xx>Word
+                const angleMatches = Array.from(textContent.matchAll(/<\s*(\d{1,2})\s*:\s*(\d{2})\s*(?:[\.:\]\s*(\d{1,3}))?\s*>([^<]*)/g));
 
                 if (bracketMatches.length > 0) {
                     hasInternalTimestamps = true;
@@ -511,8 +594,12 @@ function initLyricsManager() {
                 // 計算單詞持續時間 (Duration)
                 if (hasInternalTimestamps && words.length > 0) {
                     for (let i = 0; i < words.length; i++) {
-                        if (i < words.length - 1) words[i].duration = words[i+1].time - words[i].time;
-                        else words[i].duration = 0; 
+                        if (i < words.length - 1) {
+                            words[i].duration = words[i+1].time - words[i].time;
+                        } else {
+                            // 最後一個字的持續時間
+                            words[i].duration = 0; 
+                        }
                     }
                 }
 
@@ -541,6 +628,8 @@ function initLyricsManager() {
         return {
             type: isSynced ? 'synced' : 'plain',
             lyrics: lyrics
+        };
+    };
         };
     };
 
@@ -799,4 +888,3 @@ function initLyricsManager() {
     });
 
     console.log('✅ 歌詞管理功能已加載完成');
-}
