@@ -551,7 +551,7 @@ function initLyricsManager() {
 
             // 2b. 檢查 LRC 格式 (包含標準、[] 增強版、<> 增強版)
             // 允許時間戳周圍有空格，允許 . 或 : 作為秒和毫秒的分隔符
-            const timeMatch = trimmedLine.match(/^\[\s*(\d{1,2})\s*:\s*(\d{2})\s*(?:[\.:\]\s*(\d{1,3}))?\s*\]/);
+            const timeMatch = trimmedLine.match(/^\[\s*(\d{1,2})\s*:\s*(\d{2})\s*(?:[\.:]\s*(\d{1,3}))?\s*\]/);
             
             if (timeMatch) {
                 const minutes = parseInt(timeMatch[1]);
@@ -560,7 +560,7 @@ function initLyricsManager() {
                 const timeMs = minutes * 60000 + seconds * 1000 + milliseconds;
                 
                 // 移除行首時間戳，獲取剩餘內容
-                const textContent = trimmedLine.replace(/^\[\s*\d{1,2}\s*:\s*\d{2}\s*(?:[\.:\]\s*\d{1,3})?\s*\]/, '').trim();
+                const textContent = trimmedLine.replace(/^\[\s*\d{1,2}\s*:\s*\d{2}\s*(?:[\.:]\s*\d{1,3})?\s*\]/, '').trim();
                 
                 let words = [];
                 let hasInternalTimestamps = false;
@@ -631,7 +631,6 @@ function initLyricsManager() {
         };
     };
         };
-    };
 
     // 輔助函數：解析時間部分
     SpotifyLyricsPlayer.prototype.parseTimeParts = function(minStr, secStr, msStr) {
