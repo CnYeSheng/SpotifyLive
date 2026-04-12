@@ -323,6 +323,7 @@ const I18nManager = {
         
         this.currentLang = lang;
         localStorage.setItem('i18n_lang', lang);
+        localStorage.setItem('app_language', lang); // 同步到 app_language
         this.applyTranslations();
         
         console.log(`[I18n] Language changed to: ${lang}`);

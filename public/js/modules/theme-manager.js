@@ -91,8 +91,8 @@ const ThemeManager = {
     
     // 初始化
     init() {
-        // 從 localStorage 讀取用戶偏好
-        const savedTheme = localStorage.getItem('theme');
+        // 從 localStorage 讀取用戶偏好（優先使用 app_theme）
+        const savedTheme = localStorage.getItem('app_theme') || localStorage.getItem('theme');
         
         if (savedTheme && this.themes[savedTheme]) {
             this.currentTheme = savedTheme;
@@ -146,7 +146,8 @@ const ThemeManager = {
         }
         
         this.currentTheme = themeName;
-        localStorage.setItem('theme', themeName);
+        localStorage.setItem('app_theme', themeName); // 使用 app_theme 作為統一存儲
+        localStorage.setItem('theme', themeName); // 保持向後兼容
         this.applyTheme(themeName);
         
         // 觸發自定義事件
