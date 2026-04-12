@@ -3143,6 +3143,63 @@ body {
 .modal-actions {
     margin-top: 20px;
     text-align: center;
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+.modal-actions .btn {
+    padding: 12px 24px;
+    border-radius: 50px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: none;
+    font-size: 14px;
+}
+
+.modal-actions .btn-primary {
+    background: linear-gradient(135deg, #1db954, #1ed760);
+    color: white;
+}
+
+.modal-actions .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px rgba(29, 185, 84, 0.3);
+}
+
+.modal-actions .close-btn {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.modal-actions .close-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* 設置卡片樣式 */
+.settings-card {
+    background: var(--background-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--glass-border);
+}
+
+.settings-card h3 {
+    color: var(--text-primary);
+}
+
+.setting-section {
+    margin-bottom: 24px;
+    text-align: left;
+}
+
+.setting-section label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 14px;
 }
 
 .no-results {
