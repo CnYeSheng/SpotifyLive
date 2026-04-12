@@ -476,11 +476,70 @@ function initLyricsManager() {
         const lyrics = [];
         let isSynced = false;
         
+        // 1. 先檢測是否為 SRT 格式
+        const trimmedContent = content.trim();
+        // 更加寬容的 SRT 檢測：支持小時位數不固定，支持 , 或 . 分隔符
+        const srtPattern = /^\d+\s*\n\d{1,2}:\d{2}:\d{2}[,\.]\d{3}\s*-->\s*\d{1,2}:\d{2}:\d{2}[,\.]\d{3}/m;
+        
+        if (srtPattern.test(trimmedContent)) {
+            const srtLines = trimmedContent.split(/\r?\n/);
+            let currentEntry = null;
+            
+            const pushSrtEntry = () => {
+                if (currentEntry && currentEntry.startTime !== undefined && currentEntry.text) {
+                    lyrics.push({
+                        time: currentEntry.startTime,
+                        text: currentEntry.text.trim()
+                    });
+                }
+                currentEntry = null;
+            };
+
+            for (let i = 0; i < srtLines.length; i++) {
+                const line = srtLines[i].trim();
+                if (!line) {
+                    pushSrtEntry();
+                    continue;
+                }
+
+                // 序號行
+                if (/^\d+$/.test(line)) {
+                    if (currentEntry && currentEntry.startTime !== undefined) pushSrtEntry();
+                    currentEntry = { index: parseInt(line) };
+                    continue;
+                }
+
+                // 時間軸行
+                const timeMatch = line.match(/(\d{1,2}):(\d{2}):(\d{2})[,\.](\d{3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[,\.](\d{3})/);
+                if (timeMatch) {
+                    if (!currentEntry) currentEntry = {};
+                    const h = parseInt(timeMatch[1]);
+                    const m = parseInt(timeMatch[2]);
+                    const s = parseInt(timeMatch[3]);
+                    const ms = parseInt(timeMatch[4]);
+                    currentEntry.startTime = (h * 3600 + m * 60 + s) * 1000 + ms;
+                    continue;
+                }
+
+                // 文本行
+                if (currentEntry) {
+                    if (!currentEntry.text) currentEntry.text = line;
+                    else currentEntry.text += ' ' + line;
+                }
+            }
+            pushSrtEntry();
+            
+            if (lyrics.length > 0) {
+                return { type: 'synced', lyrics: lyrics };
+            }
+        }
+
+        // 2. 原有的 LRC / ASS 解析邏輯
         for (const line of lines) {
             const trimmedLine = line.trim();
             if (!trimmedLine) continue;
             
-            // 1. 檢查 ASS/SSA 格式
+            // 2a. 檢查 ASS/SSA 格式
             if (trimmedLine.startsWith('Dialogue:')) {
                 const assParsed = this.parseAssLine(trimmedLine);
                 if (assParsed) {
@@ -490,7 +549,7 @@ function initLyricsManager() {
                 continue;
             }
 
-            // 2. 檢查 LRC 格式 (包含標準、[] 增強版、<> 增強版)
+            // 2b. 檢查 LRC 格式 (包含標準、[] 增強版、<> 增強版)
             // 允許時間戳周圍有空格，允許 . 或 : 作為秒和毫秒的分隔符
             const timeMatch = trimmedLine.match(/^\[\s*(\d{1,2})\s*:\s*(\d{2})\s*(?:[\.:\]\s*(\d{1,3}))?\s*\]/);
             
@@ -516,31 +575,19 @@ function initLyricsManager() {
                     hasInternalTimestamps = true;
                     const firstMatchIndex = textContent.indexOf(bracketMatches[0][0]);
                     if (firstMatchIndex > 0) {
-                         words.push({
-                            time: timeMs,
-                            text: textContent.substring(0, firstMatchIndex)
-                         });
+                         words.push({ time: timeMs, text: textContent.substring(0, firstMatchIndex) });
                     }
                     bracketMatches.forEach(match => {
-                        words.push({
-                            time: this.parseTimeParts(match[1], match[2], match[3]),
-                            text: match[4]
-                        });
+                        words.push({ time: this.parseTimeParts(match[1], match[2], match[3]), text: match[4] });
                     });
                 } else if (angleMatches.length > 0) {
                     hasInternalTimestamps = true;
                     const firstMatchIndex = textContent.indexOf(angleMatches[0][0]);
                     if (firstMatchIndex > 0) {
-                         words.push({
-                            time: timeMs,
-                            text: textContent.substring(0, firstMatchIndex)
-                         });
+                         words.push({ time: timeMs, text: textContent.substring(0, firstMatchIndex) });
                     }
                     angleMatches.forEach(match => {
-                        words.push({
-                            time: this.parseTimeParts(match[1], match[2], match[3]),
-                            text: match[4]
-                        });
+                        words.push({ time: this.parseTimeParts(match[1], match[2], match[3]), text: match[4] });
                     });
                 }
 
@@ -571,7 +618,7 @@ function initLyricsManager() {
                     });
                 }
             } else if (!isSynced && trimmedLine) {
-                // 純文本 (只有在確認不是同步歌詞時才當作純文本)
+                // 純文本
                 lyrics.push({
                     text: trimmedLine
                 });

@@ -191,7 +191,7 @@ class SpotifyLyricsPlayer {
                         this.lyricsTimeOffset = d.lyricsOffset;
                         // 重新渲染歌詞以立即應用偏移
                         if (this.currentTrack && this.lyrics.length > 0) {
-                            this.renderLyrics(this.currentTrack.progress);
+                            this.updateLyricsHighlight(this.currentTrack.progress);
                         }
                     }
                     if (d.manualLyrics !== undefined) {
@@ -204,7 +204,7 @@ class SpotifyLyricsPlayer {
                             this.currentTrack.progress = d.position_ms;
                             this.lastCheckTime = d.timestamp || Date.now();
                             // 立即重新渲染歌詞
-                            this.renderLyrics(d.position_ms);
+                            this.updateLyricsHighlight(d.position_ms);
                         }
                     }
                     if (d.type === 'playback-sync' && d.isPlaying !== undefined) {
@@ -3662,15 +3662,15 @@ async initializeStorage() {
         // 🚨 新增：檢查播放狀態是否從暫停變為播放
         const isResumed = this.currentTrack && !this.currentTrack.isPlaying && data.isPlaying;
 
-        this.log(`🔄 歌曲狀態: ${isNewTrack ? '新歌曲' : '相同歌曲'}, 恢復播放: ${isResumed}, 同名同歌手: ${isSameSongNameAndArtist}`);
-
         // ✨ 偵測到歌曲重播或跳回開頭
-        if (
-            this.currentTrack &&
-            this.currentTrack.id === data.id &&
-            data.progress < 2000 && // 新進度在歌曲開頭 (2秒內)
-            this.currentTrack.progress > 2000 // 上次進度不在歌曲開頭
-        ) {
+        const isProgressReset = this.currentTrack && 
+                               this.currentTrack.id === data.id && 
+                               data.progress < 2000 && // 新進度在歌曲開頭 (2秒內)
+                               this.currentTrack.progress > 2000; // 上次進度不在歌曲開頭
+
+        this.log(`🔄 歌曲狀態: ${isNewTrack ? '新歌曲' : '相同歌曲'}, 恢復播放: ${isResumed}, 重播: ${isProgressReset}, 同名同歌手: ${isSameSongNameAndArtist}`);
+
+        if (isProgressReset) {
             this.log('🔄 偵測到歌曲循環播放或跳轉到開頭');
             this.resetLyricsPlayback();
         }
@@ -3711,7 +3711,7 @@ async initializeStorage() {
                     this.log(`🔄 偵測到來自伺服器的偏移變更: ${data.lyricsOffset}ms`);
                     this.lyricsTimeOffset = data.lyricsOffset;
                     // 重新渲染歌詞
-                    this.renderLyrics(finalProgress);
+                    this.updateLyricsHighlight(finalProgress);
                 }
 
                 if (data.manualLyrics && (!this.overriddenLyricsSource || this.overriddenLyricsSource.id !== data.manualLyrics.id)) {
@@ -3898,9 +3898,9 @@ async initializeStorage() {
         // 更新下一首預覽（使用一次性獲取的數據）
         this.updateNextTrackPreview();
         
-        // 如果是從暫停恢復，強制重啟進度追蹤
-        if (isResumed || isNewTrack) {
-            this.log(`▶️ 重啟進度追蹤 (原因: ${isResumed ? '恢復' : '新歌'})`);
+        // 如果是從暫停恢復、切換歌曲或偵測到重播，強制重啟進度追蹤
+        if (isResumed || isNewTrack || isProgressReset) {
+            this.log(`▶️ 重啟進度追蹤 (原因: ${isResumed ? '恢復' : isNewTrack ? '新歌' : '重播'})`);
             this.updateProgress();
         }
         
@@ -4568,11 +4568,6 @@ async loadLyrics() {
             // 檢測是否為 Seek 操作 (時間跳變超過 3秒，放寬閾值以增加穩定性)
             const isSeek = Math.abs(currentTime - this._lastHighlightTime) > 3000;
             
-            // 如果不是 Seek 且時間倒退 (抖動)，則忽略此次更新
-            if (!isSeek && currentTime < this._lastHighlightTime) {
-                return;
-            }
-            
             this._lastHighlightTime = currentTime;
 
             if (this.lyricsType === 'synced') {
@@ -4583,9 +4578,10 @@ async loadLyrics() {
                 if (currentTime >= (this.lyrics[0]?.time || 0)) {
                     // 從當前索引開始向後找，優化性能
                     let searchStartIndex = Math.max(0, targetIndex);
-                    // 如果 Seek 了，或者時間倒退了(雖然上面防抖了，但邏輯上要嚴謹)，從頭找
+                    // 如果 Seek 了，或者時間倒退了 (例如重播)，從頭開始找
                     if (isSeek || currentTime < (this.lyrics[targetIndex]?.time || 0)) {
                         searchStartIndex = 0;
+                        targetIndex = -1;
                     }
 
                     // 遍歷尋找最佳匹配
@@ -4608,20 +4604,30 @@ async loadLyrics() {
                 }
                 
             } else {
-                // 普通歌詞的時間估算邏輯
+                // 普通歌詞的時間估算邏輯 - 優化：過濾掉空行以獲得更準確的估算
                 if (this.currentTrack && this.currentTrack.duration > 0) {
                     const timeOffset = 500; 
                     const adjustedProgress = Math.max(0, (currentTime - timeOffset) / this.currentTrack.duration);
-                    targetIndex = Math.floor(adjustedProgress * this.lyrics.length);
-                    targetIndex = Math.max(0, Math.min(targetIndex, this.lyrics.length - 1));
+                    
+                    // 過濾出有內容的行進行計算
+                    const validLines = this.lyrics.map((l, i) => ({ text: (l.text || l), index: i }))
+                                              .filter(l => typeof l.text === 'string' && l.text.trim().length > 0);
+                    
+                    if (validLines.length > 0) {
+                        const validIndex = Math.floor(adjustedProgress * validLines.length);
+                        const clampedValidIndex = Math.max(0, Math.min(validIndex, validLines.length - 1));
+                        targetIndex = validLines[clampedValidIndex].index;
+                    } else {
+                        targetIndex = Math.floor(adjustedProgress * this.lyrics.length);
+                        targetIndex = Math.max(0, Math.min(targetIndex, this.lyrics.length - 1));
+                    }
                 }
             }
             
-            if (this.autoScroll) {
-                // 只有當索引真正改變時才更新，減少 DOM 操作
-                if (this.currentLyricIndex !== targetIndex) {
-                    this.currentLyricIndex = targetIndex;
-                }
+            // 只有當索引真正改變時才更新，減少 DOM 操作
+            // 注意：不論 autoScroll 是否開啟，都應該更新索引以維持高亮同步
+            if (this.currentLyricIndex !== targetIndex) {
+                this.currentLyricIndex = targetIndex;
             }
         }
 
