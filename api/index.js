@@ -421,6 +421,41 @@ app.post('/api/kv/migrate', async (req, res) => {
     res.json({ success: true, data: result });
 });
 
+// ✨ 雲端同步 endpoints
+app.get('/api/kv/all-lyrics', async (req, res) => {
+    try {
+        const allLyrics = await storage.getAllUserLyrics(req);
+        res.json({ success: true, data: allLyrics, count: allLyrics.length });
+    } catch (error) {
+        console.error('獲取所有歌詞失敗:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/kv/sync-to-cloud', async (req, res) => {
+    try {
+        const { lyricsData } = req.body;
+        if (!Array.isArray(lyricsData)) {
+            return res.status(400).json({ success: false, error: 'lyricsData 必須是數組' });
+        }
+        const result = await storage.syncLyricsToCloud(req, lyricsData);
+        res.json(result);
+    } catch (error) {
+        console.error('同步歌詞到雲端失敗:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.get('/api/kv/lyrics-stats', async (req, res) => {
+    try {
+        const stats = await storage.getLyricsStats(req);
+        res.json({ success: true, data: stats });
+    } catch (error) {
+        console.error('獲取歌詞統計失敗:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // --- Lyrics Logic ---
 function cleanMetadata(t) { return t?.replace(/\s*[\(\[][fF]eat\.?.*[\)\]]/g, '').replace(/\s*[\(\[][wW]ith.*[\)\]]/g, '').replace(/\s*-\s*.*(?:Remix|Mix|Edit|Version)/gi, '').trim(); }
 function cleanArtist(t) { return t?.split(/[,;/\\]|\s+&\s+/)[0].trim(); }

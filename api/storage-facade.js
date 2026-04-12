@@ -170,6 +170,59 @@ class StorageFacade {
         if (!userId || !trackId) return;
         return await this.enhancedStorage.deleteSongSettings(userId, trackId);
     }
+    
+    // ✨ 雲端同步相關方法
+    async getAllUserLyrics(req) {
+        if (!req) throw new Error("Request is required to get all user lyrics.");
+        if (this.isVercel && this.kvManager.isKVAvailable) {
+            return await this.kvManager.getAllUserLyrics(req);
+        } else {
+            // 本地模式下，從 enhancedStorage 獲取
+            const userId = req.headers?.['x-spotify-user-id'];
+            if (!userId) throw new Error("User ID is required");
+            return await this.enhancedStorage.getAllLyrics(userId);
+        }
+    }
+    
+    async syncLyricsToCloud(req, lyricsDataArray) {
+        if (!req) throw new Error("Request is required to sync lyrics.");
+        if (this.isVercel && this.kvManager.isKVAvailable) {
+            return await this.kvManager.syncLyricsToCloud(req, lyricsDataArray);
+        } else {
+            // 本地模式下，逐個保存
+            const userId = req.headers?.['x-spotify-user-id'];
+            if (!userId) throw new Error("User ID is required");
+            let successCount = 0;
+            for (const item of lyricsDataArray) {
+                try {
+                    await this.saveLyrics(userId, item.trackInfo, item.lyrics, item.lyricsType, item.source);
+                    successCount++;
+                } catch (e) {
+                    console.error(`同步歌詞失敗 ${item.trackInfo?.id}:`, e);
+                }
+            }
+            return { success: true, successCount, failedCount: lyricsDataArray.length - successCount, total: lyricsDataArray.length };
+        }
+    }
+    
+    async getLyricsStats(req) {
+        if (!req) throw new Error("Request is required to get lyrics stats.");
+        if (this.isVercel && this.kvManager.isKVAvailable) {
+            return await this.kvManager.getLyricsStats(req);
+        } else {
+            // 本地模式下，從 enhancedStorage 獲取統計
+            const userId = req.headers?.['x-spotify-user-id'];
+            if (!userId) throw new Error("User ID is required");
+            const allLyrics = await this.enhancedStorage.getAllLyrics(userId);
+            return {
+                totalLyrics: allLyrics.length,
+                syncedLyrics: allLyrics.filter(l => l.lyricsContent && typeof l.lyricsContent === 'object' && Array.isArray(l.lyricsContent)).length,
+                plainLyrics: allLyrics.filter(l => l.lyricsContent && !(typeof l.lyricsContent === 'object' && Array.isArray(l.lyricsContent))).length,
+                withTimeOffset: allLyrics.filter(l => l.offset && l.offset !== 0).length,
+                lastSyncedAt: allLyrics.length > 0 ? Math.max(...allLyrics.map(l => new Date(l.updated_at).getTime())) : null
+            };
+        }
+    }
 }
 
 module.exports = new StorageFacade();
