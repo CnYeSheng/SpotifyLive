@@ -1207,9 +1207,9 @@ async initializeStorage() {
 }
 
     // 套用時間調整到歌詞
-    // ✨ 修復：確保正確處理時間調整數據
+    // ✨ 修復：確保正確處理時間調整數據（包含逐字歌詞）
     applyTimeAdjustmentToLyrics(lyrics, timeOffset) {
-        // 如果時間偏移為0或不存在，直接返回原歌詞
+        // 如果時間偏移為 0 或不存在，直接返回原歌詞
         if (!timeOffset || timeOffset === 0) {
             return lyrics;
         }
@@ -1232,15 +1232,46 @@ async initializeStorage() {
             return lyrics;
         }
 
-        // 對每條歌詞的時間戳進行調整
+        // 對每條歌詞的時間戳進行調整（包含逐字歌詞）
         return lyrics.map(lyric => {
-            if (lyric && typeof lyric === 'object' && lyric.time !== undefined) {
-                return {
-                    ...lyric,
-                    time: Math.max(0, lyric.time + offset) // 確保時間不為負數
-                };
+            if (!lyric || typeof lyric !== 'object') {
+                return lyric;
             }
-            return lyric;
+            
+            const adjustedLyric = { ...lyric };
+            
+            // 調整行時間
+            if (adjustedLyric.time !== undefined) {
+                adjustedLyric.time = Math.max(0, adjustedLyric.time + offset);
+            }
+            
+            // ✨ 關鍵修復：調整逐字歌詞中每個字的時間
+            if (adjustedLyric.words && Array.isArray(adjustedLyric.words)) {
+                adjustedLyric.words = adjustedLyric.words.map(word => {
+                    if (!word || typeof word !== 'object') {
+                        return word;
+                    }
+                    
+                    const adjustedWord = { ...word };
+                    
+                    // 調整單字開始時間
+                    if (adjustedWord.time !== undefined) {
+                        adjustedWord.time = Math.max(0, adjustedWord.time + offset);
+                    }
+                    
+                    // 如果有 start/end 格式，也要調整
+                    if (adjustedWord.start !== undefined) {
+                        adjustedWord.start = Math.max(0, adjustedWord.start + offset);
+                    }
+                    if (adjustedWord.end !== undefined) {
+                        adjustedWord.end = Math.max(0, adjustedWord.end + offset);
+                    }
+                    
+                    return adjustedWord;
+                });
+            }
+            
+            return adjustedLyric;
         });
     }
 
