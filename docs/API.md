@@ -346,14 +346,103 @@ POST /api/control/reset
 ```
 GET /api/health
 ```
-檢查服務運行狀態。
+檢查服務運行狀態，包含系統指標。
 
 **響應：**
 ```json
 {
-  "status": "ok",
+  "status": "OK",
   "timestamp": "2024-01-01T00:00:00.000Z",
-  "uptime": 3600
+  "uptime": "1h 30m 45s",
+  "memory": {
+    "heapUsed": 50,
+    "heapTotal": 100,
+    "rss": 120,
+    "usagePercent": "45.67"
+  },
+  "requests": {
+    "total": 1000,
+    "failed": 5,
+    "avgResponseTime": "120ms"
+  }
+}
+```
+
+---
+
+### 19. 監控指標端點
+```
+GET /api/metrics
+```
+獲取詳細的系統監控指標。
+
+**響應：**
+```json
+{
+  "startTime": 1704067200000,
+  "uptime": 5445,
+  "uptimeFormatted": "1h 30m 45s",
+  "requests": {
+    "total": 1000,
+    "successful": 995,
+    "failed": 5,
+    "avgResponseTime": 120.5
+  },
+  "memory": {
+    "heapUsed": 50,
+    "heapTotal": 100,
+    "external": 5,
+    "rss": 120,
+    "usagePercent": "45.67"
+  },
+  "cpu": {
+    "usage": "25.30"
+  },
+  "errors": {
+    "total": 5,
+    "byType": {
+      "SPOTIFY_API_ERROR": 3,
+      "NETWORK_ERROR": 2
+    }
+  },
+  "alerts": {
+    "triggered": 0,
+    "lastAlert": null
+  }
+}
+```
+
+---
+
+### 20. 日誌分析端點
+```
+GET /api/logs/analysis?range=1h
+```
+獲取日誌聚合分析結果。
+
+**查詢參數：**
+- `range`: 時間範圍 (`1h`, `6h`, `24h`, `7d`)，默認為 `1h`
+
+**響應：**
+```json
+{
+  "generatedAt": "2024-01-01T00:00:00.000Z",
+  "timeRange": "1h",
+  "totalLogs": 500,
+  "byLevel": {
+    "INFO": 450,
+    "WARN": 40,
+    "ERROR": 10
+  },
+  "errorRate": "2.00%",
+  "topMessages": [
+    { "message": "Spotify API rate limit", "count": 5 },
+    { "message": "Network timeout", "count": 3 }
+  ],
+  "alerts": {
+    "count": 2,
+    "lastAlertTime": "2024-01-01T00:00:00.000Z"
+  }
 }
 ```
 
