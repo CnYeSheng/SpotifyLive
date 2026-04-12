@@ -178,6 +178,16 @@
                 if (d.lyricsOffset !== undefined) lyricsOffset = d.lyricsOffset;
                 if (d.manualLyrics !== undefined) update();
             }
+            
+            // Handle direct lyrics sync (from uploads/manual overrides)
+            if (d.type === 'lyrics-sync' && d.lyrics) {
+                console.log(`🔄 接收即時歌詞同步: ${d.lyrics.length} 行`);
+                if (currentTrackId && d.trackId === currentTrackId) {
+                    lyricsData = d.lyrics;
+                    isSynced = d.lyricsType === 'synced';
+                    renderLyricsList(lyricsData);
+                }
+            }
         };
 
         async function fetchLyrics(artist, title) {
@@ -230,28 +240,44 @@
             if (!lyricsData || lyricsData.length === 0) return;
 
             let activeIndex = -1;
-            for (let i = 0; i < lyricsData.length; i++) {
-                if (lyricsData[i].time <= currentTime) activeIndex = i;
-                else break;
+            
+            if (isSynced) {
+                // 同步歌詞模式
+                for (let i = 0; i < lyricsData.length; i++) {
+                    if (lyricsData[i].time <= currentTime) activeIndex = i;
+                    else break;
+                }
+            } else {
+                // 普通歌詞模式 (基於播放進度估算)
+                if (spotifyManager.trackDuration > 0) {
+                    const progress = currentTime / spotifyManager.trackDuration;
+                    activeIndex = Math.floor(progress * lyricsData.length);
+                    activeIndex = Math.max(0, Math.min(activeIndex, lyricsData.length - 1));
+                }
             }
 
             const lines = document.getElementsByClassName('lyrics-line');
-            for (let i = 0; i < lines.length; i++) {
-                if (i === activeIndex) {
-                    if (!lines[i].classList.contains('active')) {
-                        lines[i].classList.add('active');
-                        if (autoScroll) {
-                            lines[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (activeIndex >= 0 && activeIndex < lines.length) {
+                for (let i = 0; i < lines.length; i++) {
+                    if (i === activeIndex) {
+                        if (!lines[i].classList.contains('active')) {
+                            lines[i].classList.add('active');
+                            if (autoScroll) {
+                                lines[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
                         }
+                    } else {
+                        lines[i].classList.remove('active');
                     }
-                } else {
-                    lines[i].classList.remove('active');
                 }
             }
             
             // Update scroll progress bar
-            const progress = (currentTime / spotifyManager.trackDuration) * 100;
-            document.getElementById('scroll-progress').style.width = `${Math.min(100, progress)}%`;
+            if (spotifyManager.trackDuration > 0) {
+                const progress = (currentTime / spotifyManager.trackDuration) * 100;
+                const scrollProgress = document.getElementById('scroll-progress');
+                if (scrollProgress) scrollProgress.style.width = `${Math.min(100, progress)}%`;
+            }
         }
 
         async function update() {
@@ -309,9 +335,9 @@
         });
 
         function loop() {
-            if (spotifyManager.isPlaying && isSynced) {
+            if (spotifyManager.isPlaying) {
                 updateLyricsUI(spotifyManager.getProjectedProgress() + lyricsOffset);
-            } else if (isSynced && currentTrackId) {
+            } else if (currentTrackId) {
                 updateLyricsUI(spotifyManager.lastProgress + lyricsOffset);
             }
             requestAnimationFrame(loop);

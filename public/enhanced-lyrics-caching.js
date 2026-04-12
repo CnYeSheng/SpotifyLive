@@ -172,59 +172,72 @@ function initEnhancedLyricsCaching() {
     
     // 解析 .srt 格式歌詞
     SpotifyLyricsPlayer.prototype.parseSrtLyrics = function(content) {
-        const lines = content.split(/\r?\n/);
+        // 移除可能存在的 BOM 並修剪
+        const cleanContent = content.replace(/^\ufeff/, '').trim();
+        const lines = cleanContent.split(/\r?\n/);
         const lyrics = [];
         let currentEntry = null;
+        
+        const pushSrtEntry = () => {
+            if (currentEntry && currentEntry.startTime !== undefined && currentEntry.text) {
+                lyrics.push({
+                    time: currentEntry.startTime,
+                    text: currentEntry.text.trim()
+                });
+            }
+            currentEntry = null;
+        };
         
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
             
             if (!line) {
-                if (currentEntry && currentEntry.text) {
-                    lyrics.push({
-                        time: currentEntry.startTime,
-                        text: (typeof currentEntry.text === 'string' ? currentEntry.text.trim() : String(currentEntry.text || ''))
-                    });
-                }
-                currentEntry = null;
+                pushSrtEntry();
                 continue;
             }
             
-            // 檢查序號行
+            // 檢查序號行 (例如 "1", "2")
             if (/^\d+$/.test(line)) {
+                if (currentEntry && currentEntry.startTime !== undefined) {
+                    pushSrtEntry();
+                }
                 currentEntry = { index: parseInt(line) };
                 continue;
             }
             
-            // 檢查時間軸行
-            const timeMatch = line.match(/(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})/);
-            if (timeMatch && currentEntry) {
-                const startHours = parseInt(timeMatch[1]);
-                const startMinutes = parseInt(timeMatch[2]);
-                const startSeconds = parseInt(timeMatch[3]);
-                const startMs = parseInt(timeMatch[4]);
+            // 檢查時間軸行 (例如 "00:00:15,300 --> 00:00:18,500")
+            // 支持 , 或 . 作為毫秒分隔符，支持 2 或 3 位毫秒
+            const timeMatch = line.match(/(\d{1,2}):(\d{2}):(\d{2})[,\.](\d{2,3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[,\.](\d{2,3})/);
+            if (timeMatch) {
+                if (!currentEntry) {
+                    currentEntry = {};
+                }
                 
-                currentEntry.startTime = (startHours * 3600 + startMinutes * 60 + startSeconds) * 1000 + startMs;
+                const h = parseInt(timeMatch[1]);
+                const m = parseInt(timeMatch[2]);
+                const s = parseInt(timeMatch[3]);
+                let msStr = timeMatch[4];
+                let ms = parseInt(msStr);
+                
+                // 如果毫秒是 2 位 (例如 00:00:01,50)，通常代表 500ms 或 50ms? 
+                // 在 SRT 標準中應該是 3 位。如果是 2 位，我們補 0
+                if (msStr.length === 2) ms *= 10;
+                
+                currentEntry.startTime = (h * 3600 + m * 60 + s) * 1000 + ms;
                 continue;
             }
             
             // 文本行
-            if (currentEntry && currentEntry.startTime !== undefined) {
+            if (currentEntry) {
                 if (!currentEntry.text) {
                     currentEntry.text = line;
                 } else {
-                    currentEntry.text += '\n' + line;
+                    currentEntry.text += ' ' + line;
                 }
             }
         }
         
-        // 處理最後一個條目
-        if (currentEntry && currentEntry.text) {
-            lyrics.push({
-                time: currentEntry.startTime,
-                text: (typeof currentEntry.text === 'string' ? currentEntry.text.trim() : String(currentEntry.text || ''))
-            });
-        }
+        pushSrtEntry();
         
         return {
             type: lyrics.length > 0 ? 'synced' : 'plain',
@@ -482,8 +495,12 @@ function initEnhancedLyricsCaching() {
     
     // 檢測SRT格式
     SpotifyLyricsPlayer.prototype.isSrtFormat = function(content) {
-        const srtPattern = /^\d+\s*\n\d{2}:\d{2}:\d{2},\d{3}\s*-->\s*\d{2}:\d{2}:\d{2},\d{3}/m;
-        return srtPattern.test(content);
+        // 先移除可能存在的 BOM 並修剪
+        const cleanContent = content.replace(/^\ufeff/, '').trim();
+        // 更加寬容的檢測：只要包含典型的 SRT 時間軸格式即可
+        // 支持小時為 1 或 2 位數，支持點或逗號作為毫秒分隔符
+        const srtTimePattern = /\d{1,2}:\d{2}:\d{2}[,\.]\d{2,3}\s*-->\s*\d{1,2}:\d{2}:\d{2}[,\.]\d{2,3}/;
+        return srtTimePattern.test(cleanContent);
     };
     
     // 檢測字詞級格式

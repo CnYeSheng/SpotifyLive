@@ -222,9 +222,17 @@
             if(status) status.style.display = 'none';
 
             let activeIndex = -1;
-            for (let i = 0; i < lyricsData.length; i++) {
-                if (lyricsData[i].time <= currentTime) activeIndex = i;
-                else break;
+            if (isSynced) {
+                for (let i = 0; i < lyricsData.length; i++) {
+                    if (lyricsData[i].time <= currentTime) activeIndex = i;
+                    else break;
+                }
+            } else {
+                if (spotifyManager.trackDuration > 0) {
+                    const progress = currentTime / spotifyManager.trackDuration;
+                    activeIndex = Math.floor(progress * lyricsData.length);
+                    activeIndex = Math.max(0, Math.min(activeIndex, lyricsData.length - 1));
+                }
             }
 
             const existingLines = document.getElementsByClassName('lyrics-line');
@@ -365,9 +373,9 @@
         }
         
         function loop() {
-            if (spotifyManager.isPlaying && isSynced) {
+            if (spotifyManager.isPlaying) {
                 renderLyrics(spotifyManager.getProjectedProgress() + lyricsOffset);
-            } else if (isSynced && currentTrackId) {
+            } else if (currentTrackId) {
                 renderLyrics(spotifyManager.lastProgress + lyricsOffset);
             }
             requestAnimationFrame(loop);

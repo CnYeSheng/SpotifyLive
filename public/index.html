@@ -619,14 +619,18 @@
                 
                 // --- 新增：同步到服务器 Session ---
                 if (this.sessionId) {
-                    fetch('/api/control/offset', {
+                    fetch('/api/kv/save-time-offset', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'X-Session-Id': this.sessionId
+                        },
                         body: JSON.stringify({ 
-                            offset: this.lyricsTimeOffset,
+                            timeOffset: this.lyricsTimeOffset,
+                            trackInfo: this.currentTrack,
                             sessionId: this.sessionId 
                         })
-                    }).catch(e => console.error('同步偏移失败:', e));
+                    }).catch(e => console.error('同步偏移失敗:', e));
                 }
                 // -------------------------------
 
@@ -648,9 +652,12 @@
                 if (this.sessionId) {
                     fetch('/api/control/reset', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'X-Session-Id': this.sessionId
+                        },
                         body: JSON.stringify({ sessionId: this.sessionId })
-                    }).catch(e => console.error('同步重置失败:', e));
+                    }).catch(e => console.error('同步重置失敗:', e));
                 }
                 // -------------------------------
 
@@ -664,7 +671,26 @@
                 this.showLyricsOffsetMessage(0, true);
             };
             
-            // ... (保持原有 showLyricsOffsetMessage 代码)
+            // 實現顯示偏移訊息的函數
+            window.player.showLyricsOffsetMessage = function(offset, isReset = false) {
+                let msg = isReset ? '⏰ 歌詞偏移已重置' : `⏰ 歌詞已調整: ${offset > 0 ? '+' : ''}${offset}ms (當前: ${this.lyricsTimeOffset}ms)`;
+                
+                let msgEl = document.getElementById('lyrics-offset-msg');
+                if (!msgEl) {
+                    msgEl = document.createElement('div');
+                    msgEl.id = 'lyrics-offset-msg';
+                    msgEl.style.cssText = 'position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 8px 16px; border-radius: 20px; z-index: 9999; font-size: 14px; pointer-events: none; transition: opacity 0.3s;';
+                    document.body.appendChild(msgEl);
+                }
+                
+                msgEl.textContent = msg;
+                msgEl.style.opacity = '1';
+                
+                if (this._offsetMsgTimeout) clearTimeout(this._offsetMsgTimeout);
+                this._offsetMsgTimeout = setTimeout(() => {
+                    msgEl.style.opacity = '0';
+                }, 2000);
+            };
         }
         
         // 2. 增強歌詞載入功能
