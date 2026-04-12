@@ -88,15 +88,15 @@ npm start
 
 ## 📝 待改進項目
 
-### 高優先級
-- [ ] 將 server.js 拆分為獨立的路由模組
-- [ ] 前端 script.js 模組化（目前 8000+ 行）
-- [ ] 添加單元測試和集成測試
-- [ ] 實現完整的 API 文檔
+### 高優先級 ✅ 已完成
+- [x] 將 server.js 拆分為獨立的路由模組
+- [x] 前端 script.js 模塊化（目前已有 lyrics-manager.js, spotify-player-manager.js 等獨立模塊）
+- [x] 添加單元測試和集成測試 (tests/run-tests.js)
+- [x] 實現完整的 API 文檔 (docs/API.md)
 
 ### 中優先級
 - [ ] 遷移到 TypeScript
-- [ ] 添加健康檢查端點 `/api/health`
+- [x] 添加健康檢查端點 `/api/health`
 - [ ] 實現日誌聚合和分析
 - [ ] 添加監控和警報
 
