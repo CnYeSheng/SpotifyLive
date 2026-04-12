@@ -4794,12 +4794,20 @@ async loadLyrics() {
         
         this.log(`✅ 設置已保存 - 語言：${language}, 主題：${theme}`);
         
-        // 應用主題
-        this.applyTheme(theme);
+        // 應用主題 - 使用 ThemeManager
+        if (typeof ThemeManager !== 'undefined' && ThemeManager.setTheme) {
+            ThemeManager.setTheme(theme);
+        } else {
+            this.applyTheme(theme);
+        }
         
-        // 如果語言改變，重新加載語言包
+        // 如果語言改變，使用 I18nManager 切換語言
         if (language !== (localStorage.getItem('current_language') || 'zh-TW')) {
-            this.loadLanguage(language);
+            if (typeof I18nManager !== 'undefined' && I18nManager.setLanguage) {
+                I18nManager.setLanguage(language);
+            } else {
+                this.loadLanguage(language);
+            }
         }
         
         // 關閉模態框

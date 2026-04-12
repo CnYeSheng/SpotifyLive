@@ -33,7 +33,7 @@ html {
     --blur-background: rgba(28, 28, 30, 0.8);
     --card-background: rgba(44, 44, 46, 0.8);
     --glass-background: rgba(255, 255, 255, 0.1);
-    --glass-border: rgba(255, 255, 255, 0.2);
+    --glass-border: var(--border-color);
     --shadow-color: rgba(0, 0, 0, 0.3);
     --dynamic-bg-1: #667eea;
     --dynamic-bg-2: #764ba2;
@@ -91,7 +91,7 @@ body {
     background: var(--glass-background);
     border-radius: 8px;
     padding: 80px 50px;
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--border-color);
     max-width: 520px;
     margin: 0 auto;
     position: relative;
@@ -105,7 +105,7 @@ body {
     left: 0;
     right: 0;
     height: 1px;
-    background: linear-gradient(90deg, transparent, var(--glass-border), transparent);
+    background: linear-gradient(90deg, transparent, var(--border-color), transparent);
 }
 
 .auth-card h1 {
@@ -148,7 +148,7 @@ body {
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    background: linear-gradient(90deg, transparent, var(--border-color), transparent);
     transition: left 0.6s;
 }
 
@@ -182,8 +182,8 @@ body {
     padding: 20px 30px 30px 30px;
     /* box-shadow: 
         0 32px 64px var(--shadow-color),
-        inset 0 1px 0 var(--glass-border); */
-    /* border: 1px solid var(--glass-border); */
+        inset 0 1px 0 var(--border-color); */
+    /* border: 1px solid var(--border-color); */
     position: sticky;
     top: -19px;
     transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
@@ -201,14 +201,14 @@ body {
     left: 0;
     right: 0;
     height: 1px;
-    /* background: linear-gradient(90deg, transparent, var(--glass-border), transparent); */
+    /* background: linear-gradient(90deg, transparent, var(--border-color), transparent); */
 }
 
 /* .music-card:hover {
     transform: translateY(-8px);
     box-shadow: 
         0 40px 80px var(--shadow-color),
-        inset 0 1px 0 var(--glass-border);
+        inset 0 1px 0 var(--border-color);
 } */
 
 .album-art {
@@ -314,7 +314,7 @@ body {
 .progress-bar {
     width: 100%;
     height: 8px;
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--border-color);
     border-radius: 4px;
     overflow: hidden;
     margin-bottom: 12px;
@@ -343,7 +343,7 @@ body {
     /* background: var(--glass-background); */
     /* border-radius: 8px; */
     /* padding: 50px; */
-    /* border: 1px solid var(--glass-border); */
+    /* border: 1px solid var(--border-color); */
     max-height: 90vh;
     max-width: 100%;
     overflow-y: hidden;
@@ -360,14 +360,14 @@ body {
     left: 0;
     right: 0;
     height: 1px;
-    /* background: linear-gradient(90deg, transparent, var(--glass-border), transparent); */
+    /* background: linear-gradient(90deg, transparent, var(--border-color), transparent); */
 }
 
 /* .lyrics-container:hover {
     transform: translateY(-4px);
     box-shadow: 
         0 40px 80px var(--shadow-color),
-        inset 0 1px 0 var(--glass-border);
+        inset 0 1px 0 var(--border-color);
 } */
 
 .sync-indicator {
@@ -440,7 +440,7 @@ body {
 }
 
 .lyrics-controls button:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--border-color);
     transform: scale(1.05);
 }
 
@@ -1037,7 +1037,7 @@ body {
     border-radius: 24px;
     padding: 60px 40px;
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
-    /* border: 1px solid rgba(255, 255, 255, 0.2); */
+    /* border: 1px solid var(--border-color); */
 }
 
 .no-music-icon {
@@ -1087,7 +1087,7 @@ body {
     padding: 12px 20px;
     border-radius: 50px;
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
-    /* border: 1px solid rgba(255, 255, 255, 0.2); */
+    /* border: 1px solid var(--border-color); */
 }
 
 .status-item {
@@ -1237,7 +1237,7 @@ body {
 }
 
 .toolbar-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--border-color);
 }
 
 .edit-container {
@@ -1311,7 +1311,7 @@ body {
 }
 
 .export-btn:hover, .reset-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--border-color);
 }
 
 /* 視覺編輯器樣式 (如果使用) */
@@ -1498,7 +1498,7 @@ body {
 }
 
 .control-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--border-color);
     transform: scale(1.05);
 }
 
@@ -1826,7 +1826,7 @@ body {
 }
 
 .mobile-control-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--border-color);
     transform: scale(1.05);
 }
 
@@ -1881,7 +1881,7 @@ body {
 }
 
 .mobile-nav-btn:hover:not(.active) {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--border-color);
     color: var(--text-primary);
 }
 
@@ -1927,7 +1927,7 @@ body {
 
 .lyrics-control-btn {
     background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     color: var(--text-primary);
     padding: 8px 14px;
@@ -1948,7 +1948,7 @@ body {
 }
 
 .lyrics-control-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--border-color);
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
@@ -2659,13 +2659,13 @@ body {
     border-radius: 8px;
     margin-bottom: 8px;
     background: var(--glass-background);
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--border-color);
     cursor: pointer;
     transition: all 0.3s ease;
 }
 
 .playlist-item:hover {
-    background: var(--glass-border);
+    background: var(--border-color);
     transform: translateY(-2px);
 }
 
@@ -2709,13 +2709,13 @@ body {
     border-radius: 8px;
     margin-bottom: 8px;
     background: var(--glass-background);
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--border-color);
     cursor: pointer;
     transition: all 0.3s ease;
 }
 
 .device-item:hover {
-    background: var(--glass-border);
+    background: var(--border-color);
     transform: translateY(-2px);
 }
 
@@ -2841,7 +2841,7 @@ body {
 /* 未喜歡狀態的按鈕樣式改進 */
 .control-btn:not(.liked) {
     background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid var(--border-color);
 }
 
 /* 超小屏幕設備優化 (480px 以下) */
@@ -2956,9 +2956,9 @@ body {
 
 /* 模態框深色主題 */
 .modal-content {
-    background: var(--background-secondary);
+    background: var(--bg-secondary);
     color: var(--text-primary);
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--border-color);
 }
 
 .modal-content h3 {
@@ -2970,7 +2970,7 @@ body {
     max-width: 600px;
     max-height: 80vh;
     overflow-y: auto;
-    background: var(--background-secondary);
+    background: var(--bg-secondary);
 }
 
 .search-form {
@@ -2986,7 +2986,7 @@ body {
 .search-input {
     flex: 1;
     padding: 12px 16px;
-    border: 2px solid var(--glass-border);
+    border: 2px solid var(--border-color);
     border-radius: 8px;
     background: var(--background-primary);
     color: var(--text-primary);
@@ -3030,7 +3030,7 @@ body {
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--border-color);
 }
 
 .current-label {
@@ -3042,7 +3042,7 @@ body {
     padding: 6px 12px;
     background: var(--glass-bg);
     color: var(--text-primary);
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--border-color);
     border-radius: 6px;
     cursor: pointer;
     font-size: 14px;
@@ -3129,7 +3129,7 @@ body {
 .loading-spinner {
     width: 24px;
     height: 24px;
-    border: 3px solid var(--glass-border);
+    border: 3px solid var(--border-color);
     border-top: 3px solid var(--accent-color);
     border-radius: 50%;
     animation: spin 1s linear infinite;
@@ -3169,20 +3169,21 @@ body {
 }
 
 .modal-actions .close-btn {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--bg-secondary);
     color: var(--text-primary);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid var(--border-color);
 }
 
 .modal-actions .close-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--bg-tertiary);
+}
 }
 
 /* 設置卡片樣式 */
 .settings-card {
-    background: var(--background-secondary);
+    background: var(--bg-secondary);
     color: var(--text-primary);
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--border-color);
 }
 
 .settings-card h3 {
@@ -3226,7 +3227,7 @@ body {
 }
 
 .results-container::-webkit-scrollbar-thumb {
-    background: var(--glass-border);
+    background: var(--border-color);
     border-radius: 3px;
 }
 
@@ -3732,7 +3733,7 @@ body {
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(255, 255, 255, 0.2);
+    background-color: var(--border-color);
     transition: 0.3s;
     border-radius: 26px;
 }
@@ -3760,23 +3761,23 @@ input:checked + .slider:before {
 .setting-select {
     width: 100%;
     padding: 12px 16px;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
-    color: white; /* 修正?��?顏色 */
+    color: var(--text-primary);
     font-size: 14px;
     transition: all 0.3s ease;
 }
 
 .setting-select:focus {
     outline: none;
-    border-color: #1db954;
-    background: rgba(255, 255, 255, 0.15);
+    border-color: var(--accent-color);
+    background: var(--bg-tertiary);
 }
 
 .setting-select option {
-    background: #1e1e1e; /* 修正?��??�景??*/
-    color: white;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
 }
 
 .sync-actions-section {
