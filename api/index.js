@@ -492,6 +492,35 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
-app.get('/api/health', (req, res) => res.json({ status: 'OK' }));
+// 健康檢查端點（增強版）
+app.get('/api/health', (req, res) => {
+  const monitor = require('../utils/monitor');
+  const metrics = monitor.getMetrics();
+  
+  res.json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    uptime: metrics.uptimeFormatted,
+    memory: metrics.memory,
+    requests: {
+      total: metrics.requests.total,
+      failed: metrics.requests.failed,
+      avgResponseTime: Math.round(metrics.requests.avgResponseTime) + 'ms'
+    }
+  });
+});
+
+// 監控指標端點
+app.get('/api/metrics', (req, res) => {
+  const monitor = require('../utils/monitor');
+  res.json(monitor.getMetrics());
+});
+
+// 日誌分析端點
+app.get('/api/logs/analysis', (req, res) => {
+  const logger = require('../utils/logger');
+  const timeRange = req.query.range || '1h';
+  res.json(logger.analyzeLogs(timeRange));
+});
 
 module.exports = app;

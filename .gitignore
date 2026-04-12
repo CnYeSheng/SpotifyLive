@@ -1,1 +1,1 @@
-(docs/API.md, lyrics-storage.json, README.md, tests/run-tests.js)
+Nothing needs to be added to .gitignore since the changes only include source code files (.js) and documentation files (.md), which should not be ignored.

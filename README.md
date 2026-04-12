@@ -96,9 +96,17 @@ npm start
 
 ### 中優先級
 - [ ] 遷移到 TypeScript
-- [x] 添加健康檢查端點 `/api/health`
-- [ ] 實現日誌聚合和分析
-- [ ] 添加監控和警報
+- [x] 添加健康檢查端點 `/api/health`（增強版包含系統指標）
+- [x] 實現日誌聚合和分析 (utils/logger.js)
+- [x] 添加監控和警報 (utils/monitor.js)
+
+**新增功能說明：**
+- **日誌系統** (`utils/logger.js`)：結構化日誌記錄、按級別分類、自動分析
+- **監控系統** (`utils/monitor.js`)：實時性能指標、CPU/記憶體監控、自動警報
+- **API 端點**：
+  - `GET /api/health` - 健康檢查（含系統指標）
+  - `GET /api/metrics` - 詳細監控指標
+  - `GET /api/logs/analysis` - 日誌分析報告
 
 ### 低優先級
 - [ ] 支持多語言界面

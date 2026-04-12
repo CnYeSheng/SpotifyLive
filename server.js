@@ -7,6 +7,8 @@ const cors = require('cors');
 const axios = require('axios');
 const KVStorageManager = require('./api/kv-storage');
 const EnhancedStorage = require('./api/storage-enhanced');
+const logger = require('./utils/logger');
+const monitor = require('./utils/monitor');
 require('dotenv').config();
 
 const kvStorage = new KVStorageManager();
@@ -14,6 +16,16 @@ const enhancedStorage = new EnhancedStorage();
 
 // Initialize enhanced storage
 enhancedStorage.init().catch(err => console.error('Failed to init storage:', err));
+
+// 啟動監控和日誌系統
+logger.info('Server starting...', { version: '2.0.0' });
+monitor.startMetricsCollection(30000); // 每 30 秒收集指標
+
+// 註冊警報處理器（示例：控制台輸出）
+monitor.registerAlertHandler((alert) => {
+  console.log(`🚨 ALERT [${alert.severity.toUpperCase()}]: ${alert.message}`);
+  // 可以在這裡添加郵件、Slack、Webhook 等通知
+});
 
 // Rate limiter for Spotify API
 class SpotifyRateLimiter {
@@ -107,6 +119,9 @@ app.use(cors({ origin: true, credentials: true, allowedHeaders: ['Content-Type',
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(express.static('public'));
+
+// 添加監控中間件
+app.use(monitor.createMonitoringMiddleware());
 
 // Spotify API credentials
 const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
@@ -3539,8 +3554,15 @@ app.get('/', (req, res) => {
 // Start server
 if (require.main === module) {
     app.listen(PORT, () => {
+        logger.info(`Server is running on port ${PORT}`, { 
+          port: PORT, 
+          environment: process.env.NODE_ENV || 'development' 
+        });
         console.log(`Server is running on port ${PORT}`);
         console.log(`Open http://localhost:${PORT} in your browser`);
+        console.log(`Health check: http://localhost:${PORT}/api/health`);
+        console.log(`Metrics: http://localhost:${PORT}/api/metrics`);
+        console.log(`Logs analysis: http://localhost:${PORT}/api/logs/analysis`);
     });
 }
 
