@@ -923,6 +923,10 @@ body {
 @media (max-width: 767px) {
     .lyrics-content {
         font-size: 26px;
+        height: auto !important; /* 手機版自動高度，顯示全部歌詞 */
+        max-height: none !important; /* 移除最大高度限制 */
+        overflow-y: auto !important; /* 允許垂直滾動 */
+        -webkit-overflow-scrolling: touch; /* iOS 平滑滾動 */
     }
     
     .lyrics-line {
@@ -2114,6 +2118,10 @@ body {
         text-align: center; /* 手機版歌詞置中 */
         font-size: 22px !important; /* 手機版歌詞放大 */
         line-height: 1.6; /* 增加行高改善閱讀體驗 */
+        height: auto !important; /* 手機版自動高度，顯示全部歌詞 */
+        max-height: none !important; /* 移除最大高度限制 */
+        overflow-y: auto !important; /* 允許垂直滾動 */
+        -webkit-overflow-scrolling: touch; /* iOS 平滑滾動 */
     }
     
     .lyrics-line {
