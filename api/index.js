@@ -346,6 +346,45 @@ app.post('/api/playback/volume', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
+// Playback: shuffle, repeat
+app.post('/api/playback/shuffle', async (req, res) => {
+    const session = await getUserSession(req);
+    if (!session) return res.status(401).json({ error: 'Not authenticated' });
+    try {
+        // 切換 shuffle 狀態
+        const newState = !session.currentTrackCache?.data?.shuffle_state;
+        await axios.put(`https://api.spotify.com/v1/me/player/shuffle?state=${newState}`, {}, { 
+            headers: { 'Authorization': `Bearer ${session.accessToken}` },
+            params: { state: newState }
+        });
+        res.json({ success: true });
+    } catch (e) { 
+        console.error('Shuffle toggle error:', e.response?.data || e.message);
+        res.status(500).json({ success: false, error: e.message }); 
+    }
+});
+
+app.post('/api/playback/repeat', async (req, res) => {
+    const session = await getUserSession(req);
+    if (!session) return res.status(401).json({ error: 'Not authenticated' });
+    try {
+        // 循環切換重複模式：off -> context -> track -> off
+        const repeatModes = ['off', 'context', 'track'];
+        const currentState = session.currentTrackCache?.data?.repeat_state || 'off';
+        const currentIndex = repeatModes.indexOf(currentState);
+        const nextState = repeatModes[(currentIndex + 1) % repeatModes.length];
+        
+        await axios.put(`https://api.spotify.com/v1/me/player/repeat`, {}, { 
+            headers: { 'Authorization': `Bearer ${session.accessToken}` },
+            params: { state: nextState }
+        });
+        res.json({ success: true });
+    } catch (e) { 
+        console.error('Repeat toggle error:', e.response?.data || e.message);
+        res.status(500).json({ success: false, error: e.message }); 
+    }
+});
+
 // Control endpoints
 app.post('/api/control/offset', async (req, res) => {
     const session = await getUserSession(req);
