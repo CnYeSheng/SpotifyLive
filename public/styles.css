@@ -414,7 +414,7 @@ body {
 .lyrics-header h3 {
     font-size: 1.3rem;
     font-weight: 600;
-    color: #1a1a1a;
+    color: var(--text-primary);
 }
 
 .lyrics-controls {
@@ -1054,7 +1054,7 @@ body {
     font-size: 1.8rem;
     font-weight: 600;
     margin-bottom: 16px;
-    color: #1a1a1a;
+    color: var(--text-primary);
 }
 
 .no-music-card p {
