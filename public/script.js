@@ -3692,15 +3692,20 @@ async initializeStorage() {
         // 🚨 新增：檢查播放狀態是否從暫停變為播放
         const isResumed = this.currentTrack && !this.currentTrack.isPlaying && data.isPlaying;
 
-        // ✨ 偵測到歌曲重播或跳回開頭
-        const isProgressReset = this.currentTrack && 
-                               this.currentTrack.id === data.id && 
-                               data.progress < 2000 && // 新進度在歌曲開頭 (2秒內)
+        // ✨ 偵測到歌曲重播或跳回開頭（包括單曲重複播放）
+        const isProgressReset = this.currentTrack &&
+                               this.currentTrack.id === data.id &&
+                               data.progress < 2000 && // 新進度在歌曲開頭 (2 秒內)
                                this.currentTrack.progress > 2000; // 上次進度不在歌曲開頭
 
-        this.log(`🔄 歌曲狀態: ${isNewTrack ? '新歌曲' : '相同歌曲'}, 恢復播放: ${isResumed}, 重播: ${isProgressReset}, 同名同歌手: ${isSameSongNameAndArtist}`);
+        // 🔁 額外檢測：進度大幅倒退（可能是單曲重複播放）
+        const isRepeatDetected = this.currentTrack &&
+                                this.currentTrack.id === data.id &&
+                                data.progress < this.currentTrack.progress - 10000; // 進度倒退超過 10 秒
 
-        if (isProgressReset) {
+        this.log(`🔄 歌曲狀態：${isNewTrack ? '新歌曲' : '相同歌曲'}, 恢復播放：${isResumed}, 重播：${isProgressReset}, 重複檢測：${isRepeatDetected}, 同名同歌手：${isSameSongNameAndArtist}`);
+
+        if (isProgressReset || isRepeatDetected) {
             this.log('🔄 偵測到歌曲循環播放或跳轉到開頭');
             this.resetLyricsPlayback();
         }
@@ -3725,9 +3730,17 @@ async initializeStorage() {
                     const currentEstimatedTime = (Date.now() - this.currentTrack.lastUpdated) + this.currentTrack.progress;
                     const diff = data.progress - currentEstimatedTime;
                     
+                    // 🚨 關鍵修復：檢測歌曲重複播放（進度大幅倒退）
+                    // 如果 API 進度比當前進度小很多（例如超過 10 秒），很可能是歌曲重複播放
+                    const isRepeatPlayback = data.progress < this.currentTrack.progress - 10000;
+                    
+                    if (isRepeatPlayback) {
+                        this.log(`🔁 檢測到重複播放，採用 API 進度 (${Math.round(data.progress)}ms vs 本地估算 ${Math.round(currentEstimatedTime)}ms)`);
+                        finalProgress = data.progress;
+                    }
                     // 如果 API 回報的進度與本地估算相差小於 5 秒，則保留本地估算，避免抖動
                     // 由於已經做了延遲補償，這裡的 diff 應該會非常小
-                    if (Math.abs(diff) < 5000) {
+                    else if (Math.abs(diff) < 5000) {
                         this.log(`🛡️ 偵測到微小進度抖動 (${Math.round(diff)}ms)，維持本地估算`);
                         finalProgress = currentEstimatedTime;
                     } else {
