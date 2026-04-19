@@ -2153,6 +2153,13 @@
             return;
         }
 
+        // 檢查是否為 Podcast
+        if (this.currentTrack.contentType === 'podcast') {
+            this.showLyricsPlaceholder('🎙️ 正在播放 Podcast\n\n享受精彩的音頻內容吧！');
+            this.updateStatus('lyrics', true);
+            return;
+        }
+
         // 防止重複載入相同歌曲的歌詞
         const trackId = this.currentTrack.id || `${this.currentTrack.artist}-${this.currentTrack.name}`;
         if (this.currentLyricsTrackId === trackId && this.lyrics.length > 0) {
@@ -2297,36 +2304,16 @@
         }
     }
 
-    // 顯示歌詞載入狀態
-    showLyricsLoading() {
+    // 顯示歌詞佔位符
+    showLyricsPlaceholder(text) {
         if (this.lyricsContent) {
             this.lyricsContent.innerHTML = `
-                <div class="lyrics-loading">
-                    <div class="loading-spinner"></div>
-                    <p>正在載入歌詞...</p>
+                <div class="lyrics-placeholder">
+                    <p style="white-space: pre-line;">${text}</p>
                 </div>
             `;
         }
     }
-
-    // 顯示歌詞錯誤
-    showLyricsError(message) {
-        if (this.lyricsContent) {
-            this.lyricsContent.innerHTML = `
-                <div class="lyrics-error">
-                    <p>❌ ${message}</p>
-                    <button onclick="window.player.loadLyrics()" class="retry-btn">重試</button>
-                </div>
-            `;
-        }
-    }
-
-        // 如果是 Podcast，顯示特殊訊息而不載入歌詞
-        if (this.currentTrack.contentType === 'podcast') {
-            this.showLyricsPlaceholder('🎙️ 正在播放 Podcast\\n\\n享受精彩的音頻內容吧！');
-            this.updateStatus('lyrics', true);
-            return;
-        }
 
         const trackKey = `${this.currentTrack.id}-${this.currentTrack.name}-${this.currentTrack.artist}`;
         console.log(`🎤 請求歌詞: ${this.currentTrack.artist} - ${this.currentTrack.name}`);
