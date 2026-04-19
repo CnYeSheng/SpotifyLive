@@ -526,6 +526,7 @@ function initEnhancedLyricsCaching() {
     // 綁定到現有播放器實例
     if (window.player) {
         window.player.enhancedLyricsCache = new Map();
+        window.player.savedLyrics = new Map();
         window.player.extendedLyricsCacheExpiry = 30 * 24 * 60 * 60 * 1000;
         window.player.initEnhancedLyricsCache();
     }
