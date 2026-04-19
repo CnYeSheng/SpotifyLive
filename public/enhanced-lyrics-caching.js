@@ -55,6 +55,11 @@ function initEnhancedLyricsCaching() {
         SpotifyLyricsPlayer.prototype.enhancedLyricsCache = new Map();
     }
     
+    // 初始化 savedLyrics Map (用於永久保存的歌詞)
+    if (!SpotifyLyricsPlayer.prototype.savedLyrics) {
+        SpotifyLyricsPlayer.prototype.savedLyrics = new Map();
+    }
+    
     // 每次播放歌曲時自動緩存歌詞30天
     const originalLoadLyrics = SpotifyLyricsPlayer.prototype.loadLyrics;
     SpotifyLyricsPlayer.prototype.loadLyrics = async function() {
