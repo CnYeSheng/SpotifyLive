@@ -1739,8 +1739,23 @@
         this.log(`🔄 歌曲狀態: ${isNewTrack ? '新歌曲' : '相同歌曲'}`);
 
         // 更新 currentTrack
+        const oldTrack = this.currentTrack;
         this.currentTrack = data;
-        this.log(`🎵 歌曲數據已更新: ${data.name || 'Unknown'} - ${data.artist || 'Unknown Artist'}`);
+        
+        // 檢測重複播放或進度重置：API 進度比之前小很多（倒退超過 5 秒）
+        if (oldTrack && oldTrack.progress && data.progress !== undefined) {
+            const progressDiff = data.progress - oldTrack.progress;
+            if (progressDiff < -5000) {
+                this.log(`⏩ 偵測到進度倒退 (${Math.round(progressDiff)}ms)，判定為重複播放，強制重置 lastUpdated`);
+                // 關鍵修復：重置 lastUpdated 為現在，這樣本地計時器會從 API 的進度重新開始
+                this.currentTrack.lastUpdated = Date.now();
+            }
+        } else if (!this.currentTrack.lastUpdated) {
+            // 首次載入時設置 lastUpdated
+            this.currentTrack.lastUpdated = Date.now();
+        }
+        
+        this.log(`🎵 歌曲數據已更新: ${data.name || 'Unknown'} - ${data.artist || 'Unknown Artist'} (進度: ${data.progress}ms)`);
 
         // 触发歌曲切换动画
         if (isNewTrack) {
@@ -1789,7 +1804,11 @@
             data.contentType = this.detectContentType(data);
         }
         this.currentContentType = data.contentType;
-        this.currentTrack.lastUpdated = Date.now();
+        // 注意：這裡不再強制設置 lastUpdated，因為上面已經在檢測到重複播放時設置過了
+        // 只有在沒有設置過的情況下才設置（例如新歌曲）
+        if (!this.currentTrack.lastUpdated) {
+            this.currentTrack.lastUpdated = Date.now();
+        }
         
         // 確保UI始終更新（即使是相同歌曲）
         this.log('🎨 更新播放器UI');
