@@ -172,8 +172,9 @@ SpotifyLyricsPlayer.prototype.processUploadedLyrics = function(content) {
                     artist: this.currentTrack.artist || '未知歌手',
                     album: this.currentTrack.album || '未知專輯'
                 },
-                lyrics: content,
-                type: parsed.type,
+                lyrics: parsed.lyrics, // 保存解析後的歌詞陣列
+                lyricsType: parsed.type,
+                rawContent: content, // 保存原始內容
                 timestamp: Date.now()
             };
             
@@ -182,14 +183,24 @@ SpotifyLyricsPlayer.prototype.processUploadedLyrics = function(content) {
             userLyrics[trackId] = userLyricsData;
             localStorage.setItem('userLyrics', JSON.stringify(userLyrics));
             
-            // 廣播給其他分頁
+            // 廣播給其他分頁（包含歌詞數據和當前時間）
             if (this.controlChannel) {
                 this.controlChannel.postMessage({
                     type: 'user-lyrics-updated',
                     trackId: trackId,
-                    lyricsData: userLyricsData
+                    lyricsData: userLyricsData,
+                    currentTime: this.spotifyPlayer?.getCurrentTime ? this.spotifyPlayer.getCurrentTime() : 0
                 });
             }
+            
+            // 同步到 KV 存儲
+            this.saveUserCustomLyrics(this.currentTrack, parsed.lyrics, parsed.type, {
+                source: 'uploaded',
+                title: '用戶上傳歌詞',
+                uploadedAt: Date.now()
+            }).catch(err => {
+                this.log(`⚠️ KV 同步失敗：${err.message}`);
+            });
         }
         
         // 套用新歌詞
@@ -202,6 +213,13 @@ SpotifyLyricsPlayer.prototype.processUploadedLyrics = function(content) {
         // 強制重新載入歌詞顯示
         this.currentLyricIndex = 0;
         this.displayLyrics();
+        
+        // 關鍵：立即觸發內部重載，確保歌詞正常運作
+        this.log('🔄 上傳後內部重載歌詞...');
+        setTimeout(() => {
+            this.currentLyricsTrackId = null; // 清除軌道 ID 以強制重新載入
+            this.loadLyrics();
+        }, 100);
         
         this.hideLyricsUploadModal();
         this.showSuccessMessage(`✅ 歌詞已套用 (${parsed.type === 'synced' ? '同步' : '普通'}歌詞)`);
