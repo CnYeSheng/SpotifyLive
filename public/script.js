@@ -2059,7 +2059,8 @@
     updateProgress() {
         if (!this.currentTrack) return;
         
-        const currentTime = this.currentTrack.progress;
+        // 使用 spotifyManager 的投影時間來獲得更精確的當前時間
+        const currentTime = window.spotifyManager ? window.spotifyManager.getProjectedProgress() : this.currentTrack.progress;
         const duration = this.currentTrack.duration;
         
         if (duration > 0) {
