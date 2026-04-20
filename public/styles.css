@@ -414,7 +414,7 @@ body {
 .lyrics-header h3 {
     font-size: 1.3rem;
     font-weight: 600;
-    color: #1a1a1a;
+    color: var(--text-primary);
 }
 
 .lyrics-controls {
@@ -927,11 +927,15 @@ body {
         max-height: none !important; /* 移除最大高度限制 */
         overflow-y: auto !important; /* 允許垂直滾動 */
         -webkit-overflow-scrolling: touch; /* iOS 平滑滾動 */
+        text-align: center !important; /* 歌詞置中 */
+        display: block !important;
     }
     
     .lyrics-line {
         font-size: 26px;
         padding: 12px 0;
+        text-align: center !important; /* 每行歌詞置中 */
+        justify-content: center !important;
     }
     
     .lyrics-line.current {
@@ -1054,7 +1058,7 @@ body {
     font-size: 1.8rem;
     font-weight: 600;
     margin-bottom: 16px;
-    color: #1a1a1a;
+    color: var(--text-primary);
 }
 
 .no-music-card p {

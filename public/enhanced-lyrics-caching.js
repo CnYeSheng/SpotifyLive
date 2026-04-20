@@ -55,6 +55,11 @@ function initEnhancedLyricsCaching() {
         SpotifyLyricsPlayer.prototype.enhancedLyricsCache = new Map();
     }
     
+    // 初始化 savedLyrics Map (用於永久保存的歌詞)
+    if (!SpotifyLyricsPlayer.prototype.savedLyrics) {
+        SpotifyLyricsPlayer.prototype.savedLyrics = new Map();
+    }
+    
     // 每次播放歌曲時自動緩存歌詞30天
     const originalLoadLyrics = SpotifyLyricsPlayer.prototype.loadLyrics;
     SpotifyLyricsPlayer.prototype.loadLyrics = async function() {
@@ -423,7 +428,10 @@ function initEnhancedLyricsCaching() {
                     });
                     
                     if (loadedCount > 0) {
-                        this.saveSavedLyricsToStorage();
+                        // 修復：添加缺失的 saveSavedLyricsToStorage 方法
+                        if (typeof this.saveSavedLyricsToStorage === 'function') {
+                            this.saveSavedLyricsToStorage();
+                        }
                         this.log(`☁️ 已從KV載入 ${loadedCount} 個永久歌詞`);
                     }
                 }
@@ -432,6 +440,21 @@ function initEnhancedLyricsCaching() {
             this.log(`❌ 從KV載入失敗: ${error.message}`);
         }
     };
+    
+    // 保存 savedLyrics 到 localStorage（如果方法不存在則創建）
+    if (!SpotifyLyricsPlayer.prototype.saveSavedLyricsToStorage) {
+        SpotifyLyricsPlayer.prototype.saveSavedLyricsToStorage = function() {
+            try {
+                const savedObject = {};
+                for (const [key, value] of this.savedLyrics.entries()) {
+                    savedObject[key] = value;
+                }
+                localStorage.setItem('saved_lyrics', JSON.stringify(savedObject));
+            } catch (error) {
+                this.log(`❌ 保存永久歌詞失敗：${error.message}`);
+            }
+        };
+    }
     
     // =================
     // 存儲管理
@@ -521,6 +544,7 @@ function initEnhancedLyricsCaching() {
     // 綁定到現有播放器實例
     if (window.player) {
         window.player.enhancedLyricsCache = new Map();
+        window.player.savedLyrics = new Map();
         window.player.extendedLyricsCacheExpiry = 30 * 24 * 60 * 60 * 1000;
         window.player.initEnhancedLyricsCache();
     }

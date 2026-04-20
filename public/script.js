@@ -4143,21 +4143,15 @@ async initializeStorage() {
                 // 使用更精確的計算：(現在時間 - 數據更新時間) + Spotify 報告的進度
                 const timeDiff = Date.now() - this.currentTrack.lastUpdated;
                 elapsedTime = timeDiff + this.currentTrack.progress;
-
-                // 🚀 改進的循環處理：如果超出了總長度，且當前歌曲正在循環播放
+                
+                // 守衛：如果計算出的時間遠大於歌曲長度，鎖定在長度值
                 if (elapsedTime > this.currentTrack.duration) {
-                    if (this.repeatState !== 'off') {
-                        // 如果是循環模式，讓它回到開頭繼續跑，而不是卡住
-                        // 這能解決「卡在最後一秒」的問題，直到下一次 API 輪詢校正
-                        elapsedTime = elapsedTime % this.currentTrack.duration;
-                        this.log(`🔄 偵測到本地進度超出長度，已模擬循環 (目前狀態: ${this.repeatState})`);
-                    } else {
-                        elapsedTime = this.currentTrack.duration;
-                    }
+                    elapsedTime = this.currentTrack.duration;
                 }
             } else {
                 elapsedTime = this.currentTrack.progress;
-            }            
+            }
+            
             // 每秒同步一次進度，防止累積誤差 (除了 requestAnimationFrame 以外的守衛)
             if (this.currentTrack.isPlaying) {
                 const progress = (elapsedTime / this.currentTrack.duration) * 100;
@@ -7098,7 +7092,7 @@ showOffsetMessage() {
         if (lyricsControls) {
             // 檢查是否已經添加過按鈕
             if (!document.getElementById('sync-all-btn')) {
-                /*let syncControlsHTML = `
+                /*const syncControlsHTML = `
                     <div class="sync-controls-section">
                         <button id="save-current-lyrics-btn" class="lyrics-control-btn" title="保存當前歌詞">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
