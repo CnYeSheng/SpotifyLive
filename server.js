@@ -2431,8 +2431,9 @@ function cleanMetadata(text) {
 // 輔助函數：簡化歌手名稱 (只取第一位歌手)
 function cleanArtist(text) {
     if (!text) return '';
-    // 取第一個歌手 (通常在逗號、分號、斜槓、& 號之前)
-    return text.split(/[,;/\\]|\s+&\s+/)[0].trim();
+    // 取第一個歌手 (通常在逗號、分號、斜槓、& 號、左括號之前)
+    // 🚨 修正：加入 ( 以處理 WeiBird (韋禮安) 這種格式
+    return text.split(/[,;/\\]|\s+&\s+|\s*\(/)[0].trim();
 }
 
 // Get lyrics with multiple providers support
@@ -2515,7 +2516,35 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                 });
             }
 
-            console.log('ℹ️ 自動模式：所有來源均未找到歌詞');
+            // 🚀 關鍵回退：如果直接獲取失敗，嘗試「搜尋」模式
+            console.log(`🔍 所有直接獲取失敗，嘗試搜尋模式: ${artist} ${title}`);
+            try {
+                const searchUrl = `${LYRICS_API_URL}/api/search/${encodeURIComponent(artist + ' ' + title)}`;
+                const searchResponse = await axios.get(searchUrl, { timeout: 15000 });
+                
+                if (searchResponse.data && Array.isArray(searchResponse.data) && searchResponse.data.length > 0) {
+                    const firstResult = searchResponse.data[0];
+                    console.log(`✅ 搜尋找到結果: ${firstResult.name || firstResult.title} - ${firstResult.artist || firstResult.singer}`);
+                    
+                    // 獲取該結果的具體歌詞
+                    const lyricsUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(firstResult.name || firstResult.title)}/${encodeURIComponent(firstResult.artist || firstResult.singer)}`;
+                    const lyricsResponse = await axios.get(lyricsUrl, { timeout: 15000 });
+                    
+                    if (lyricsResponse.data && (lyricsResponse.data.success || lyricsResponse.data.lyrics)) {
+                        return res.json({
+                            success: true,
+                            lyrics: lyricsResponse.data.lyrics,
+                            type: lyricsResponse.data.type || 'plain',
+                            provider: 'SearchFallback',
+                            isFallback: true
+                        });
+                    }
+                }
+            } catch (searchError) {
+                console.error('❌ 搜尋回退失敗:', searchError.message);
+            }
+
+            console.log('ℹ️ 自動模式：所有來源及回退搜尋均未找到歌詞');
             return res.status(404).json({
                 success: false,
                 error: '未找到歌詞'

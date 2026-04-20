@@ -1514,7 +1514,6 @@ async initializeStorage() {
         this.devicesContent = document.getElementById('devices-content');
         
         // 設置模態框元素
-        this.settingsBtn = document.getElementById('settings-btn');
         this.settingsModal = document.getElementById('settings-modal');
         this.saveSettingsBtn = document.getElementById('save-settings-btn');
         this.closeSettingsModalBtn = document.getElementById('close-settings-modal');
@@ -3705,70 +3704,57 @@ async initializeStorage() {
             this.resetLyricsPlayback();
         }
 
-                // ✨ 穩定進度處理：防止 API 延遲導致的進度回跳
-                let finalProgress = data.progress;
-                
-                // 🚀 延遲補償：如果伺服器提供了數據採樣時的時間戳
-                // 🚨 修改：縮小補償範圍，僅在合理的網絡延遲範圍內進行補償（例如 0-3秒）
-                // 如果超過 3秒，很可能是時鐘不同步，此時補償反而會導致進度跳變
-                if (data.timestamp && data.isPlaying) {
-                    const latency = Date.now() - data.timestamp;
-                    if (latency > 0 && latency < 3000) { 
-                        data.progress += latency;
-                        this.log(`⏱️ 延遲補償: 偵測到 ${latency}ms 網絡延遲，已自動校準進度`);
-                    } else if (Math.abs(latency) >= 3000) {
-                        this.log(`⚠️ 偵測到較大的時鐘偏移 (${latency}ms)，跳過延遲補償以防止進度跳變`);
-                    }
-                }
+        // ✨ 穩定進度處理：防止 API 延遲導致的進度回跳
+        let finalProgress = data.progress;
         
-                if (!isNewTrack && data.isPlaying && this.currentTrack) {
-                    const currentEstimatedTime = (Date.now() - this.currentTrack.lastUpdated) + this.currentTrack.progress;
-                    const diff = data.progress - currentEstimatedTime;
-                    
-                    // 如果 API 回報的進度與本地估算相差小於 5 秒，則保留本地估算，避免抖動
-                    // 由於已經做了延遲補償，這裡的 diff 應該會非常小
-                    if (Math.abs(diff) < 5000) {
-                        this.log(`🛡️ 偵測到微小進度抖動 (${Math.round(diff)}ms)，維持本地估算`);
-                        finalProgress = currentEstimatedTime;
-                    } else {
-                        this.log(`⏩ 偵測到較大進度跳變 (${Math.round(diff)}ms)，套用 API 進度`);
-                        finalProgress = data.progress;
-                    }
-                }
+        // 🚀 關鍵：偵測來自伺服器的設定變更（用於跨裝置同步）
+        if (data.lyricsOffset !== undefined) {
+            // 如果伺服器的偏移與本地不同，且當前沒有正在手動調整，則同步
+            if (Math.abs(data.lyricsOffset - this.lyricsTimeOffset) > 100) {
+                this.log(`🔄 偵測到來自伺服器的偏移變更: ${data.lyricsOffset}ms`);
+                this.lyricsTimeOffset = data.lyricsOffset;
+                // 重新高亮歌詞以立即應用偏移
+                this.updateLyricsHighlight(finalProgress + this.lyricsTimeOffset);
+            }
+        }
+
+        // 🚀 關鍵：偵測手動歌詞變更（用於跨裝置同步）
+        if (data.manualLyrics && (!this.overriddenLyricsSource || this.overriddenLyricsSource.id !== data.manualLyrics.id)) {
+            this.log(`🔄 偵測到來自伺服器的手動歌詞變更: ${data.manualLyrics.source}`);
+            this.isLyricsOverridden = true;
+            this.overriddenLyricsSource = data.manualLyrics;
+            // 重新加載歌詞
+            this.safeLyricsLoad();
+        }
+
+        // 🚀 延遲補償：如果伺服器提供了數據採樣時的時間戳
+        if (data.timestamp && data.isPlaying) {
+            const latency = Date.now() - data.timestamp;
+            if (latency > 0 && latency < 5000) { 
+                finalProgress += latency;
+                this.log(`⏱️ 延遲補償: ${latency}ms`);
+            }
+        }
+
+        if (!isNewTrack && data.isPlaying && this.currentTrack) {
+            const currentEstimatedTime = (Date.now() - this.currentTrack.lastUpdated) + this.currentTrack.progress;
+            const diff = finalProgress - currentEstimatedTime;
+            
+            // 如果 API 回報的進度與本地估算相差較小，則保留本地估算，避免抖動
+            if (Math.abs(diff) < 3000 && !isProgressReset) {
+                this.log(`🛡️ 進度微調: ${Math.round(diff)}ms (保留本地估算)`);
+                finalProgress = currentEstimatedTime;
+            }
+        }
+
+        // 更新 currentTrack
+        this.currentTrack = {
+            ...data,
+            progress: finalProgress,
+            lastUpdated: Date.now()
+        };
         
-                // 🚀 關鍵：偵測來自伺服器的設定變更（用於跨裝置同步）
-                if (data.lyricsOffset !== undefined && data.lyricsOffset !== this.lyricsTimeOffset) {
-                    this.log(`🔄 偵測到來自伺服器的偏移變更: ${data.lyricsOffset}ms`);
-                    this.lyricsTimeOffset = data.lyricsOffset;
-                    // 重新渲染歌詞
-                    this.updateLyricsHighlight(finalProgress);
-                }
-
-                if (data.manualLyrics && (!this.overriddenLyricsSource || this.overriddenLyricsSource.id !== data.manualLyrics.id)) {
-                    this.log(`🔄 偵測到來自伺服器的手動歌詞變更: ${data.manualLyrics.source}`);
-                    this.overriddenLyricsSource = data.manualLyrics;
-                    this.isLyricsOverridden = true;
-                    // 強制清除本地緩存並重新抓取
-                    this.lyrics = [];
-                    this.currentLyricsTrackId = null; 
-                    this.fetchLyrics(data.artist, data.name, data.id);
-                } else if (!data.manualLyrics && this.isLyricsOverridden) {
-                    // 如果伺服器端重置了手動歌詞，本地也恢復自動模式
-                    this.log(`🔄 偵測到伺服器已重置手動歌詞，恢復自動模式`);
-                    this.isLyricsOverridden = false;
-                    this.overriddenLyricsSource = null;
-                    this.lyrics = [];
-                    this.currentLyricsTrackId = null;
-                    this.fetchLyrics(data.artist, data.name, data.id);
-                }
-
-                // 更新 currentTrack
-                this.currentTrack = data;
-                this.currentTrack.progress = finalProgress; // 使用處理後的進度
-                // 🚨 確保每次獲取數據都更新時間基準，這對進度計算至關重要
-                this.currentTrack.lastUpdated = Date.now(); 
-                
-                this.log(`🎵 歌曲數據已更新: ${data.name || 'Unknown'} - ${data.artist || 'Unknown Artist'} (進度: ${Math.round(finalProgress)}ms)`);
+        this.log(`🎵 歌曲數據已更新: ${data.name} (進度: ${Math.round(finalProgress)}ms)`);
         
                 try {
                     if (data.user_id !== undefined || data.is_premium !== undefined) {
@@ -4157,15 +4143,21 @@ async initializeStorage() {
                 // 使用更精確的計算：(現在時間 - 數據更新時間) + Spotify 報告的進度
                 const timeDiff = Date.now() - this.currentTrack.lastUpdated;
                 elapsedTime = timeDiff + this.currentTrack.progress;
-                
-                // 守衛：如果計算出的時間遠大於歌曲長度，鎖定在長度值
+
+                // 🚀 改進的循環處理：如果超出了總長度，且當前歌曲正在循環播放
                 if (elapsedTime > this.currentTrack.duration) {
-                    elapsedTime = this.currentTrack.duration;
+                    if (this.repeatState !== 'off') {
+                        // 如果是循環模式，讓它回到開頭繼續跑，而不是卡住
+                        // 這能解決「卡在最後一秒」的問題，直到下一次 API 輪詢校正
+                        elapsedTime = elapsedTime % this.currentTrack.duration;
+                        this.log(`🔄 偵測到本地進度超出長度，已模擬循環 (目前狀態: ${this.repeatState})`);
+                    } else {
+                        elapsedTime = this.currentTrack.duration;
+                    }
                 }
             } else {
                 elapsedTime = this.currentTrack.progress;
-            }
-            
+            }            
             // 每秒同步一次進度，防止累積誤差 (除了 requestAnimationFrame 以外的守衛)
             if (this.currentTrack.isPlaying) {
                 const progress = (elapsedTime / this.currentTrack.duration) * 100;
@@ -4302,8 +4294,17 @@ async loadLyrics() {
     this.updateStatus('lyrics', null);
 
     try {
-        const proxyUrl = `/api/lyrics/${encodeURIComponent(this.currentTrack.artist)}/${encodeURIComponent(this.currentTrack.name)}`;
-        const response = await fetch(proxyUrl);
+        let artist = this.currentTrack.artist;
+        let proxyUrl = `/api/lyrics/${encodeURIComponent(artist)}/${encodeURIComponent(this.currentTrack.name)}`;
+        let response = await fetch(proxyUrl);
+        
+        // 🚨 增強：如果 404 且包含多個歌手，嘗試只用第一個歌手
+        if (!response.ok && response.status === 404 && artist.includes(',')) {
+            const firstArtist = artist.split(',')[0].trim();
+            this.log(`⚠️ 完整歌手名 404，嘗試第一個歌手: ${firstArtist}`);
+            proxyUrl = `/api/lyrics/${encodeURIComponent(firstArtist)}/${encodeURIComponent(this.currentTrack.name)}`;
+            response = await fetch(proxyUrl);
+        }
         
         if (!response.ok) {
             throw new Error(`API 响应错误: ${response.status}`);
@@ -7097,7 +7098,7 @@ showOffsetMessage() {
         if (lyricsControls) {
             // 檢查是否已經添加過按鈕
             if (!document.getElementById('sync-all-btn')) {
-                const syncControlsHTML = `
+                /*let syncControlsHTML = `
                     <div class="sync-controls-section">
                         <button id="save-current-lyrics-btn" class="lyrics-control-btn" title="保存當前歌詞">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -7124,7 +7125,7 @@ showOffsetMessage() {
                             匯入
                         </button>
                     </div>
-                `;
+                `;*/
 
                 // 添加到歌詞控制區域的開頭
                 lyricsControls.insertAdjacentHTML('afterbegin', syncControlsHTML);

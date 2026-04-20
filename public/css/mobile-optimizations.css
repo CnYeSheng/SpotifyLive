@@ -76,7 +76,7 @@ body.touch-device textarea {
     
     body {
         overflow-x: hidden;
-        -webkit-text-size-adjust: 100%;
+        --webkit-text-size-adjust: 100%;
     }
     
     /* 容器內邊距調整 */
@@ -150,17 +150,39 @@ body.touch-device textarea {
     }
     
     /* 歌詞區域優化 */
-    .lyrics-container,
-    #lyrics {
-        max-height: 40vh !important;
-        padding: 15px !important;
-        font-size: 15px !important;
-        line-height: 1.8 !important;
+    .lyrics-container {
+        max-height: none !important;
+        padding: 20px 15px !important;
+        font-size: 1.1rem !important;
+        line-height: 1.6 !important;
+        text-align: center !important;
+        height: auto !important;
+        overflow-y: visible !important;
+    }
+    
+    #lyrics-content {
+        max-height: none !important;
+        height: auto !important;
+        text-align: center !important;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
     }
     
     .lyrics-line {
-        padding: 8px 10px !important;
-        margin: 4px 0 !important;
+        padding: 12px 15px !important;
+        margin: 6px 0 !important;
+        text-align: center !important;
+        width: 100% !important;
+        display: block !important;
+        font-size: 1.1rem !important;
+        transition: all 0.3s ease;
+    }
+    
+    .lyrics-line.active {
+        font-size: 1.3rem !important;
+        font-weight: bold !important;
+        transform: scale(1.05);
     }
     
     /* 下一首預覽 */
@@ -278,8 +300,11 @@ body.touch-device textarea {
     }
     
     .lyrics-container {
-        max-height: 45vh;
-        font-size: 16px;
+        max-height: none !important;
+        height: auto !important;
+        padding: 24px !important;
+        margin-bottom: 20px !important;
+        overflow-y: visible !important;
     }
 }
 

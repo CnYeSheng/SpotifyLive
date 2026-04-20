@@ -516,6 +516,11 @@ SpotifyLyricsPlayer.prototype.overrideLyrics = function(lyrics, lyricsType, sour
     this.displayLyrics();
     this.updateStatus('lyrics', true);
     
+    // 🚀 關鍵修正：立即更新高亮位置，防止上傳後不滾動/不亮
+    if (this.currentTrack) {
+        this.updateLyricsHighlight(this.currentTrack.progress);
+    }
+    
     // 添加覆蓋提示
     this.addLyricsOverrideIndicator(source);
 };
