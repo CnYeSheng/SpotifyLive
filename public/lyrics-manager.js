@@ -158,8 +158,39 @@ function initLyricsManager() {
         }
     };
 
-    SpotifyLyricsPlayer.prototype.processUploadedLyrics = function(content) {
+SpotifyLyricsPlayer.prototype.processUploadedLyrics = function(content) {
         const parsed = this.parseLyricsContent(content);
+        
+        // 保存到自定義歌詞存儲
+        if (this.currentTrack && this.currentTrack.id) {
+            const trackId = this.currentTrack.id;
+            const userLyricsData = {
+                trackId: trackId,
+                trackInfo: {
+                    id: trackId,
+                    name: this.currentTrack.name || '未知歌曲',
+                    artist: this.currentTrack.artist || '未知歌手',
+                    album: this.currentTrack.album || '未知專輯'
+                },
+                lyrics: content,
+                type: parsed.type,
+                timestamp: Date.now()
+            };
+            
+            // 保存到 localStorage
+            const userLyrics = JSON.parse(localStorage.getItem('userLyrics') || '{}');
+            userLyrics[trackId] = userLyricsData;
+            localStorage.setItem('userLyrics', JSON.stringify(userLyrics));
+            
+            // 廣播給其他分頁
+            if (this.controlChannel) {
+                this.controlChannel.postMessage({
+                    type: 'user-lyrics-updated',
+                    trackId: trackId,
+                    lyricsData: userLyricsData
+                });
+            }
+        }
         
         // 套用新歌詞
         this.overrideLyrics(parsed.lyrics, parsed.type, { 
@@ -168,9 +199,13 @@ function initLyricsManager() {
             artist: '用戶上傳'
         });
         
+        // 強制重新載入歌詞顯示
+        this.currentLyricIndex = 0;
+        this.displayLyrics();
+        
         this.hideLyricsUploadModal();
         this.showSuccessMessage(`✅ 歌詞已套用 (${parsed.type === 'synced' ? '同步' : '普通'}歌詞)`);
-        this.log(`📤 上傳歌詞已套用: ${parsed.lyrics.length} 行`);
+        this.log(`📤 上傳歌詞已套用：${parsed.lyrics.length} 行`);
     };
 
     // =================
