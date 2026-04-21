@@ -514,21 +514,61 @@ app.get('/api/search-lyrics/:query', async (req, res) => {
             } catch (e) {}
         }
         res.json({ success: true, results });
-    } catch (e) { res.json({ success: false, results: [] }); }
-});
+    const LYRICS_API_URL = process.env.LYRICS_API_URL || 'https://lyrics.cyss.us.eu.org';
 
-app.get('/api/lyrics/:artist/:title', async (req, res) => {
-    const artist = cleanArtist(req.params.artist);
-    const title = cleanMetadata(req.params.title);
-    const p = req.query.p;
-    let url = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`;
-    if (p) url += `?p=${p}`;
-    if (req.query.wbw !== undefined) url += (p ? '&wbw' : '?wbw');
-    try {
-        const r = await axios.get(url, { timeout: 30000 });
-        if (r.data?.lyrics) res.json({ success: true, lyrics: r.data.lyrics, type: r.data.type, provider: p || r.data.provider });
-        else res.status(404).json({ success: false });
-    } catch (e) { res.status(500).json({ success: false }); }
+    app.get('/api/lyrics/:artist/:title', async (req, res) => {
+        const artist = cleanArtist(req.params.artist);
+        const title = cleanMetadata(req.params.title);
+        const p = req.query.p;
+        const isWbw = req.query.wbw !== undefined;
+
+        // 1. 嘗試直接獲取
+        let url = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`;
+        if (p) url += `?p=${p}`;
+        if (isWbw) url += (p ? '&wbw' : '?wbw');
+
+        try {
+            console.log(`📡 Fetching lyrics: ${artist} - ${title} from ${url}`);
+            const r = await axios.get(url, { timeout: 30000 });
+
+            if (r.data && (r.data.success || r.data.lyrics)) {
+                return res.json({ 
+                    success: true, 
+                    lyrics: r.data.lyrics, 
+                    type: r.data.type, 
+                    provider: p || r.data.provider 
+                });
+            }
+
+            // 2. 如果直接獲取失敗且是自動模式，嘗試搜尋回退
+            if (!p) {
+                console.log(`🔍 Direct fetch failed, trying search fallback: ${artist} ${title}`);
+                const searchUrl = `${LYRICS_API_URL}/api/search/${encodeURIComponent(artist + ' ' + title)}`;
+                const searchRes = await axios.get(searchUrl, { timeout: 15000 });
+
+                if (searchRes.data && Array.isArray(searchRes.data) && searchRes.data.length > 0) {
+                    const first = searchRes.data[0];
+                    const fallbackUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(first.name || first.title)}/${encodeURIComponent(first.artist || first.singer)}`;
+                    const lyricsRes = await axios.get(fallbackUrl, { timeout: 15000 });
+
+                    if (lyricsRes.data && (lyricsRes.data.success || lyricsRes.data.lyrics)) {
+                        return res.json({
+                            success: true,
+                            lyrics: lyricsRes.data.lyrics,
+                            type: lyricsRes.data.type,
+                            provider: 'SearchFallback',
+                            isFallback: true
+                        });
+                    }
+                }
+            }
+
+            res.status(404).json({ success: false, error: '未找到歌词' });
+        } catch (e) {
+            console.error('❌ Lyrics fetch error:', e.message);
+            res.status(500).json({ success: false, error: e.message });
+        }
+    });
 });
 
 // 健康檢查端點（增強版）
