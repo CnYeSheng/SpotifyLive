@@ -2130,7 +2130,7 @@ body {
     
     .lyrics-line {
         text-align: center; /* 歌詞行置中 */
-        max-width: 80%; /* 限制寬度不超過80% */
+        /*max-width: 80%; */ /* 限制寬度不超過80% */ 
         margin: 0 auto; /* 置中顯示 */
         word-wrap: break-word; /* 自動換行 */
         word-break: break-word; /* 強制換行 */
@@ -2172,7 +2172,7 @@ body {
     
     .volume-control {
         margin: 16px 0;
-        flex-direction: column;
+        /* flex-direction: column; */
         gap: 8px;
         align-items: center;
     }
