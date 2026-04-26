@@ -127,7 +127,7 @@ app.use(monitor.createMonitoringMiddleware());
 const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI || `http://localhost:${PORT}/callback`;
-const LYRICS_API_URL = process.env.LYRICS_API_URL || 'https://api.lyrics.wmcc.jp.eu.org';
+const LYRICS_API_URL = process.env.LYRICS_API_URL || 'https://lyrics.cyss.us.eu.org';
 
 // Store user sessions (in production, use a proper database)
 const userSessions = new Map();
@@ -3380,7 +3380,7 @@ function isValidLyricsText(text) {
 // 測試歌詞 API 連接
 app.get('/api/test-lyrics', async (req, res) => {
     try {
-        const testUrl = '${LYRICS_API_URL}/api/lyrics/test/test';
+        const testUrl = `${LYRICS_API_URL}/api/lyrics/test/test`;
         const response = await axios.get(testUrl, {
             timeout: 5000,
             headers: {

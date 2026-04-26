@@ -96,7 +96,7 @@ app.use(express.urlencoded({ limit: '10mb', extended: true }));
 const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI;
-const LYRICS_API_URL = process.env.LYRICS_API_URL || 'https://api.lyrics.wmcc.jp.eu.org';
+const LYRICS_API_URL = process.env.LYRICS_API_URL || 'https://lyrics.cyss.us.eu.org';
 
 // Session tracking
 const userSessions = new Map();
@@ -514,9 +514,13 @@ app.get('/api/search-lyrics/:query', async (req, res) => {
             } catch (e) {}
         }
         res.json({ success: true, results });
-    const LYRICS_API_URL = process.env.LYRICS_API_URL || 'https://lyrics.cyss.us.eu.org';
+    } catch (error) {
+        console.error('Search lyrics error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
-    app.get('/api/lyrics/:artist/:title', async (req, res) => {
+app.get('/api/lyrics/:artist/:title', async (req, res) => {
         const artist = cleanArtist(req.params.artist);
         const title = cleanMetadata(req.params.title);
         const p = req.query.p;
@@ -569,7 +573,6 @@ app.get('/api/search-lyrics/:query', async (req, res) => {
             res.status(500).json({ success: false, error: e.message });
         }
     });
-});
 
 // 健康檢查端點（增強版）
 app.get('/api/health', (req, res) => {

@@ -7092,34 +7092,7 @@ showOffsetMessage() {
         if (lyricsControls) {
             // 檢查是否已經添加過按鈕
             if (!document.getElementById('sync-all-btn')) {
-                /*const syncControlsHTML = `
-                    <div class="sync-controls-section">
-                        <button id="save-current-lyrics-btn" class="lyrics-control-btn" title="保存當前歌詞">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M17,3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3M20,19H4V5H15.17L18,7.83V19Z"/>
-                            </svg>
-                            保存當前
-                        </button>
-                        <button id="sync-all-btn" class="lyrics-control-btn" title="同步所有歌詞到雲端">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
-                            </svg>
-                            同步全部
-                        </button>
-                        <button id="export-all-btn" class="lyrics-control-btn" title="匯出所有歌詞">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
-                            </svg>
-                            匯出全部
-                        </button>
-                        <button id="import-lyrics-btn" class="lyrics-control-btn" title="匯入歌詞">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/>
-                            </svg>
-                            匯入
-                        </button>
-                    </div>
-                `;*/
+                const syncControlsHTML = '';
 
                 // 添加到歌詞控制區域的開頭
                 lyricsControls.insertAdjacentHTML('afterbegin', syncControlsHTML);
