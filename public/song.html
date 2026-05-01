@@ -65,80 +65,17 @@
         <div id="album-name"></div>
     </div>
 
+    <script src="spotify-player-manager.js"></script>
     <script>
-        const API_BASE = window.location.origin + '/api';
-
-        // Session Management
-        let sessionId = new URLSearchParams(window.location.search).get('sessionId');
-
-        // Fetch session ID from server if not provided in URL
-        async function fetchSessionId() {
-            if (sessionId) return sessionId;
-            try {
-                const response = await fetch(`${API_BASE}/auth-status`, {
-                    credentials: 'include'
-                });
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.sessionId) {
-                        sessionId = data.sessionId;
-                        console.log('🔑 Retrieved session ID from server:', sessionId.substring(0, 8) + '...');
-                    }
-                }
-            } catch (e) {
-                console.warn('⚠️ Could not fetch session ID from server:', e.message);
-            }
-            return sessionId;
-        }
-
-        // Listen for session updates from main window
-        const authChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('spotify_auth') : null;
-        if (authChannel) {
-            authChannel.onmessage = (ev) => {
-                const d = ev.data || {};
-                if (d.type === 'session-update' && d.sessionId) {
-                    console.log('Received session ID from broadcast:', d.sessionId);
-                    sessionId = d.sessionId;
-                }
-            };
-        }
-
-        async function fetchCurrentTrack() {
-            try {
-                let url = `${API_BASE}/current-track`;
-                const params = new URLSearchParams();
-                if (sessionId) params.set('sessionId', sessionId);
-                if (params.toString()) url += '?' + params.toString();
-
-                const response = await fetch(url, {
-                    credentials: 'include',
-                    headers: {
-                        'X-Session-Id': sessionId || ''
-                    }
-                });
-                if (!response.ok) return null;
-                return await response.json();
-            } catch (e) {
-                return null;
-            }
-        }
-
         async function update() {
-            // Ensure we have a session ID before fetching
-            if (!sessionId) {
-                await fetchSessionId();
-            }
-
             try {
-                const trackData = await fetchCurrentTrack();
+                const trackData = await spotifyManager.fetchCurrentTrack();
                 if (!trackData) return;
-
-                const data = trackData;
                 
-                if (data.isPlaying || data.name) {
-                    document.getElementById('track-name').textContent = data.name;
-                    document.getElementById('artist-name').textContent = data.artist;
-                    document.getElementById('album-name').textContent = data.album;
+                if (trackData.isPlaying || trackData.name) {
+                    document.getElementById('track-name').textContent = trackData.name;
+                    document.getElementById('artist-name').textContent = trackData.artist;
+                    document.getElementById('album-name').textContent = trackData.album;
                 } else {
                     document.getElementById('track-name').textContent = "Not Playing";
                     document.getElementById('artist-name').textContent = "";

@@ -102,6 +102,11 @@
                             <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/>
                         </svg>
                     </button>
+                    <button id="stats-btn" class="control-btn" title="聽歌統計" data-i18n-title="player.stats" onclick="window.location.href='/stats.html'">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/>
+                        </svg>
+                    </button>
                     <button id="devices-btn" class="control-btn" title="投放設備" data-i18n-title="player.devices">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11z"/>
@@ -739,17 +744,20 @@
                     
                     // --- 新增：同步到服务器 Session (手动套用/搜索/上传) ---
                     if (this.sessionId && source && source.source !== 'auto_applied') {
-                        fetch('/api/control/manual-lyrics', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ 
-                                id: source.id || (source.title + '-' + source.artist),
-                                source: source.source || 'manual',
-                                title: source.title,
-                                artist: source.artist,
-                                sessionId: this.sessionId 
-                            })
-                        }).catch(e => console.error('同步手动歌词失败:', e));
+                        const syncId = source.id || (source.title && source.artist ? (source.title + '-' + source.artist) : null);
+                        if (syncId && syncId !== 'undefined' && syncId !== 'null') {
+                            fetch('/api/control/manual-lyrics', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ 
+                                    id: syncId,
+                                    source: source.source || 'manual',
+                                    title: source.title,
+                                    artist: source.artist,
+                                    sessionId: this.sessionId 
+                                })
+                            }).catch(e => console.error('同步手动歌词失敗:', e));
+                        }
                     }
                     // -----------------------------------------------------
 
@@ -855,7 +863,11 @@
                             this.log(`🔄 同步伺服器已重置手動歌詞，恢復自動獲取`);
                             this.isLyricsOverridden = false;
                             this.overriddenLyricsSource = null;
-                            this.checkLyrics(track); 
+                            if (typeof this.checkCurrentTrackWithRateLimit === 'function') {
+                                this.checkCurrentTrackWithRateLimit();
+                            } else {
+                                this.checkCurrentTrack();
+                            }
                         }
                     }
                     // ----------------------------------------------
@@ -883,6 +895,12 @@
             // 辅助函数：主页面根据服务器指令获取并切换歌词
             window.player.fetchManualLyricsFromServer = async function(manualData) {
                 try {
+                    // 防禦性檢查：避免無效 ID 導致的請求循環
+                    if (!manualData || !manualData.id || manualData.id === 'undefined' || manualData.id === 'null') {
+                        this.log('⚠️ 同步手動歌詞：無效的 ID，跳過獲取');
+                        return;
+                    }
+                    
                     const response = await fetch(`/api/get-lyrics/${manualData.source}/${encodeURIComponent(manualData.id)}`);
                     const data = await response.json();
                     if (data.success) {

@@ -641,6 +641,88 @@ class KVStorageManager {
         } catch (error) {}
         return null;
     }
+
+    // ✨ 保存聽歌歷史
+    async saveListeningHistory(req, historyData) {
+        try {
+            const userKey = this.generateUserKey(req);
+            const key = `${userKey}:history`;
+            
+            const data = {
+                ...historyData,
+                playedAt: historyData.playedAt || Date.now()
+            };
+
+            if (this.isKVAvailable && this.redis) {
+                // 使用 LPUSH 將新記錄添加到列表開頭
+                await this.redis.lpush(key, JSON.stringify(data));
+                // 只保留最近 2000 條記錄
+                await this.redis.ltrim(key, 0, 1999);
+            }
+            
+            // 內存緩存也更新
+            const cacheKey = `history:${userKey}`;
+            const history = this.cache.get(cacheKey) || [];
+            history.unshift(data);
+            if (history.length > 2000) history.pop();
+            this.cache.set(cacheKey, history);
+            
+            return true;
+        } catch (error) {
+            console.error('❌ 保存聽歌歷史失敗:', error.message);
+            return false;
+        }
+    }
+
+    // ✨ 獲取聽歌歷史
+    async getListeningHistory(req, days = 30, until = null) {
+        try {
+            const userKey = this.generateUserKey(req);
+            const key = `${userKey}:history`;
+            let since;
+            
+            if (days === 1) {
+                since = new Date();
+                since.setHours(0, 0, 0, 0);
+                since = since.getTime();
+            } else if (days === 2) {
+                // Special case for "Yesterday"
+                since = new Date();
+                since.setDate(since.getDate() - 1);
+                since.setHours(0, 0, 0, 0);
+                since = since.getTime();
+                if (!until) {
+                    until = new Date();
+                    until.setHours(0, 0, 0, 0);
+                    until = until.getTime();
+                }
+            } else {
+                since = Date.now() - (days * 24 * 60 * 60 * 1000);
+            }
+            
+            let history = [];
+            
+            // 1. 先從內存緩存獲取
+            const cacheKey = `history:${userKey}`;
+            if (this.cache.has(cacheKey)) {
+                history = this.cache.get(cacheKey);
+            } else if (this.isKVAvailable && this.redis) {
+                // 2. 從 Redis 獲取
+                const data = await this.redis.lrange(key, 0, -1);
+                history = data.map(item => typeof item === 'string' ? JSON.parse(item) : item);
+                this.cache.set(cacheKey, history);
+            }
+            
+            // 過濾時間
+            return history.filter(item => {
+                const playedAt = item.playedAt || item.timestamp;
+                return playedAt >= since && (!until || playedAt < until);
+            });
+        } catch (error) {
+            console.error('❌ 獲取聽歌歷史失敗:', error.message);
+            return [];
+        }
+    }
 }
 
 module.exports = KVStorageManager;

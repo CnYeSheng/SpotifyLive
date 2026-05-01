@@ -3608,15 +3608,14 @@ async initializeStorage() {
         this.log('🔄 重置歌詞播放狀態');
         this.currentLyricIndex = 0;
         this._lastScrolledIndex = -1;
-        
-        // 取消所有行的 'active' 和 'past' class
-        const lines = this.lyricsContent.querySelectorAll('.lyric-line');
+
+        // 取消所有行的 'current'、'upcoming' 和 'past' class
+        const lines = this.lyricsContent.querySelectorAll('.lyrics-line');
         lines.forEach(line => {
-            line.classList.remove('active', 'past');
+            line.classList.remove('current', 'upcoming', 'past');
         });
-        
-        // 平滑滾動到頂部
-        this.lyricsContent.scrollTo({ top: 0, behavior: 'smooth' });
+
+        // 平滑滾動到頂部        this.lyricsContent.scrollTo({ top: 0, behavior: 'smooth' });
         
         // updateLyrics 將在下一個動畫幀中處理正確的高亮
     }
@@ -3691,11 +3690,11 @@ async initializeStorage() {
         // 🚨 新增：檢查播放狀態是否從暫停變為播放
         const isResumed = this.currentTrack && !this.currentTrack.isPlaying && data.isPlaying;
 
-        // ✨ 偵測到歌曲重播或跳回開頭
+        // ✨ 偵測到歌曲重播或跳回開頭 (放寬偵測範圍以應對輪詢延遲)
         const isProgressReset = this.currentTrack && 
                                this.currentTrack.id === data.id && 
-                               data.progress < 2000 && // 新進度在歌曲開頭 (2秒內)
-                               this.currentTrack.progress > 2000; // 上次進度不在歌曲開頭
+                               data.progress < 10000 && // 新進度在歌曲開頭 (10秒內)
+                               data.progress < this.currentTrack.progress - 5000; // 且進度大幅回跳 (至少回跳 5 秒)
 
         this.log(`🔄 歌曲狀態: ${isNewTrack ? '新歌曲' : '相同歌曲'}, 恢復播放: ${isResumed}, 重播: ${isProgressReset}, 同名同歌手: ${isSameSongNameAndArtist}`);
 
@@ -3914,9 +3913,10 @@ async initializeStorage() {
         // 更新下一首預覽（使用一次性獲取的數據）
         this.updateNextTrackPreview();
         
-        // 如果是從暫停恢復、切換歌曲或偵測到重播，強制重啟進度追蹤
-        if (isResumed || isNewTrack || isProgressReset) {
-            this.log(`▶️ 重啟進度追蹤 (原因: ${isResumed ? '恢復' : isNewTrack ? '新歌' : '重播'})`);
+        // 如果正在播放，確保進度追蹤循環正在運行 (針對循環播放或長時間背景運行的修復)
+        const isProgressMissing = data.isPlaying && !this.animationFrameId;
+        if (isResumed || isNewTrack || isProgressReset || isProgressMissing) {
+            this.log(`▶️ 重啟進度追蹤 (原因: ${isResumed ? '恢復' : isNewTrack ? '新歌' : isProgressReset ? '重播' : '補償偵測'})`);
             this.updateProgress();
         }
         

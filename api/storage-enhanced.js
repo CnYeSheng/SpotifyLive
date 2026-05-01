@@ -76,150 +76,124 @@ class EnhancedStorage {
                     });
 
                     // Create table if not exists
+                    await this.db.query(`
+                        CREATE TABLE IF NOT EXISTS song_settings (
+                            id SERIAL PRIMARY KEY,
+                            user_id TEXT NOT NULL,
+                            track_id TEXT NOT NULL,
+                            offset_ms INTEGER DEFAULT 0,
+                            manual_lyrics_id TEXT,
+                            manual_lyrics_source VARCHAR(50),
+                            manual_lyrics_title TEXT,
+                            manual_lyrics_artist TEXT,
+                            lyrics_content TEXT,
+                            meta_data TEXT,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    `);
 
                     await this.db.query(`
-
-                        CREATE TABLE IF NOT EXISTS song_settings (
-
+                        CREATE TABLE IF NOT EXISTS listening_history (
                             id SERIAL PRIMARY KEY,
-
                             user_id TEXT NOT NULL,
-
                             track_id TEXT NOT NULL,
-
-                            offset_ms INTEGER DEFAULT 0,
-
-                            manual_lyrics_id TEXT,
-
-                            manual_lyrics_source VARCHAR(50),
-
-                            manual_lyrics_title TEXT,
-
-                            manual_lyrics_artist TEXT,
-
-                            lyrics_content TEXT,
-
-                            meta_data TEXT,
-
-                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-
+                            track_name TEXT,
+                            artist_name TEXT,
+                            album_name TEXT,
+                            duration_ms INTEGER,
+                            played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                         )
-
                     `);
 
                     // Create unique index using hash to avoid size limits
-
                     await this.db.query(`
-
                         CREATE UNIQUE INDEX IF NOT EXISTS song_settings_user_track_unique 
-
                         ON song_settings (MD5(user_id || '::' || track_id))
-
                     `);
-
                     // Create hash-based lookup index for queries (avoids size limits)
+                    await this.db.query(`
+                        CREATE INDEX IF NOT EXISTS song_settings_user_track_lookup_hash 
+                        ON song_settings (MD5(user_id), MD5(track_id))
+                    `);
 
                     await this.db.query(`
-
-                        CREATE INDEX IF NOT EXISTS song_settings_user_track_lookup_hash 
-
-                        ON song_settings (MD5(user_id), MD5(track_id))
-
+                        CREATE INDEX IF NOT EXISTS listening_history_user_played_at 
+                        ON listening_history (user_id, played_at)
                     `);
-
                     console.log('✅ PostgreSQL connected');
-
                     break;
 
-                
-
-                case 'mysql':
-
-                case 'mariadb':
-
+                    case 'mysql':
+                    case 'mariadb':
                     const mysql = require('mysql2/promise');
-
                     this.db = await mysql.createPool(process.env.DATABASE_URL);
-
                     await this.db.execute(`
-
                         CREATE TABLE IF NOT EXISTS song_settings (
-
                             id INT AUTO_INCREMENT PRIMARY KEY,
-
                             user_id TEXT NOT NULL,
-
                             track_id TEXT NOT NULL,
-
                             offset_ms INTEGER DEFAULT 0,
-
                             manual_lyrics_id TEXT,
-
                             manual_lyrics_source VARCHAR(50),
-
                             manual_lyrics_title TEXT,
-
                             manual_lyrics_artist TEXT,
-
                             lyrics_content TEXT,
-
                             meta_data TEXT,
-
                             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
                             UNIQUE KEY song_settings_user_track_unique (user_id(255), track_id(255)),
-
                             KEY song_settings_user_track_lookup (user_id(255), track_id(255))
-
                         )
-
                     `);
-
+                    await this.db.execute(`
+                        CREATE TABLE IF NOT EXISTS listening_history (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            user_id VARCHAR(255) NOT NULL,
+                            track_id VARCHAR(255) NOT NULL,
+                            track_name TEXT,
+                            artist_name TEXT,
+                            album_name TEXT,
+                            duration_ms INT,
+                            played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            INDEX (user_id),
+                            INDEX (played_at)
+                        )
+                    `);
                     console.log('✅ MySQL/MariaDB connected');
-
                     break;
 
-
-
-                case 'mongo':
-
-                case 'mongodb':
-
+                    case 'mongo':
+                    case 'mongodb':
                     const mongoose = require('mongoose');
-
                     await mongoose.connect(process.env.DATABASE_URL);
-
                     const schema = new mongoose.Schema({
-
                         userId: { type: String, required: true },
-
                         trackId: { type: String, required: true },
-
                         offset: { type: Number, default: 0 },
-
                         manualLyricsId: String,
-
                         manualLyricsSource: String,
-
                         manualLyricsTitle: String,
-
                         manualLyricsArtist: String,
-
                         lyricsContent: String, // JSON string or text
-
                         metaData: String,
-
                         updatedAt: { type: Date, default: Date.now }
-
                     });
-
                     schema.index({ userId: 1, trackId: 1 }, { unique: true });
-
                     this.db = mongoose.model('SongSetting', schema);
 
+                    const historySchema = new mongoose.Schema({
+                        userId: { type: String, required: true },
+                        trackId: { type: String, required: true },
+                        trackName: String,
+                        artistName: String,
+                        albumName: String,
+                        durationMs: Number,
+                        playedAt: { type: Date, default: Date.now }
+                    });
+                    historySchema.index({ userId: 1, playedAt: -1 });
+                    this.historyModel = mongoose.model('ListeningHistory', historySchema);
                     console.log('✅ MongoDB connected');
-
                     break;
+
 
                 
 
@@ -792,6 +766,148 @@ class EnhancedStorage {
 
     }
 
+    async saveListeningHistory(userId, historyData) {
+        if (!userId || !historyData) return;
+        try {
+            if (this.dbType === 'postgres') {
+                await this.db.query(`
+                    INSERT INTO listening_history (user_id, track_id, track_name, artist_name, album_name, duration_ms, played_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                `, [
+                    userId,
+                    historyData.trackId,
+                    historyData.trackName,
+                    historyData.artistName,
+                    historyData.albumName,
+                    historyData.durationMs,
+                    historyData.playedAt || new Date()
+                ]);
+            } else if (this.dbType === 'mysql' || this.dbType === 'mariadb') {
+                await this.db.execute(`
+                    INSERT INTO listening_history (user_id, track_id, track_name, artist_name, album_name, duration_ms, played_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                `, [
+                    userId,
+                    historyData.trackId,
+                    historyData.trackName,
+                    historyData.artistName,
+                    historyData.albumName,
+                    historyData.durationMs,
+                    historyData.playedAt || new Date()
+                ]);
+            } else if (this.dbType === 'mongo') {
+                await this.historyModel.create({
+                    userId,
+                    trackId: historyData.trackId,
+                    trackName: historyData.trackName,
+                    artistName: historyData.artistName,
+                    albumName: historyData.albumName,
+                    durationMs: historyData.durationMs,
+                    playedAt: historyData.playedAt || new Date()
+                });
+            } else if (this.dbType === 'json') {
+                const historyKey = `history_${userId}`;
+                if (!this.localData[historyKey]) this.localData[historyKey] = [];
+                this.localData[historyKey].push({
+                    ...historyData,
+                    playedAt: historyData.playedAt || new Date().toISOString()
+                });
+                // Keep only last 1000 items in JSON for performance
+                if (this.localData[historyKey].length > 1000) {
+                    this.localData[historyKey] = this.localData[historyKey].slice(-1000);
+                }
+                fs.writeFile(this.localFilePath, JSON.stringify(this.localData, null, 2), (err) => {
+                    if (err) console.error('❌ Failed to save history to local JSON:', err);
+                });
+            }
+        } catch (e) {
+            console.error('Save history error:', e.message);
+        }
+    }
+
+    async getListeningHistory(userId, days = 30, until = null) {
+        if (!userId) return [];
+        const since = new Date();
+        if (days === 1) {
+            since.setHours(0, 0, 0, 0);
+        } else if (days === 2) {
+            // Special case for "Yesterday"
+            since.setDate(since.getDate() - 1);
+            since.setHours(0, 0, 0, 0);
+            if (!until) {
+                until = new Date();
+                until.setHours(0, 0, 0, 0);
+            }
+        } else {
+            since.setDate(since.getDate() - days);
+        }
+        
+        try {
+            if (this.dbType === 'postgres') {
+                let query = 'SELECT * FROM listening_history WHERE user_id = $1 AND played_at >= $2';
+                const params = [userId, since];
+                if (until) {
+                    query += ' AND played_at < $3';
+                    params.push(until);
+                }
+                query += ' ORDER BY played_at DESC';
+                const res = await this.db.query(query, params);
+                return res.rows.map(row => ({
+                    trackId: row.track_id,
+                    trackName: row.track_name,
+                    artistName: row.artist_name,
+                    albumName: row.album_name,
+                    durationMs: row.duration_ms,
+                    playedAt: row.played_at
+                }));
+            } else if (this.dbType === 'mysql' || this.dbType === 'mariadb') {
+                let query = 'SELECT * FROM listening_history WHERE user_id = ? AND played_at >= ?';
+                const params = [userId, since];
+                if (until) {
+                    query += ' AND played_at < ?';
+                    params.push(until);
+                }
+                query += ' ORDER BY played_at DESC';
+                const [rows] = await this.db.execute(query, params);
+                return rows.map(row => ({
+                    trackId: row.track_id,
+                    trackName: row.track_name,
+                    artistName: row.artist_name,
+                    albumName: row.album_name,
+                    durationMs: row.duration_ms,
+                    playedAt: row.played_at
+                }));
+            } else if (this.dbType === 'mongo') {
+                const query = {
+                    userId,
+                    playedAt: { $gte: since }
+                };
+                if (until) query.playedAt.$lt = until;
+                const docs = await this.historyModel.find(query).sort({ playedAt: -1 });
+                return docs.map(doc => ({
+                    trackId: doc.trackId,
+                    trackName: doc.trackName,
+                    artistName: doc.artistName,
+                    albumName: doc.albumName,
+                    durationMs: doc.durationMs,
+                    playedAt: doc.playedAt
+                }));
+            } else if (this.dbType === 'json') {
+                const historyKey = `history_${userId}`;
+                if (this.localData[historyKey]) {
+                    return this.localData[historyKey]
+                        .filter(item => {
+                            const d = new Date(item.playedAt);
+                            return d >= since && (!until || d < until);
+                        })
+                        .reverse();
+                }
+            }
+        } catch (e) {
+            console.error('Get history error:', e.message);
+        }
+        return [];
+    }
 }
 
 module.exports = EnhancedStorage;

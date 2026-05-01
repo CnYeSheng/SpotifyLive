@@ -136,19 +136,55 @@ const userSessions = new Map();
 const songChangeTracker = new Map();
 
 // Track song changes and refresh token every 2 songs
-function trackSongChange(sessionId, trackId) {
+async function trackSongChange(sessionId, track, userId) {
     try {
-        if (!sessionId || !trackId) return;
+        if (!sessionId || !track) return;
+        const trackId = typeof track === 'string' ? track : track.id;
         
         const tracker = songChangeTracker.get(sessionId) || {
             currentTrackId: null,
             songCount: 0,
-            lastRefreshTime: Date.now()
+            lastRefreshTime: Date.now(),
+            startTime: Date.now(),
+            trackInfo: null
         };
         
         // Only count if it's a different song
         if (tracker.currentTrackId !== trackId) {
+            // Save history for the PREVIOUS track
+            if (tracker.currentTrackId && tracker.trackInfo) {
+                const now = Date.now();
+                const listenedDuration = now - tracker.startTime;
+                // Cap duration to actual track duration
+                const trackDuration = tracker.trackInfo.duration_ms || tracker.trackInfo.duration || 0;
+                const durationMs = Math.min(listenedDuration, trackDuration);
+                
+                // Only save if listened for more than 5 seconds
+                if (durationMs > 5000) {
+                    try {
+                        const historyData = {
+                            trackId: tracker.currentTrackId,
+                            trackName: tracker.trackInfo.name,
+                            artistName: Array.isArray(tracker.trackInfo.artists) ? tracker.trackInfo.artists.map(a => a.name).join(', ') : (tracker.trackInfo.artist || tracker.trackInfo.artistName),
+                            albumName: tracker.trackInfo.album?.name || tracker.trackInfo.album || tracker.trackInfo.albumName,
+                            durationMs: durationMs,
+                            playedAt: new Date(tracker.startTime)
+                        };
+
+                        if (process.env.VERCEL && kvStorage.isKVAvailable) {
+                            await kvStorage.saveListeningHistory({ headers: { 'x-spotify-user-id': userId, 'x-session-id': sessionId } }, historyData);
+                        } else if (userId) {
+                            await enhancedStorage.saveListeningHistory(userId, historyData);
+                        }
+                    } catch (e) {
+                        console.error('Failed to save listening history:', e);
+                    }
+                }
+            }
+
             tracker.currentTrackId = trackId;
+            tracker.trackInfo = track;
+            tracker.startTime = Date.now();
             tracker.songCount++;
             
             console.log(`🎵 Song changed for session ${sessionId.substring(0, 8)}... Count: ${tracker.songCount}`);
@@ -162,7 +198,6 @@ function trackSongChange(sessionId, trackId) {
                 // Trigger token refresh
                 const session = userSessions.get(sessionId);
                 if (session) {
-                    // Use a safe wrapper or ensure refreshAccessToken handles its own errors
                     refreshAccessToken(session, sessionId).then(refreshed => {
                         if (refreshed) {
                             console.log(`✅ Token refreshed successfully after song change`);
@@ -174,9 +209,8 @@ function trackSongChange(sessionId, trackId) {
                     });
                 }
             }
-            
-            songChangeTracker.set(sessionId, tracker);
         }
+        songChangeTracker.set(sessionId, tracker);
     } catch (error) {
         console.error('❌ Error inside trackSongChange:', error);
     }
@@ -573,7 +607,7 @@ app.get('/api/current-track', async (req, res) => {
 
         // Track song change for token refresh
         try {
-            trackSongChange(sessionId, track.id);
+            trackSongChange(sessionId, track, user.id);
         } catch (e) {
             console.error('❌ Error in trackSongChange:', e);
         }
@@ -1585,6 +1619,52 @@ app.get('/api/auth-status', async (req, res) => {
 });
 
 // Get available devices
+app.get('/api/stats/listening', async (req, res) => {
+    try {
+        const days = parseInt(req.query.days) || 7;
+        let until = null;
+        if (days === 2) {
+            until = new Date();
+            until.setHours(0, 0, 0, 0);
+        }
+        
+        let history = [];
+        const session = await getUserSession(req);
+        const userId = session ? await getSpotifyUserId(session, req.sessionId) : null;
+
+        if (process.env.VERCEL && kvStorage.isKVAvailable) {
+            history = await kvStorage.getListeningHistory(req, days, until);
+        } else if (userId) {
+            history = await enhancedStorage.getListeningHistory(userId, days, until);
+        }
+        
+        // Calculate stats
+        const totalDuration = history.reduce((sum, item) => sum + (item.durationMs || 0), 0);
+        
+        const songCounts = {};
+        history.forEach(item => {
+            const key = `${item.trackName} - ${item.artistName}`;
+            songCounts[key] = (songCounts[key] || 0) + 1;
+        });
+        
+        const topSongs = Object.entries(songCounts)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10);
+            
+        res.json({
+            success: true,
+            totalDurationMs: totalDuration,
+            songCount: history.length,
+            topSongs,
+            history: history.slice(0, 50)
+        });
+    } catch (error) {
+        console.error('Failed to fetch listening stats:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 app.get('/api/devices', async (req, res) => {
     const session = await getUserSession(req);
     if (!session) {

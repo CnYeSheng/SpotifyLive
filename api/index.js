@@ -102,13 +102,51 @@ const LYRICS_API_URL = process.env.LYRICS_API_URL || 'https://lyrics.cyss.us.eu.
 const userSessions = new Map();
 const songChangeTracker = new Map();
 
-function trackSongChange(sessionId, trackId) {
+async function trackSongChange(sessionId, track, userId) {
     try {
-        if (!sessionId || !trackId) return;
-        const tracker = songChangeTracker.get(sessionId) || { currentTrackId: null, songCount: 0, lastRefreshTime: Date.now() };
+        if (!sessionId || !track) return;
+        const trackId = typeof track === 'string' ? track : track.id;
+        const tracker = songChangeTracker.get(sessionId) || { 
+            currentTrackId: null, 
+            songCount: 0, 
+            lastRefreshTime: Date.now(),
+            startTime: Date.now(),
+            trackInfo: null
+        };
+        
         if (tracker.currentTrackId !== trackId) {
+            // Save history for the PREVIOUS track
+            if (tracker.currentTrackId && tracker.trackInfo) {
+                const now = Date.now();
+                const listenedDuration = now - tracker.startTime;
+                // Cap duration to actual track duration
+                const trackDuration = tracker.trackInfo.duration_ms || tracker.trackInfo.duration || 0;
+                const durationMs = Math.min(listenedDuration, trackDuration);
+                
+                // Only save if listened for more than 5 seconds
+                if (durationMs > 5000) {
+                    try {
+                        await storage.saveListeningHistory({ 
+                            headers: { 'x-spotify-user-id': userId, 'x-session-id': sessionId } 
+                        }, {
+                            trackId: tracker.currentTrackId,
+                            trackName: tracker.trackInfo.name,
+                            artistName: Array.isArray(tracker.trackInfo.artists) ? tracker.trackInfo.artists.map(a => a.name).join(', ') : tracker.trackInfo.artist,
+                            albumName: tracker.trackInfo.album?.name || tracker.trackInfo.album,
+                            durationMs: durationMs,
+                            playedAt: new Date(tracker.startTime)
+                        });
+                    } catch (e) {
+                        console.error('Failed to save listening history:', e);
+                    }
+                }
+            }
+
             tracker.currentTrackId = trackId;
+            tracker.trackInfo = track;
+            tracker.startTime = Date.now();
             tracker.songCount++;
+            
             if (tracker.songCount >= 2) {
                 tracker.songCount = 0;
                 tracker.lastRefreshTime = Date.now();
@@ -117,7 +155,9 @@ function trackSongChange(sessionId, trackId) {
             }
             songChangeTracker.set(sessionId, tracker);
         }
-    } catch (error) {}
+    } catch (error) {
+        console.error('Track song change error:', error);
+    }
 }
 
 function generateSessionId() {
@@ -291,9 +331,46 @@ app.get('/api/current-track', async (req, res) => {
             manualLyrics: settings.manualLyrics || null
         };
         session.currentTrackCache = { data: currentTrack, timestamp: Date.now() };
-        trackSongChange(req.sessionId, track.id);
+        trackSongChange(req.sessionId, track, userId);
         res.json(currentTrack);
     } catch (error) { res.status(500).json({ error: 'Failed to fetch current track' }); }
+});
+
+app.get('/api/stats/listening', async (req, res) => {
+    try {
+        const days = parseInt(req.query.days) || 7;
+        let until = null;
+        if (days === 2) {
+            until = new Date();
+            until.setHours(0, 0, 0, 0);
+        }
+        const history = await storage.getListeningHistory(req, days, until);
+        
+        // Calculate stats
+        const totalDuration = history.reduce((sum, item) => sum + (item.durationMs || 0), 0);
+        
+        const songCounts = {};
+        history.forEach(item => {
+            const key = `${item.trackName} - ${item.artistName}`;
+            songCounts[key] = (songCounts[key] || 0) + 1;
+        });
+        
+        const topSongs = Object.entries(songCounts)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10);
+            
+        res.json({
+            success: true,
+            totalDurationMs: totalDuration,
+            songCount: history.length,
+            topSongs,
+            history: history.slice(0, 50) // Return only last 50 for history list
+        });
+    } catch (error) {
+        console.error('Failed to fetch listening stats:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
 });
 
 app.get('/api/devices', async (req, res) => {

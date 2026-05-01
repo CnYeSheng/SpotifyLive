@@ -171,6 +171,26 @@ class StorageFacade {
         return await this.enhancedStorage.deleteSongSettings(userId, trackId);
     }
     
+    // --- Listening History ---
+    async saveListeningHistory(req, historyData) {
+        const userId = req.headers?.['x-spotify-user-id'];
+        if (this.isVercel && this.kvManager.isKVAvailable) {
+            return await this.kvManager.saveListeningHistory(req, historyData);
+        } else if (userId) {
+            return await this.enhancedStorage.saveListeningHistory(userId, historyData);
+        }
+    }
+
+    async getListeningHistory(req, days = 30) {
+        const userId = req.headers?.['x-spotify-user-id'];
+        if (this.isVercel && this.kvManager.isKVAvailable) {
+            return await this.kvManager.getListeningHistory(req, days);
+        } else if (userId) {
+            return await this.enhancedStorage.getListeningHistory(userId, days);
+        }
+        return [];
+    }
+    
     // ✨ 雲端同步相關方法
     async getAllUserLyrics(req) {
         if (!req) throw new Error("Request is required to get all user lyrics.");

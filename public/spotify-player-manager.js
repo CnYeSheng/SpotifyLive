@@ -61,8 +61,15 @@ class SpotifyPlayerManager {
             if (response.ok) {
                 const data = await response.json();
                 if (data.sessionId) {
+                    const oldSessionId = this.sessionId;
                     this.sessionId = data.sessionId;
                     console.log('🔑 Retrieved session ID from server:', this.sessionId.substring(0, 8) + '...');
+                    
+                    // Broadcast session update to other tabs if it changed
+                    if (oldSessionId !== this.sessionId) {
+                        this.broadcastSession(this.sessionId);
+                    }
+                    
                     return this.sessionId;
                 } else if (force) {
                     this.sessionId = null;
@@ -168,6 +175,12 @@ class SpotifyPlayerManager {
     broadcast(type, data) {
         if (this.controlChannel) {
             this.controlChannel.postMessage({ type, ...data });
+        }
+    }
+
+    broadcastSession(sessionId) {
+        if (this.authChannel) {
+            this.authChannel.postMessage({ type: 'session-update', sessionId });
         }
     }
 }

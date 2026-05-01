@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>聽歌統計 - Spotify 即時歌詞播放器</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        .stats-container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            color: white;
+        }
+        .stats-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+        .time-range-selector {
+            display: flex;
+            gap: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 5px;
+            border-radius: 12px;
+        }
+        .range-btn {
+            background: transparent;
+            border: none;
+            color: #ccc;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 14px;
+        }
+        .range-btn.active {
+            background: #1db954;
+            color: white;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 16px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1db954;
+            margin-bottom: 5px;
+        }
+        .stat-label {
+            color: #aaa;
+            font-size: 14px;
+        }
+        .top-songs-section, .history-section {
+            margin-bottom: 40px;
+        }
+        h3 {
+            margin-bottom: 20px;
+            font-size: 20px;
+            border-left: 4px solid #1db954;
+            padding-left: 12px;
+        }
+        .song-list {
+            list-style: none;
+            padding: 0;
+        }
+        .song-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.03);
+            margin-bottom: 8px;
+            border-radius: 12px;
+            transition: background 0.2s;
+        }
+        .song-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+        .song-info {
+            display: flex;
+            flex-direction: column;
+        }
+        .song-name {
+            font-weight: 600;
+            font-size: 15px;
+        }
+        .song-artist {
+            font-size: 13px;
+            color: #aaa;
+        }
+        .song-count, .song-time {
+            color: #1db954;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .back-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255,255,255,0.1);
+            border-left-color: #1db954;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="loading" class="loading-overlay">
+        <div class="spinner"></div>
+    </div>
+
+    <div class="stats-container">
+        <div class="stats-header">
+            <a href="/" class="back-btn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+                </svg>
+                返回播放器
+            </a>
+            <div class="time-range-selector">
+                <button class="range-btn active" data-days="1">今日</button>
+                <button class="range-btn" data-days="2">昨天</button>
+                <button class="range-btn" data-days="7">7天</button>
+                <button class="range-btn" data-days="30">30天</button>
+                <button class="range-btn" data-days="60">60天</button>
+                <button class="range-btn" data-days="90">90天</button>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div id="total-time" class="stat-value">0h 0m</div>
+                <div class="stat-label">總聽歌時長</div>
+            </div>
+            <div class="stat-card">
+                <div id="total-songs" class="stat-value">0</div>
+                <div class="stat-label">聽歌次數</div>
+            </div>
+            <div class="stat-card">
+                <div id="unique-songs" class="stat-value">0</div>
+                <div class="stat-label">不重複歌曲</div>
+            </div>
+        </div>
+
+        <div class="top-songs-section">
+            <h3>🔥 聽得最多</h3>
+            <ul id="top-songs-list" class="song-list">
+                <!-- Top songs will be loaded here -->
+            </ul>
+        </div>
+
+        <div class="history-section">
+            <h3>🕒 最近聽過</h3>
+            <ul id="history-list" class="song-list">
+                <!-- Recent history will be loaded here -->
+            </ul>
+        </div>
+    </div>
+
+    <script src="stats.js"></script>
+</body>
+</html>
