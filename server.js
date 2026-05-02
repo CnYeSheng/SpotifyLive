@@ -1692,12 +1692,29 @@ app.get('/api/stats/listening', async (req, res) => {
         
         const songCounts = {};
         history.forEach(item => {
-            const key = `${item.trackName} - ${item.artistName}`;
-            songCounts[key] = (songCounts[key] || 0) + 1;
+            // 確保 trackName 和 artistName 存在，如果不存在則嘗試從其他欄位獲取
+            let trackName = item.trackName || item.name || item.title || '未知歌曲';
+            let artistName = item.artistName || item.artist || '未知歌手';
+            
+            // 如果是舊格式（name 欄位包含 " - "），則進行分割
+            if (!item.trackName && item.name && item.name.includes(' - ')) {
+                const parts = item.name.split(' - ');
+                trackName = parts[0] || item.name;
+                artistName = parts.slice(1).join(' - ') || '未知歌手';
+            }
+            
+            const key = `${trackName}|||${artistName}`;
+            if (!songCounts[key]) {
+                songCounts[key] = {
+                    trackName: trackName,
+                    artistName: artistName,
+                    count: 0
+                };
+            }
+            songCounts[key].count += 1;
         });
         
-        const topSongs = Object.entries(songCounts)
-            .map(([name, count]) => ({ name, count }))
+        const topSongs = Object.values(songCounts)
             .sort((a, b) => b.count - a.count)
             .slice(0, 10);
             
