@@ -139,8 +139,12 @@ const userSessions = new Map();
 // Track song changes for token refresh
 const songChangeTracker = new Map();
 
+// Cache for context names (playlist/album/artist names) - expires after 1 hour
+const contextNameCache = new Map();
+const CONTEXT_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
 // Track song changes and refresh token every 2 songs
-async function trackSongChange(sessionId, track, userId, progressMs = 0) {
+async function trackSongChange(sessionId, track, userId, progressMs = 0, accessToken = null) {
     try {
         if (!sessionId) return;
         const trackId = track ? (typeof track === 'string' ? track : track.id) : null;
@@ -164,6 +168,54 @@ async function trackSongChange(sessionId, track, userId, progressMs = 0) {
             tracker.startTime = Date.now();
             tracker.lastProgress = progressMs;
             tracker.isInitialRecorded = false; // Reset for new song/loop
+            
+            // 調試：檢查傳入的 track.context
+            console.log(`🔍 trackSongChange: track.context =`, track.context ? {
+                type: track.context.type,
+                uri: track.context.uri
+            } : 'null');
+            
+            // 儲存 context（歌單）資訊
+            if (track.context) {
+                const contextType = track.context.type;
+                const contextUri = track.context.uri || track.context.href;
+                
+                // 如果是歌單，嘗試從 URI 提取 ID 並獲取名稱
+                let contextName = null;
+                if (contextType === 'playlist' && contextUri) {
+                    const playlistId = contextUri.split(':')[2];
+                    if (playlistId) {
+                        // 如果有 accessToken，立即獲取歌單名稱
+                        if (accessToken) {
+                            try {
+                                contextName = await fetchPlaylistName(playlistId, accessToken, sessionId);
+                            } catch (err) {
+                                console.log(`⚠️ Failed to fetch playlist name: ${err.message}`);
+                                contextName = `Playlist:${playlistId}`;
+                            }
+                        } else {
+                            // 否則使用臨時名稱
+                            contextName = `Playlist:${playlistId}`;
+                        }
+                    }
+                } else if (contextType === 'album') {
+                    // 專輯直接使用 track.album.name
+                    contextName = track.album?.name || null;
+                } else if (contextType === 'artist') {
+                    // 藝術家使用第一個藝人名稱
+                    contextName = Array.isArray(track.artists) ? track.artists[0]?.name : null;
+                }
+                
+                tracker.context = {
+                    type: contextType,
+                    name: contextName,
+                    uri: contextUri
+                };
+                console.log(`📀 tracker.context set to:`, tracker.context);
+            } else {
+                tracker.context = null;
+                console.log(`⚠️ No context in track, setting tracker.context to null`);
+            }
 
             if (trackId) {
                 tracker.songCount++;
@@ -227,7 +279,11 @@ async function trackSongChange(sessionId, track, userId, progressMs = 0) {
                             artistName: Array.isArray(tracker.trackInfo.artists) ? tracker.trackInfo.artists.map(a => a.name).join(', ') : (tracker.trackInfo.artist || tracker.trackInfo.artistName),
                             albumName: tracker.trackInfo.album?.name || tracker.trackInfo.album || tracker.trackInfo.albumName,
                             durationMs: durationMs,
-                            playedAt: new Date(tracker.startTime)
+                            playedAt: new Date(tracker.startTime),
+                            // 記錄歌單/上下文資訊
+                            contextType: tracker.context?.type || null,
+                            contextName: tracker.context?.name || null,
+                            contextUri: tracker.context?.uri || null
                         };
 
                         if (process.env.VERCEL && kvStorage.isKVAvailable) {
@@ -603,6 +659,13 @@ app.get('/api/current-track', async (req, res) => {
         const track = data.item;
         const device = data.device;
         const user = userResponse.data;
+        
+        // 調試：記錄 Spotify API 返回的 context 資訊
+        console.log(`🔍 Spotify API context:`, data.context ? {
+            type: data.context.type,
+            uri: data.context.uri,
+            href: data.context.href
+        } : 'null');
 
         // Fetch saved settings for this track (using userId for synchronization)
         const savedSettings = await enhancedStorage.getSongSettings(user.id, track.id) || {};
@@ -643,10 +706,23 @@ app.get('/api/current-track', async (req, res) => {
                 name: queueResponse.data.queue[0].name,
                 artist: queueResponse.data.queue[0].artists.map(a => a.name).join(', ')
             } : null,
+            // 包含 context（歌單）資訊
+            context: data.context ? {
+                type: data.context.type,
+                uri: data.context.uri,
+                name: data.context.name || (await getContextName(data.context, session.accessToken, sessionId))
+            } : null,
             // Control state - Use saved settings or defaults
             lyricsOffset: savedSettings.offset || 0,
             manualLyrics: savedSettings.manualLyrics || null
         };
+        
+        // 調試：記錄 context 資訊
+        if (currentTrack.context) {
+            console.log(`📀 Context returned: type=${currentTrack.context.type}, name=${currentTrack.context.name}, uri=${currentTrack.context.uri}`);
+        } else {
+            console.log(`⚠️ No context in response`);
+        }
         
         // Save to cache
         session.currentTrackCache = {
@@ -654,9 +730,10 @@ app.get('/api/current-track', async (req, res) => {
             timestamp: Date.now()
         };
 
-        // Track song change for token refresh
+        // Track song change for token refresh - pass track with context attached
         try {
-            trackSongChange(sessionId, track, user.id, currentTrack.progress);
+            const trackWithContext = { ...track, context: data.context };
+            trackSongChange(sessionId, trackWithContext, user.id, currentTrack.progress, session.accessToken);
         } catch (e) {
             console.error('❌ Error in trackSongChange:', e);
         }
@@ -1667,6 +1744,143 @@ app.get('/api/auth-status', async (req, res) => {
     });
 });
 
+// 輔助函數：獲取歌單名稱（帶緩存）
+async function fetchPlaylistName(playlistId, accessToken, sessionId) {
+    const cacheKey = `playlist:${playlistId}`;
+    
+    // 檢查緩存
+    if (contextNameCache.has(cacheKey)) {
+        const cached = contextNameCache.get(cacheKey);
+        if (Date.now() - cached.timestamp < CONTEXT_CACHE_TTL) {
+            return cached.name;
+        }
+        // 過期，刪除
+        contextNameCache.delete(cacheKey);
+    }
+    
+    try {
+        const response = await makeSpotifyAPICall(
+            `https://api.spotify.com/v1/playlists/${playlistId}`,
+            {
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            },
+            sessionId
+        );
+        const name = response.data?.name || null;
+        
+        // 存入緩存
+        if (name) {
+            contextNameCache.set(cacheKey, {
+                name,
+                timestamp: Date.now()
+            });
+        }
+        
+        return name;
+    } catch (error) {
+        console.error(`❌ Failed to fetch playlist name for ${playlistId}:`, error.message);
+        return null;
+    }
+}
+
+// 獲取 context 名稱（歌單、專輯、藝術家）（帶緩存）
+async function getContextName(context, accessToken, sessionId) {
+    if (!context) return null;
+    
+    try {
+        const contextType = context.type;
+        const contextUri = context.uri;
+        
+        if (contextType === 'playlist' && contextUri) {
+            const playlistId = contextUri.split(':')[2];
+            if (playlistId) {
+                return await fetchPlaylistName(playlistId, accessToken, sessionId);
+            }
+        } else if (contextType === 'album') {
+            const albumId = contextUri?.split(':')[2];
+            if (albumId) {
+                const cacheKey = `album:${albumId}`;
+                
+                // 檢查緩存
+                if (contextNameCache.has(cacheKey)) {
+                    const cached = contextNameCache.get(cacheKey);
+                    if (Date.now() - cached.timestamp < CONTEXT_CACHE_TTL) {
+                        return cached.name;
+                    }
+                    contextNameCache.delete(cacheKey);
+                }
+                
+                const response = await makeSpotifyAPICall(
+                    `https://api.spotify.com/v1/albums/${albumId}`,
+                    {
+                        headers: { 'Authorization': `Bearer ${accessToken}` }
+                    },
+                    sessionId
+                );
+                const name = response.data?.name || null;
+                
+                if (name) {
+                    contextNameCache.set(cacheKey, {
+                        name,
+                        timestamp: Date.now()
+                    });
+                }
+                
+                return name;
+            }
+        } else if (contextType === 'artist') {
+            const artistId = contextUri?.split(':')[2];
+            if (artistId) {
+                const cacheKey = `artist:${artistId}`;
+                
+                // 檢查緩存
+                if (contextNameCache.has(cacheKey)) {
+                    const cached = contextNameCache.get(cacheKey);
+                    if (Date.now() - cached.timestamp < CONTEXT_CACHE_TTL) {
+                        return cached.name;
+                    }
+                    contextNameCache.delete(cacheKey);
+                }
+                
+                const response = await makeSpotifyAPICall(
+                    `https://api.spotify.com/v1/artists/${artistId}`,
+                    {
+                        headers: { 'Authorization': `Bearer ${accessToken}` }
+                    },
+                    sessionId
+                );
+                const name = response.data?.name || null;
+                
+                if (name) {
+                    contextNameCache.set(cacheKey, {
+                        name,
+                        timestamp: Date.now()
+                    });
+                }
+                
+                return name;
+            }
+        }
+    } catch (error) {
+        console.error(`❌ Failed to fetch context name:`, error.message);
+    }
+    
+    return null;
+}
+
+// 清理過期的緩存
+function cleanupContextCache() {
+    const now = Date.now();
+    for (const [key, value] of contextNameCache.entries()) {
+        if (now - value.timestamp >= CONTEXT_CACHE_TTL) {
+            contextNameCache.delete(key);
+        }
+    }
+}
+
+// 每 30 分鐘清理一次緩存
+setInterval(cleanupContextCache, 30 * 60 * 1000);
+
 // Get available devices
 app.get('/api/stats/listening', async (req, res) => {
     try {
@@ -1717,17 +1931,183 @@ app.get('/api/stats/listening', async (req, res) => {
         const topSongs = Object.values(songCounts)
             .sort((a, b) => b.count - a.count)
             .slice(0, 10);
+        
+        // 計算歌單統計
+        const playlistCounts = {};
+        
+        // 調試：檢查歷史數據中的 context 資訊
+        const withContext = history.filter(item => item.contextType === 'playlist').length;
+        console.log(`📊 Total history: ${history.length}, With playlist context: ${withContext}`);
+        if (withContext > 0) {
+            console.log(`📀 Sample context data:`, history.find(item => item.contextType === 'playlist'));
+        }
+        
+        history.forEach(item => {
+            if (item.contextType === 'playlist') {
+                // 優先使用 contextName，如果是 "Playlist:{id}" 格式則從 URI 提取 ID 作為 key
+                let playlistKey = item.contextName;
+                let displayName = item.contextName;
+                let playlistUri = item.contextUri;
+                
+                // 如果 name 是 "Playlist:{id}" 格式，嘗試從 URI 獲取更可靠的 ID
+                if (item.contextName && item.contextName.startsWith('Playlist:')) {
+                    const extractedId = item.contextName.split(':')[1];
+                    playlistKey = extractedId;
+                    // 保持 displayName 為原始名稱（稍後會被真實名稱覆蓋）
+                } else if (!item.contextName && item.contextUri) {
+                    // 如果沒有 name，從 URI 提取
+                    const extractedId = item.contextUri.split(':')[2];
+                    playlistKey = extractedId;
+                    displayName = `Playlist:${extractedId}`;
+                }
+                
+                if (!playlistKey) return;
+                
+                if (!playlistCounts[playlistKey]) {
+                    playlistCounts[playlistKey] = {
+                        name: displayName,
+                        uri: playlistUri,
+                        count: 0,
+                        tracks: new Set()
+                    };
+                }
+                
+                // 如果後來獲取了真實名稱，更新它
+                if (item.contextName && !item.contextName.startsWith('Playlist:') && playlistCounts[playlistKey].name.startsWith('Playlist:')) {
+                    playlistCounts[playlistKey].name = item.contextName;
+                }
+                
+                playlistCounts[playlistKey].count += 1;
+                playlistCounts[playlistKey].tracks.add(item.trackId);
+            }
+        });
+        
+        // 轉換為陣列並計算不重複歌曲數
+        const topPlaylists = Object.values(playlistCounts)
+            .map(playlist => ({
+                name: playlist.name,
+                uri: playlist.uri,
+                count: playlist.count,
+                uniqueTracks: playlist.tracks.size
+            }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10);
             
         res.json({
             success: true,
             totalDurationMs: totalDuration,
             songCount: history.length,
             topSongs,
+            topPlaylists,
             history: history.slice(0, 50)
         });
     } catch (error) {
         console.error('Failed to fetch listening stats:', error);
         res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 獲取歌單詳情（包含用戶播放過的歌曲）
+app.get('/api/playlist/:id', async (req, res) => {
+    try {
+        const session = await getUserSession(req);
+        if (!session) {
+            return res.status(401).json({ error: 'Not authenticated' });
+        }
+        
+        const playlistId = req.params.id;
+        const sessionId = req.headers['x-session-id'] || req.sessionId;
+        const userId = session ? await getSpotifyUserId(session, sessionId) : null;
+        
+        // 檢查 token 是否需要刷新
+        if (Date.now() >= session.expiresAt) {
+            const refreshed = await refreshAccessToken(session, sessionId);
+            if (!refreshed) {
+                return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+            }
+        }
+        
+        // 獲取歌單基本資訊
+        const playlistResponse = await makeSpotifyAPICall(
+            `https://api.spotify.com/v1/playlists/${playlistId}`,
+            {
+                headers: { 'Authorization': `Bearer ${session.accessToken}` }
+            },
+            sessionId
+        );
+        
+        const playlist = playlistResponse.data;
+        
+        // 獲取歌單中的所有歌曲（用於匹配）
+        const tracksResponse = await makeSpotifyAPICall(
+            `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`,
+            {
+                headers: { 'Authorization': `Bearer ${session.accessToken}` }
+            },
+            sessionId
+        );
+        
+        const allTracks = tracksResponse.data.items.map(item => ({
+            id: item.track?.id,
+            name: item.track?.name,
+            artist: item.track?.artists?.map(a => a.name).join(', '),
+            album: item.track?.album?.name,
+            image: item.track?.album?.images?.[0]?.url,
+            duration_ms: item.track?.duration_ms
+        })).filter(track => track.id !== null);
+        
+        console.log(`🔍 Playlist ${playlistId}: ${allTracks.length} total tracks in playlist`);
+        
+        // 獲取用戶的聽歌歷史
+        let history = [];
+        if (process.env.VERCEL && kvStorage.isKVAvailable) {
+            history = await kvStorage.getListeningHistory(req, 90, null); // 獲取最近 90 天的歷史
+        } else if (userId) {
+            history = await enhancedStorage.getListeningHistory(userId, 90, null);
+        }
+        
+        console.log(`📊 User history: ${history.length} records`);
+        
+        // 找出歌單中用戶實際播放過的歌曲
+        const playedTrackIds = new Set(history.map(item => item.trackId));
+        const playedTracks = allTracks.filter(track => playedTrackIds.has(track.id));
+        
+        console.log(`✅ Found ${playedTracks.length} played tracks in this playlist`);
+        
+        // 為每首播放過的歌曲添加播放次數
+        const trackPlayCounts = {};
+        history.forEach(item => {
+            if (playedTrackIds.has(item.trackId)) {
+                trackPlayCounts[item.trackId] = (trackPlayCounts[item.trackId] || 0) + 1;
+            }
+        });
+        
+        // 添加播放次數到歌曲資訊
+        const playedTracksWithCount = playedTracks.map(track => ({
+            ...track,
+            playCount: trackPlayCounts[track.id] || 0
+        })).sort((a, b) => b.playCount - a.playCount); // 按播放次數排序
+        
+        res.json({
+            success: true,
+            playlist: {
+                id: playlist.id,
+                name: playlist.name,
+                description: playlist.description,
+                image: playlist.images?.[0]?.url,
+                total_tracks: playlist.tracks.total,
+                owner: playlist.owner?.display_name,
+                played_tracks_count: playedTracks.length
+            },
+            tracks: playedTracksWithCount,
+            allTracks: allTracks // 也返回所有歌曲供參考
+        });
+    } catch (error) {
+        console.error('Failed to fetch playlist details:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
     }
 });
 

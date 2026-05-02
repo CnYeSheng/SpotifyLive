@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const totalSongsEl = document.getElementById('total-songs');
     const uniqueSongsEl = document.getElementById('unique-songs');
     const topSongsList = document.getElementById('top-songs-list');
+    const topPlaylistsList = document.getElementById('top-playlists-list');
     const historyList = document.getElementById('history-list');
 
     // 分享功能相關元素
@@ -179,6 +180,98 @@ document.addEventListener('DOMContentLoaded', () => {
             </li>
         `).join('') || '<li class="song-item">暫無數據</li>';
 
+        // Update Top Playlists List
+        if (topPlaylistsList && data.topPlaylists) {
+            topPlaylistsList.innerHTML = data.topPlaylists.map(playlist => {
+                let playlistId = null;
+                let displayName = escapeHtml(playlist.name);
+                
+                if (playlist.name.startsWith('Playlist:')) {
+                    playlistId = playlist.name.split(':')[1];
+                    displayName = '載入中...';
+                } else if (playlist.uri) {
+                    playlistId = playlist.uri.split(':')[2];
+                }
+                
+                return `
+                    <div class="playlist-group">
+                        <li class="song-item playlist-item" data-playlist-id="${playlistId || ''}" data-playlist-name="${escapeHtml(playlist.name)}">
+                            <div class="song-info">
+                                <span class="song-name">${displayName}</span>
+                                <span class="song-artist">${playlist.uniqueTracks} 首歌曲 · ${playlist.count} 次播放</span>
+                            </div>
+                            <svg class="expand-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+                            </svg>
+                        </li>
+                        <div class="playlist-tracks-expanded" id="playlist-${playlistId}" style="display: none;">
+                            <div class="loading-tracks">載入中...</div>
+                        </div>
+                    </div>
+                `;
+            }).join('') || '<li class="song-item">暫無歌單數據</li>';
+            
+            // 添加點擊事件 - 展開/收起
+            document.querySelectorAll('.playlist-item').forEach(item => {
+                item.addEventListener('click', async () => {
+                    const playlistId = item.dataset.playlistId;
+                    const playlistName = item.dataset.playlistName;
+                    const expandedDiv = document.getElementById(`playlist-${playlistId}`);
+                    const icon = item.querySelector('.expand-icon');
+                    
+                    if (!playlistId || !expandedDiv) return;
+                    
+                    // 如果已經展開，則收起
+                    if (expandedDiv.style.display !== 'none') {
+                        expandedDiv.style.display = 'none';
+                        icon.style.transform = 'rotate(0deg)';
+                        item.classList.remove('expanded');
+                        return;
+                    }
+                    
+                    // 展開並載入歌曲
+                    expandedDiv.style.display = 'block';
+                    icon.style.transform = 'rotate(180deg)';
+                    item.classList.add('expanded');
+                    
+                    // 如果還沒有載入過，則 fetch
+                    if (!expandedDiv.dataset.loaded) {
+                        try {
+                            console.log('🔍 Fetching tracks for playlist:', playlistId);
+                            const response = await fetch(`/api/playlist/${playlistId}`);
+                            const data = await response.json();
+                            
+                            if (data.success && data.tracks && data.tracks.length > 0) {
+                                expandedDiv.innerHTML = `
+                                    <div class="tracks-header">
+                                        <span>${data.tracks.length} 首播放過的歌曲</span>
+                                    </div>
+                                    <ul class="expanded-track-list">
+                                        ${data.tracks.map((track, index) => `
+                                            <li class="expanded-track-item">
+                                                <span class="track-num">${index + 1}</span>
+                                                <div class="expanded-track-info">
+                                                    <div class="expanded-track-name">${escapeHtml(track.name)}</div>
+                                                    <div class="expanded-track-artist">${escapeHtml(track.artist || '未知歌手')}</div>
+                                                </div>
+                                                <div class="expanded-track-count">${track.playCount} 次</div>
+                                            </li>
+                                        `).join('')}
+                                    </ul>
+                                `;
+                                expandedDiv.dataset.loaded = 'true';
+                            } else {
+                                expandedDiv.innerHTML = '<div class="no-tracks">這個歌單還沒有播放過任何歌曲</div>';
+                            }
+                        } catch (error) {
+                            console.error('Failed to fetch playlist tracks:', error);
+                            expandedDiv.innerHTML = '<div class="error-tracks">載入失敗，請稍後再試</div>';
+                        }
+                    }
+                });
+            });
+        }
+
         // Update History List
         historyList.innerHTML = data.history.map(item => {
             const date = new Date(item.playedAt);
@@ -277,7 +370,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             ${top5.length > 0 ? `
             <div class="share-card-top5">
-                <div class="share-card-top5-title">🔥 Top 5</div>
+                <div class="share-card-top5-title">🔥 Top 5 歌曲</div>
                 <ul class="share-top5-list">
                     ${top5.map((song, index) => {
                         return `
@@ -288,6 +381,26 @@ document.addEventListener('DOMContentLoaded', () => {
                                     <div class="share-top5-artist">${escapeHtml(song.artistName)}</div>
                                 </div>
                                 <div class="share-top5-count">${song.count} 次</div>
+                            </li>
+                        `;
+                    }).join('')}
+                </ul>
+            </div>
+            ` : ''}
+
+            ${data.topPlaylists && data.topPlaylists.length > 0 ? `
+            <div class="share-card-top5" style="margin-top: 20px;">
+                <div class="share-card-top5-title">📀 Top 3 歌單</div>
+                <ul class="share-top5-list">
+                    ${data.topPlaylists.slice(0, 3).map((playlist, index) => {
+                        return `
+                            <li class="share-top5-item">
+                                <div class="share-top5-rank">${index + 1}</div>
+                                <div class="share-top5-info">
+                                    <div class="share-top5-name">${escapeHtml(playlist.name)}</div>
+                                    <div class="share-top5-artist">${playlist.uniqueTracks} 首歌曲</div>
+                                </div>
+                                <div class="share-top5-count">${playlist.count} 次</div>
                             </li>
                         `;
                     }).join('')}
@@ -320,6 +433,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // 格式化時間（毫秒轉為 M:SS）
+    function formatDuration(ms) {
+        if (!ms) return '0:00';
+        const minutes = Math.floor(ms / 60000);
+        const seconds = Math.floor((ms % 60000) / 1000);
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
     }
 
     // Stop refresh when page is hidden

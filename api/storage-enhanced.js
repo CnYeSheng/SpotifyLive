@@ -101,7 +101,10 @@ class EnhancedStorage {
                             artist_name TEXT,
                             album_name TEXT,
                             duration_ms INTEGER,
-                            played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                            played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            context_type TEXT,
+                            context_name TEXT,
+                            context_uri TEXT
                         )
                     `);
 
@@ -154,6 +157,9 @@ class EnhancedStorage {
                             album_name TEXT,
                             duration_ms INT,
                             played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            context_type VARCHAR(50),
+                            context_name TEXT,
+                            context_uri TEXT,
                             INDEX (user_id),
                             INDEX (played_at)
                         )
@@ -187,7 +193,10 @@ class EnhancedStorage {
                         artistName: String,
                         albumName: String,
                         durationMs: Number,
-                        playedAt: { type: Date, default: Date.now }
+                        playedAt: { type: Date, default: Date.now },
+                        contextType: String,
+                        contextName: String,
+                        contextUri: String
                     });
                     historySchema.index({ userId: 1, playedAt: -1 });
                     this.historyModel = mongoose.model('ListeningHistory', historySchema);
@@ -802,8 +811,8 @@ class EnhancedStorage {
         try {
             if (this.dbType === 'postgres') {
                 await this.db.query(`
-                    INSERT INTO listening_history (user_id, track_id, track_name, artist_name, album_name, duration_ms, played_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    INSERT INTO listening_history (user_id, track_id, track_name, artist_name, album_name, duration_ms, played_at, context_type, context_name, context_uri)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 `, [
                     userId,
                     historyData.trackId,
@@ -811,12 +820,15 @@ class EnhancedStorage {
                     historyData.artistName,
                     historyData.albumName,
                     historyData.durationMs,
-                    historyData.playedAt || new Date()
+                    historyData.playedAt || new Date(),
+                    historyData.contextType || null,
+                    historyData.contextName || null,
+                    historyData.contextUri || null
                 ]);
             } else if (this.dbType === 'mysql' || this.dbType === 'mariadb') {
                 await this.db.execute(`
-                    INSERT INTO listening_history (user_id, track_id, track_name, artist_name, album_name, duration_ms, played_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO listening_history (user_id, track_id, track_name, artist_name, album_name, duration_ms, played_at, context_type, context_name, context_uri)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 `, [
                     userId,
                     historyData.trackId,
@@ -824,7 +836,10 @@ class EnhancedStorage {
                     historyData.artistName,
                     historyData.albumName,
                     historyData.durationMs,
-                    historyData.playedAt || new Date()
+                    historyData.playedAt || new Date(),
+                    historyData.contextType || null,
+                    historyData.contextName || null,
+                    historyData.contextUri || null
                 ]);
             } else if (this.dbType === 'mongo') {
                 await this.historyModel.create({
@@ -834,7 +849,10 @@ class EnhancedStorage {
                     artistName: historyData.artistName,
                     albumName: historyData.albumName,
                     durationMs: historyData.durationMs,
-                    playedAt: historyData.playedAt || new Date()
+                    playedAt: historyData.playedAt || new Date(),
+                    contextType: historyData.contextType || null,
+                    contextName: historyData.contextName || null,
+                    contextUri: historyData.contextUri || null
                 });
             } else if (this.dbType === 'json') {
                 const historyKey = `history_${userId}`;
@@ -889,7 +907,10 @@ class EnhancedStorage {
                     artistName: row.artist_name,
                     albumName: row.album_name,
                     durationMs: row.duration_ms,
-                    playedAt: row.played_at
+                    playedAt: row.played_at,
+                    contextType: row.context_type,
+                    contextName: row.context_name,
+                    contextUri: row.context_uri
                 }));
             } else if (this.dbType === 'mysql' || this.dbType === 'mariadb') {
                 let query = 'SELECT * FROM listening_history WHERE user_id = ? AND played_at >= ?';
@@ -906,7 +927,10 @@ class EnhancedStorage {
                     artistName: row.artist_name,
                     albumName: row.album_name,
                     durationMs: row.duration_ms,
-                    playedAt: row.played_at
+                    playedAt: row.played_at,
+                    contextType: row.context_type,
+                    contextName: row.context_name,
+                    contextUri: row.context_uri
                 }));
             } else if (this.dbType === 'mongo') {
                 const query = {
@@ -921,7 +945,10 @@ class EnhancedStorage {
                     artistName: doc.artistName,
                     albumName: doc.albumName,
                     durationMs: doc.durationMs,
-                    playedAt: doc.playedAt
+                    playedAt: doc.playedAt,
+                    contextType: doc.contextType,
+                    contextName: doc.contextName,
+                    contextUri: doc.contextUri
                 }));
             } else if (this.dbType === 'json') {
                 const historyKey = `history_${userId}`;
