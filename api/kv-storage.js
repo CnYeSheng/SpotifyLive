@@ -642,6 +642,48 @@ class KVStorageManager {
         return null;
     }
 
+    // ✨ 更新最後一條聽歌歷史的時長
+    async updateLastHistoryDuration(req, durationMs) {
+        try {
+            const userKey = this.generateUserKey(req);
+            const key = `${userKey}:history`;
+            const cacheKey = `history:${userKey}`;
+            
+            // 1. 先獲取最新的歷史記錄
+            let history = [];
+            if (this.cache.has(cacheKey)) {
+                history = this.cache.get(cacheKey);
+            } else if (this.isKVAvailable && this.redis) {
+                const data = await this.redis.lrange(key, 0, 0);
+                if (data && data.length > 0) {
+                    history = [typeof data[0] === 'string' ? JSON.parse(data[0]) : data[0]];
+                }
+            }
+
+            if (history.length > 0) {
+                history[0].durationMs = durationMs;
+                
+                // 2. 更新 Redis
+                if (this.isKVAvailable && this.redis) {
+                    // LSET 用於更新列表中指定索引的元素
+                    await this.redis.lset(key, 0, JSON.stringify(history[0]));
+                }
+                
+                // 3. 更新內存緩存
+                if (this.cache.has(cacheKey)) {
+                    const cachedHistory = this.cache.get(cacheKey);
+                    if (cachedHistory.length > 0) {
+                        cachedHistory[0].durationMs = durationMs;
+                    }
+                }
+            }
+            return true;
+        } catch (error) {
+            console.error('❌ 更新聽歌歷史時長失敗:', error.message);
+            return false;
+        }
+    }
+
     // ✨ 保存聽歌歷史
     async saveListeningHistory(req, historyData) {
         try {

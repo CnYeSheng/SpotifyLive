@@ -233,6 +233,9 @@ class SpotifyLyricsPlayer {
         // 初始化自動同步功能
         this.initAutoSync();
 
+        // 即時統計初始化
+        this.initLiveStats();
+
         // 初始化增強 Session 管理器
         this.initSessionManager();
 
@@ -4796,13 +4799,9 @@ async loadLyrics() {
             this.applyTheme(theme);
         }
         
-        // 如果語言改變，使用 I18nManager 切換語言
+        // 如果語言改變，可以執行額外邏輯
         if (language !== (localStorage.getItem('current_language') || 'zh-TW')) {
-            if (typeof I18nManager !== 'undefined' && I18nManager.setLanguage) {
-                I18nManager.setLanguage(language);
-            } else {
-                this.loadLanguage(language);
-            }
+            this.loadLanguage(language);
         }
         
         // 關閉模態框
@@ -8330,6 +8329,153 @@ document.addEventListener('visibilitychange', () => {
         }
     }
 });
+
+// 即時統計功能
+SpotifyLyricsPlayer.prototype.initLiveStats = function() {
+    this.log('📊 初始化即時統計功能');
+    
+    this.localTotalDurationMs = 0;
+    this.lastTickTime = Date.now();
+    
+    // 立即更新一次
+    if (this.sessionId) {
+        this.updateLiveStats();
+    }
+    
+    // 設定定時更新 (每 5 秒，從伺服器獲取權威數據)
+    this.liveStatsInterval = setInterval(() => {
+        if (this.sessionId) {
+            this.updateLiveStats();
+        }
+    }, 5000);
+
+    // 設定秒級跳動 (每 1 秒，本地樂觀更新)
+    // 即使 Spotify 還沒回傳「已暫停」，我們也會繼續跳動，直到下次 API 同步時自動校正回來
+    this.liveTickInterval = setInterval(() => {
+        const now = Date.now();
+        const delta = now - this.lastTickTime;
+        this.lastTickTime = now;
+        
+        if (this.currentTrack?.isPlaying && this.localTotalDurationMs > 0) {
+            this.localTotalDurationMs += delta;
+            this.renderTotalTime(this.localTotalDurationMs);
+            
+            // 同時更新最近歷史中「正在播放」的那一項時長
+            this.tickRecentHistoryCurrentItem(delta);
+        }
+    }, 1000);
+
+    // 綁定面板事件
+    document.getElementById('close-history-btn')?.addEventListener('click', () => {
+        document.getElementById('recent-history-panel')?.classList.add('hidden');
+    });
+
+    document.getElementById('stats-btn')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        const panel = document.getElementById('recent-history-panel');
+        if (panel) {
+            panel.classList.toggle('hidden');
+            if (!panel.classList.contains('hidden')) {
+                this.updateLiveStats();
+            }
+        }
+    });
+};
+
+SpotifyLyricsPlayer.prototype.renderTotalTime = function(ms) {
+    const totalTimeEl = document.getElementById('live-total-time');
+    if (totalTimeEl) {
+        const hours = Math.floor(ms / (1000 * 60 * 60));
+        const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((ms % (1000 * 60)) / 1000);
+        totalTimeEl.textContent = `${hours}小時 ${minutes}分 ${seconds}秒`;
+    }
+};
+
+SpotifyLyricsPlayer.prototype.tickRecentHistoryCurrentItem = function(delta) {
+    const firstItemDuration = document.querySelector('.history-item:first-child .history-duration');
+    const firstItemName = document.querySelector('.history-item:first-child .history-track-name')?.textContent;
+    
+    // 如果最近歷史的第一項就是目前正在播放的歌，就讓它也一起跳動
+    if (firstItemDuration && this.currentTrack && firstItemName === this.currentTrack.name) {
+        // 解析目前顯示的時間 (M:SS)
+        const parts = firstItemDuration.textContent.split(':');
+        if (parts.length === 2) {
+            let totalSeconds = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+            // 這裡我們暫存一個毫秒值在元素上，避免解析誤差
+            if (!firstItemDuration.dataset.ms) {
+                firstItemDuration.dataset.ms = totalSeconds * 1000;
+            }
+            
+            let currentMs = parseInt(firstItemDuration.dataset.ms) + delta;
+            firstItemDuration.dataset.ms = currentMs;
+            
+            const m = Math.floor(currentMs / 60000);
+            const s = Math.floor((currentMs % 60000) / 1000);
+            firstItemDuration.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+        }
+    }
+};
+
+SpotifyLyricsPlayer.prototype.updateLiveStats = async function() {
+    if (!this.sessionId) return;
+    
+    try {
+        const response = await fetch('/api/stats/listening?days=1', {
+            headers: { 'X-Session-Id': this.sessionId }
+        });
+        
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        if (data.success) {
+            // 從伺服器同步總時長 (權威數據，會校正本地的偏差)
+            this.localTotalDurationMs = data.totalDurationMs;
+            this.renderTotalTime(this.localTotalDurationMs);
+            this.lastTickTime = Date.now(); // 同步後重置計時點
+            
+            const songCountEl = document.getElementById('live-song-count');
+            if (songCountEl) {
+                songCountEl.textContent = `${data.songCount}首`;
+            }
+            
+            // 更新最近歷史面板
+            this.updateRecentHistoryUI(data.history);
+        }
+    } catch (error) {
+        this.log(`❌ 更新即時統計失敗: ${error.message}`);
+    }
+};
+
+SpotifyLyricsPlayer.prototype.updateRecentHistoryUI = function(history) {
+    const listEl = document.getElementById('recent-history-list');
+    if (!listEl) return;
+    
+    if (!history || history.length === 0) {
+        listEl.innerHTML = '<li class="history-item"><div class="history-item-info">暫無歷史數據</div></li>';
+        return;
+    }
+    
+    listEl.innerHTML = history.slice(0, 15).map(item => {
+        const date = new Date(item.playedAt);
+        const timeStr = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+        
+        const dMs = item.durationMs || 0;
+        const dMin = Math.floor(dMs / 60000);
+        const dSec = Math.floor((dMs % 60000) / 1000);
+        const durationStr = `${dMin}:${dSec.toString().padStart(2, '0')}`;
+        
+        return `
+            <li class="history-item">
+                <div class="history-item-info">
+                    <span class="history-track-name">${this.escapeHtml(item.trackName)}</span>
+                    <span class="history-artist-name">${this.escapeHtml(item.artistName)} • ${timeStr}</span>
+                </div>
+                <span class="history-duration">${durationStr}</span>
+            </li>
+        `;
+    }).join('');
+};
 
 // URL变化时检查是否需要登录（处理SPA路由）
 let lastUrl = location.href;

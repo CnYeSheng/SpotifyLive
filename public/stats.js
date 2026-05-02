@@ -10,9 +10,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const historyList = document.getElementById('history-list');
 
     let currentDays = 1;
+    let refreshInterval;
 
     // Fetch stats on load
     fetchStats(currentDays);
+    startAutoRefresh();
 
     // Range selector click handler
     rangeBtns.forEach(btn => {
@@ -21,42 +23,69 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.classList.add('active');
             currentDays = parseInt(btn.dataset.days);
             fetchStats(currentDays);
+            
+            // Restart auto-refresh to sync with the manual click
+            stopAutoRefresh();
+            startAutoRefresh();
         });
     });
 
-    async function fetchStats(days) {
-        loading.style.display = 'flex';
+    function startAutoRefresh() {
+        refreshInterval = setInterval(() => {
+            fetchStats(currentDays, true); // true for silent refresh
+        }, 5000); // 5 seconds
+    }
+
+    function stopAutoRefresh() {
+        if (refreshInterval) {
+            clearInterval(refreshInterval);
+        }
+    }
+
+    async function fetchStats(days, isSilent = false) {
+        if (!isSilent) {
+            loading.style.display = 'flex';
+        }
         try {
             const sessionId = localStorage.getItem('spotify_session_id');
             const response = await fetch(`/api/stats/listening?days=${days}`, {
                 headers: sessionId ? { 'X-Session-Id': sessionId } : {}
             });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
             const data = await response.json();
 
             if (data.success) {
                 updateUI(data);
             } else {
                 console.error('Failed to fetch stats:', data.error);
-                alert('獲取統計數據失敗: ' + data.error);
+                if (!isSilent) showError('獲取統計數據失敗: ' + data.error);
             }
         } catch (error) {
             console.error('Error fetching stats:', error);
+            if (!isSilent) showError('無法連接到伺服器，請檢查網路連線或伺服器狀態。');
         } finally {
-            loading.style.display = 'none';
+            if (!isSilent) loading.style.display = 'none';
         }
+    }
+
+    function showError(message) {
+        topSongsList.innerHTML = `<li class="song-item error">${message}</li>`;
+        historyList.innerHTML = `<li class="song-item error">${message}</li>`;
     }
 
     function updateUI(data) {
         // Update summary cards
         const hours = Math.floor(data.totalDurationMs / (1000 * 60 * 60));
         const minutes = Math.floor((data.totalDurationMs % (1000 * 60 * 60)) / (1000 * 60));
-        totalTimeEl.textContent = `${hours}h ${minutes}m`;
+        const seconds = Math.floor((data.totalDurationMs % (1000 * 60)) / 1000);
         
+        totalTimeEl.textContent = `${hours}小時 ${minutes}分 ${seconds}秒`;
         totalSongsEl.textContent = data.songCount;
-        
-        // Calculate unique songs count if not provided by backend
-        const uniqueSongs = new Set(data.history.map(item => item.trackId)).size;
-        uniqueSongsEl.textContent = data.topSongs.length; // Approximate
+        uniqueSongsEl.textContent = data.topSongs.length;
 
         // Update Top Songs List
         topSongsList.innerHTML = data.topSongs.map(song => `
@@ -72,8 +101,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update History List
         historyList.innerHTML = data.history.map(item => {
             const date = new Date(item.playedAt);
-            const timeStr = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+            const timeStr = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
             const dateStr = `${date.getMonth() + 1}/${date.getDate()}`;
+            
+            const dMs = item.durationMs || 0;
+            const dMin = Math.floor(dMs / 60000);
+            const dSec = Math.floor((dMs % 60000) / 1000);
+            const durationStr = `${dMin}:${dSec.toString().padStart(2, '0')}`;
             
             return `
                 <li class="song-item">
@@ -81,9 +115,22 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="song-name">${item.trackName}</span>
                         <span class="song-artist">${item.artistName}</span>
                     </div>
-                    <div class="song-time">${dateStr} ${timeStr}</div>
+                    <div class="song-meta" style="text-align: right;">
+                        <div class="song-time">${dateStr} ${timeStr}</div>
+                        <div class="song-duration" style="font-size: 0.8rem; opacity: 0.7;">時長: ${durationStr}</div>
+                    </div>
                 </li>
             `;
         }).join('') || '<li class="song-item">暫無數據</li>';
     }
+
+    // Stop refresh when page is hidden
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            stopAutoRefresh();
+        } else {
+            startAutoRefresh();
+            fetchStats(currentDays);
+        }
+    });
 });

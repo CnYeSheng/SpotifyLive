@@ -766,6 +766,37 @@ class EnhancedStorage {
 
     }
 
+    async updateListeningHistoryDuration(userId, durationMs) {
+        if (!userId || !durationMs) return;
+        try {
+            if (this.dbType === 'postgres') {
+                await this.db.query(`
+                    UPDATE listening_history 
+                    SET duration_ms = $1 
+                    WHERE id = (SELECT id FROM listening_history WHERE user_id = $2 ORDER BY played_at DESC LIMIT 1)
+                `, [durationMs, userId]);
+            } else if (this.dbType === 'mysql' || this.dbType === 'mariadb') {
+                await this.db.execute(`
+                    UPDATE listening_history 
+                    SET duration_ms = ? 
+                    WHERE user_id = ? 
+                    ORDER BY played_at DESC LIMIT 1
+                `, [durationMs, userId]);
+            } else if (this.dbType === 'json') {
+                const historyKey = `history_${userId}`;
+                if (this.localData[historyKey] && this.localData[historyKey].length > 0) {
+                    const lastIndex = this.localData[historyKey].length - 1;
+                    this.localData[historyKey][lastIndex].durationMs = durationMs;
+                    fs.writeFile(this.localFilePath, JSON.stringify(this.localData, null, 2), (err) => {
+                        if (err) console.error('Update history JSON error:', err);
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('Update history duration error:', e.message);
+        }
+    }
+
     async saveListeningHistory(userId, historyData) {
         if (!userId || !historyData) return;
         try {

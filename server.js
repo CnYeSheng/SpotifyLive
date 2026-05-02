@@ -94,7 +94,11 @@ async function makeSpotifyAPICall(url, options, sessionId) {
 
     try {
         spotifyRateLimiter.recordCall(sessionId);
-        const response = await axios(url, options);
+        const response = await axios({
+            ...options,
+            url: url,
+            timeout: 8000 // 8 second timeout
+        });
         spotifyRateLimiter.retryAfterMs = 1000;
         return response;
     } catch (error) {
@@ -136,31 +140,86 @@ const userSessions = new Map();
 const songChangeTracker = new Map();
 
 // Track song changes and refresh token every 2 songs
-async function trackSongChange(sessionId, track, userId) {
+async function trackSongChange(sessionId, track, userId, progressMs = 0) {
     try {
-        if (!sessionId || !track) return;
-        const trackId = typeof track === 'string' ? track : track.id;
-        
+        if (!sessionId) return;
+        const trackId = track ? (typeof track === 'string' ? track : track.id) : null;
+
         const tracker = songChangeTracker.get(sessionId) || {
             currentTrackId: null,
             songCount: 0,
             lastRefreshTime: Date.now(),
             startTime: Date.now(),
-            trackInfo: null
+            trackInfo: null,
+            lastProgress: 0
         };
-        
-        // Only count if it's a different song
-        if (tracker.currentTrackId !== trackId) {
-            // Save history for the PREVIOUS track
-            if (tracker.currentTrackId && tracker.trackInfo) {
-                const now = Date.now();
-                const listenedDuration = now - tracker.startTime;
-                // Cap duration to actual track duration
-                const trackDuration = tracker.trackInfo.duration_ms || tracker.trackInfo.duration || 0;
-                const durationMs = Math.min(listenedDuration, trackDuration);
-                
-                // Only save if listened for more than 5 seconds
-                if (durationMs > 5000) {
+
+        // Detect if it's a DIFFERENT song OR if the SAME song started over (repeat/loop)
+        const isDifferentSong = tracker.currentTrackId !== trackId;
+        const isRepeatedSong = !isDifferentSong && trackId && progressMs < tracker.lastProgress - 5000; // Jumped back more than 5s
+
+        if (isDifferentSong || isRepeatedSong) {
+            tracker.currentTrackId = trackId;
+            tracker.trackInfo = track;
+            tracker.startTime = Date.now();
+            tracker.lastProgress = progressMs;
+            tracker.isInitialRecorded = false; // Reset for new song/loop
+
+            if (trackId) {
+                tracker.songCount++;
+                console.log(`🎵 ${isRepeatedSong ? '🔄 Loop detected:' : 'Song changed:'} ${track.name} (${sessionId.substring(0, 8)}...) Count: ${tracker.songCount}`);
+            } else {
+                // Playback stopped, update duration of the last song if it was recorded
+                if (tracker.isInitialRecorded) {
+                    const now = Date.now();
+                    const listenedDuration = now - tracker.startTime;
+                    const trackDuration = tracker.trackInfo?.duration_ms || tracker.trackInfo?.duration || 0;
+                    const durationMs = Math.min(listenedDuration, trackDuration);
+                    
+                    try {
+                        if (process.env.VERCEL && kvStorage.isKVAvailable) {
+                            await kvStorage.updateLastHistoryDuration({ headers: { 'x-spotify-user-id': userId, 'x-session-id': sessionId } }, durationMs);
+                        } else if (userId) {
+                            await enhancedStorage.updateListeningHistoryDuration(userId, durationMs);
+                        }
+                        console.log(`⏹️ Final duration updated for ${tracker.trackInfo?.name}`);
+                    } catch (e) {
+                        console.error('Failed to update final duration on stop:', e);
+                    }
+                }
+                console.log(`⏹️ Playback stopped for session ${sessionId.substring(0, 8)}...`);
+            }
+
+            // Refresh token every 2 songs
+            if (tracker.songCount >= 2) {
+                console.log(`🔄 Refreshing token after ${tracker.songCount} songs for session ${sessionId.substring(0, 8)}...`);
+                tracker.songCount = 0; // Reset counter
+                tracker.lastRefreshTime = Date.now();
+
+                // Trigger token refresh
+                const session = userSessions.get(sessionId);
+                if (session) {
+                    refreshAccessToken(session, sessionId).then(refreshed => {
+                        if (refreshed) {
+                            console.log(`✅ Token refreshed successfully after song change`);
+                        } else {
+                            console.log(`⚠️ Token refresh failed after song change`);
+                        }
+                    }).catch(err => {
+                        console.error('❌ Error in background token refresh:', err);
+                    });
+                }
+            }
+        } else if (trackId) {
+            // Same song, check if we should record or update
+            const now = Date.now();
+            const listenedDuration = now - tracker.startTime;
+            const trackDuration = tracker.trackInfo.duration_ms || tracker.trackInfo.duration || 0;
+            const durationMs = Math.min(listenedDuration, trackDuration);
+
+            // If listened > 5s and NOT yet initially recorded, record now!
+            if (durationMs > 5000) {
+                if (!tracker.isInitialRecorded) {
                     try {
                         const historyData = {
                             trackId: tracker.currentTrackId,
@@ -176,47 +235,31 @@ async function trackSongChange(sessionId, track, userId) {
                         } else if (userId) {
                             await enhancedStorage.saveListeningHistory(userId, historyData);
                         }
+                        tracker.isInitialRecorded = true;
+                        console.log(`📝 Initially recorded ${tracker.trackInfo.name} after 5s`);
                     } catch (e) {
-                        console.error('Failed to save listening history:', e);
+                        console.error('Failed to save initial listening history:', e);
+                    }
+                } else {
+                    // Already initially recorded, just update the duration
+                    try {
+                        if (process.env.VERCEL && kvStorage.isKVAvailable) {
+                            await kvStorage.updateLastHistoryDuration({ headers: { 'x-spotify-user-id': userId, 'x-session-id': sessionId } }, durationMs);
+                        } else if (userId) {
+                            await enhancedStorage.updateListeningHistoryDuration(userId, durationMs);
+                        }
+                    } catch (e) {
+                        console.error('Failed to update listening history duration:', e);
                     }
                 }
             }
-
-            tracker.currentTrackId = trackId;
-            tracker.trackInfo = track;
-            tracker.startTime = Date.now();
-            tracker.songCount++;
-            
-            console.log(`🎵 Song changed for session ${sessionId.substring(0, 8)}... Count: ${tracker.songCount}`);
-            
-            // Refresh token every 2 songs
-            if (tracker.songCount >= 2) {
-                console.log(`🔄 Refreshing token after ${tracker.songCount} songs for session ${sessionId.substring(0, 8)}...`);
-                tracker.songCount = 0; // Reset counter
-                tracker.lastRefreshTime = Date.now();
-                
-                // Trigger token refresh
-                const session = userSessions.get(sessionId);
-                if (session) {
-                    refreshAccessToken(session, sessionId).then(refreshed => {
-                        if (refreshed) {
-                            console.log(`✅ Token refreshed successfully after song change`);
-                        } else {
-                            console.log(`⚠️ Token refresh failed after song change`);
-                        }
-                    }).catch(err => {
-                        console.error('❌ Error in background token refresh:', err);
-                    });
-                }
-            }
+            tracker.lastProgress = progressMs;
         }
         songChangeTracker.set(sessionId, tracker);
     } catch (error) {
         console.error('❌ Error inside trackSongChange:', error);
     }
-}
-
-// Clean up old song change trackers (older than 1 hour)
+}// Clean up old song change trackers (older than 1 hour)
 function cleanupSongChangeTrackers() {
     const oneHourAgo = Date.now() - (60 * 60 * 1000);
     for (const [sessionId, tracker] of songChangeTracker.entries()) {
@@ -537,6 +580,12 @@ app.get('/api/current-track', async (req, res) => {
         
         if (playerResponse.status === 204 || !playerResponse.data || !playerResponse.data.item) {
             // console.log('🔍 No active playback detected');
+            const user = userResponse?.data;
+            if (user?.id) {
+                // Use trackSongChange with null to save the last song
+                await trackSongChange(sessionId, null, user.id);
+            }
+
             const responseData = { 
                 isPlaying: false,
                 name: null,
@@ -607,7 +656,7 @@ app.get('/api/current-track', async (req, res) => {
 
         // Track song change for token refresh
         try {
-            trackSongChange(sessionId, track, user.id);
+            trackSongChange(sessionId, track, user.id, currentTrack.progress);
         } catch (e) {
             console.error('❌ Error in trackSongChange:', e);
         }
@@ -3698,25 +3747,5 @@ if (require.main === module) {
         console.log(`Logs analysis: http://localhost:${PORT}/api/logs/analysis`);
     });
 }
-
-app.get('/api/kv/status', (req, res) => {
-    try {
-        const kvAvailable = !!process.env.KV_REST_API_URL && 
-                           !!process.env.KV_REST_API_TOKEN;
-        
-        res.json({
-            success: true,
-            kvAvailable: kvAvailable,
-            userKey: null,
-            message: kvAvailable ? 'KV available' : 'KV not available'
-        });
-    } catch (error) {
-        console.error('❌ KV status check error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
 
 module.exports = app;
