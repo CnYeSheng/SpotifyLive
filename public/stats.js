@@ -277,7 +277,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             ${top5.length > 0 ? `
             <div class="share-card-top5">
-                <div class="share-card-top5-title">🔥 Top 5 最常聽</div>
+                <div class="share-card-top5-title">🔥 Top 5</div>
                 <ul class="share-top5-list">
                     ${top5.map((song, index) => {
                         return `
@@ -296,7 +296,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ` : ''}
 
             <div class="share-card-footer">
-                <span>Spotify 即時歌詞播放器</span>
+                <span>Spotify</span>
                 <span>${new Date().toLocaleDateString('zh-TW')}</span>
             </div>
         `;
