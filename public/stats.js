@@ -83,7 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const minutes = Math.floor((data.totalDurationMs % (1000 * 60 * 60)) / (1000 * 60));
         const seconds = Math.floor((data.totalDurationMs % (1000 * 60)) / 1000);
         
-        totalTimeEl.textContent = `${hours}小時 ${minutes}分 ${seconds}秒`;
+        totalTimeEl.textContent = `${hours} 時 ${minutes} 分 ${seconds} 秒`;
         totalSongsEl.textContent = data.songCount;
         uniqueSongsEl.textContent = data.topSongs.length;
 

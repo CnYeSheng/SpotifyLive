@@ -8388,7 +8388,7 @@ SpotifyLyricsPlayer.prototype.renderTotalTime = function(ms) {
         const hours = Math.floor(ms / (1000 * 60 * 60));
         const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
         const seconds = Math.floor((ms % (1000 * 60)) / 1000);
-        totalTimeEl.textContent = `${hours}小時 ${minutes}分 ${seconds}秒`;
+        totalTimeEl.textContent = `${hours} 時 ${minutes} 分 ${seconds} 秒`;
     }
 };
 
@@ -8429,8 +8429,33 @@ SpotifyLyricsPlayer.prototype.updateLiveStats = async function() {
         
         const data = await response.json();
         if (data.success) {
-            // 從伺服器同步總時長 (權威數據，會校正本地的偏差)
-            this.localTotalDurationMs = data.totalDurationMs;
+            // 平滑校正：計算伺服器與本地的差值，避免突然跳動
+            const serverDuration = data.totalDurationMs;
+            
+            // 如果是首次載入（本地為 0）或尚未開始計時，直接同步
+            if (this.localTotalDurationMs === 0) {
+                this.localTotalDurationMs = serverDuration;
+            } else {
+                // 播放中才進行平滑校正
+                const diff = serverDuration - this.localTotalDurationMs;
+                
+                // 只有當差值在合理範圍內（±30秒）才進行平滑校正
+                // 如果差異太大（可能是重新載入頁面或長時間後台），直接同步
+                if (Math.abs(diff) <= 30000) {
+                    // 小差異（≤2秒）直接同步，大差異逐步調整
+                    if (Math.abs(diff) <= 2000) {
+                        this.localTotalDurationMs = serverDuration;
+                    } else {
+                        // 每次最多調整 3 秒，避免突然跳動
+                        const adjustment = Math.sign(diff) * Math.min(Math.abs(diff), 3000);
+                        this.localTotalDurationMs += adjustment;
+                    }
+                } else {
+                    // 差異過大，直接同步
+                    this.localTotalDurationMs = serverDuration;
+                }
+            }
+            
             this.renderTotalTime(this.localTotalDurationMs);
             this.lastTickTime = Date.now(); // 同步後重置計時點
             
