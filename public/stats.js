@@ -182,6 +182,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Update Top Playlists List
         if (topPlaylistsList && data.topPlaylists) {
+            // 保存當前展開的歌單 ID 和內容
+            const expandedPlaylists = new Map();
+            document.querySelectorAll('.playlist-item.expanded').forEach(item => {
+                const playlistId = item.dataset.playlistId;
+                const expandedDiv = document.getElementById(`playlist-${playlistId}`);
+                if (expandedDiv && expandedDiv.dataset.loaded) {
+                    // 保存已載入的內容
+                    expandedPlaylists.set(playlistId, {
+                        html: expandedDiv.innerHTML,
+                        loaded: true
+                    });
+                } else {
+                    expandedPlaylists.set(playlistId, { loaded: false });
+                }
+            });
+            
             topPlaylistsList.innerHTML = data.topPlaylists.map(playlist => {
                 let playlistId = null;
                 let displayName = escapeHtml(playlist.name);
@@ -195,21 +211,41 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 return `
                     <div class="playlist-group">
-                        <li class="song-item playlist-item" data-playlist-id="${playlistId || ''}" data-playlist-name="${escapeHtml(playlist.name)}">
-                            <div class="song-info">
-                                <span class="song-name">${displayName}</span>
-                                <span class="song-artist">${playlist.uniqueTracks} 首歌曲 · ${playlist.count} 次播放</span>
-                            </div>
-                            <svg class="expand-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
-                            </svg>
-                        </li>
+                        <ul class="song-list">
+                            <li class="song-item playlist-item" data-playlist-id="${playlistId || ''}" data-playlist-name="${escapeHtml(playlist.name)}">
+                                <div class="song-info">
+                                    <span class="song-name">${displayName}</span>
+                                    <span class="song-artist">${playlist.uniqueTracks} 首歌曲 · ${playlist.count} 次播放</span>
+                                </div>
+                                <svg class="expand-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+                                </svg>
+                            </li>
+                        </ul>
                         <div class="playlist-tracks-expanded" id="playlist-${playlistId}" style="display: none;">
                             <div class="loading-tracks">載入中...</div>
                         </div>
                     </div>
                 `;
-            }).join('') || '<li class="song-item">暫無歌單數據</li>';
+            }).join('') || '<div class="no-playlists">暫無歌單數據</div>';
+            
+            // 恢復之前展開的歌單狀態和內容
+            expandedPlaylists.forEach((savedData, id) => {
+                const item = document.querySelector(`.playlist-item[data-playlist-id="${id}"]`);
+                const expandedDiv = document.getElementById(`playlist-${id}`);
+                if (item && expandedDiv) {
+                    item.classList.add('expanded');
+                    expandedDiv.style.display = 'block';
+                    const icon = item.querySelector('.expand-icon');
+                    if (icon) icon.style.transform = 'rotate(180deg)';
+                    
+                    // 如果之前已載入內容，恢復它
+                    if (savedData.loaded && savedData.html) {
+                        expandedDiv.innerHTML = savedData.html;
+                        expandedDiv.dataset.loaded = 'true';
+                    }
+                }
+            });
             
             // 添加點擊事件 - 展開/收起
             document.querySelectorAll('.playlist-item').forEach(item => {
@@ -222,7 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!playlistId || !expandedDiv) return;
                     
                     // 如果已經展開，則收起
-                    if (expandedDiv.style.display !== 'none') {
+                    if (expandedDiv.style.display !== 'none' && expandedDiv.style.display !== '') {
                         expandedDiv.style.display = 'none';
                         icon.style.transform = 'rotate(0deg)';
                         item.classList.remove('expanded');
@@ -236,40 +272,59 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     // 如果還沒有載入過，則 fetch
                     if (!expandedDiv.dataset.loaded) {
-                        try {
-                            console.log('🔍 Fetching tracks for playlist:', playlistId);
-                            const response = await fetch(`/api/playlist/${playlistId}`);
-                            const data = await response.json();
-                            
-                            if (data.success && data.tracks && data.tracks.length > 0) {
-                                expandedDiv.innerHTML = `
-                                    <div class="tracks-header">
-                                        <span>${data.tracks.length} 首播放過的歌曲</span>
-                                    </div>
-                                    <ul class="expanded-track-list">
-                                        ${data.tracks.map((track, index) => `
-                                            <li class="expanded-track-item">
-                                                <span class="track-num">${index + 1}</span>
-                                                <div class="expanded-track-info">
-                                                    <div class="expanded-track-name">${escapeHtml(track.name)}</div>
-                                                    <div class="expanded-track-artist">${escapeHtml(track.artist || '未知歌手')}</div>
-                                                </div>
-                                                <div class="expanded-track-count">${track.playCount} 次</div>
-                                            </li>
-                                        `).join('')}
-                                    </ul>
-                                `;
-                                expandedDiv.dataset.loaded = 'true';
-                            } else {
-                                expandedDiv.innerHTML = '<div class="no-tracks">這個歌單還沒有播放過任何歌曲</div>';
-                            }
-                        } catch (error) {
-                            console.error('Failed to fetch playlist tracks:', error);
-                            expandedDiv.innerHTML = '<div class="error-tracks">載入失敗，請稍後再試</div>';
-                        }
+                        await loadPlaylistTracks(playlistId, expandedDiv);
                     }
                 });
+                
+                // 雙擊強制刷新歌單數據
+                item.addEventListener('dblclick', async (e) => {
+                    e.stopPropagation(); // 防止觸發單擊事件
+                    const playlistId = item.dataset.playlistId;
+                    const expandedDiv = document.getElementById(`playlist-${playlistId}`);
+                    
+                    if (!playlistId || !expandedDiv) return;
+                    
+                    // 清除 loaded 標記並重新載入
+                    delete expandedDiv.dataset.loaded;
+                    expandedDiv.innerHTML = '<div class="loading-tracks">重新載入中...</div>';
+                    await loadPlaylistTracks(playlistId, expandedDiv);
+                });
             });
+        }
+
+        // 輔助函數：載入歌單歌曲
+        async function loadPlaylistTracks(playlistId, expandedDiv) {
+            try {
+                console.log('🔍 Fetching tracks for playlist:', playlistId);
+                const response = await fetch(`/api/playlist/${playlistId}`);
+                const data = await response.json();
+                
+                if (data.success && data.tracks && data.tracks.length > 0) {
+                    expandedDiv.innerHTML = `
+                        <div class="tracks-header">
+                            <span>${data.tracks.length} 首播放過的歌曲</span>
+                        </div>
+                        <ul class="expanded-track-list">
+                            ${data.tracks.map((track, index) => `
+                                <li class="expanded-track-item">
+                                    <span class="track-num">${index + 1}</span>
+                                    <div class="expanded-track-info">
+                                        <div class="expanded-track-name">${escapeHtml(track.name)}</div>
+                                        <div class="expanded-track-artist">${escapeHtml(track.artist || '未知歌手')}</div>
+                                    </div>
+                                    <div class="expanded-track-count">${track.playCount} 次</div>
+                                </li>
+                            `).join('')}
+                        </ul>
+                    `;
+                    expandedDiv.dataset.loaded = 'true';
+                } else {
+                    expandedDiv.innerHTML = '<div class="no-tracks">這個歌單還沒有播放過任何歌曲</div>';
+                }
+            } catch (error) {
+                console.error('Failed to fetch playlist tracks:', error);
+                expandedDiv.innerHTML = '<div class="error-tracks">載入失敗，請稍後再試</div>';
+            }
         }
 
         // Update History List

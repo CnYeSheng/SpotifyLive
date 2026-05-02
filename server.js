@@ -2068,15 +2068,44 @@ app.get('/api/playlist/:id', async (req, res) => {
         
         console.log(`📊 User history: ${history.length} records`);
         
-        // 找出歌單中用戶實際播放過的歌曲
-        const playedTrackIds = new Set(history.map(item => item.trackId));
+        // 過濾出只在這個歌單中播放的記錄
+        const playlistContextUri = `spotify:playlist:${playlistId}`;
+        const playlistHistory = history.filter(item => {
+            // 匹配 contextUri (例如: spotify:playlist:6pOSeZzGpqAR4PCmRr0n4Y)
+            const uriMatch = item.contextUri === playlistContextUri;
+            // 或者匹配 contextName (作為備用方案)
+            const nameMatch = item.contextName && (item.contextName === playlist.name || item.contextName === `Playlist:${playlistId}`);
+            return uriMatch || nameMatch;
+        });
+        
+        console.log(`🎵 Playlist-specific history: ${playlistHistory.length} records for playlist "${playlist.name}"`);
+        
+        // 調試：顯示前幾條歷史記錄的上下文信息
+        if (playlistHistory.length > 0) {
+            console.log(`   Sample context info:`, {
+                uri: playlistHistory[0].contextUri,
+                name: playlistHistory[0].contextName,
+                type: playlistHistory[0].contextType
+            });
+        } else if (history.length > 0) {
+            console.log(`   No playlist-specific records found. Total history: ${history.length}`);
+            console.log(`   Expected URI: ${playlistContextUri}`);
+            console.log(`   Sample history items:`, history.slice(0, 3).map(h => ({
+                trackId: h.trackId,
+                contextUri: h.contextUri,
+                contextName: h.contextName
+            })));
+        }
+        
+        // 找出歌單中用戶實際播放過的歌曲（僅限這個歌單）
+        const playedTrackIds = new Set(playlistHistory.map(item => item.trackId));
         const playedTracks = allTracks.filter(track => playedTrackIds.has(track.id));
         
         console.log(`✅ Found ${playedTracks.length} played tracks in this playlist`);
         
-        // 為每首播放過的歌曲添加播放次數
+        // 為每首播放過的歌曲添加播放次數（僅統計在這個歌單中的播放）
         const trackPlayCounts = {};
-        history.forEach(item => {
+        playlistHistory.forEach(item => {
             if (playedTrackIds.has(item.trackId)) {
                 trackPlayCounts[item.trackId] = (trackPlayCounts[item.trackId] || 0) + 1;
             }
