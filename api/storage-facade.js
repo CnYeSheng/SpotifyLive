@@ -118,6 +118,29 @@ class StorageFacade {
         }
     }
 
+    // ✨ User Provider methods with full data support
+    async saveUserProvider(userId, trackInfo, providerData) {
+        if (!userId) throw new Error("User ID is required to save user provider.");
+        if (this.isVercel && this.kvManager.isKVAvailable) {
+            return await this.kvManager.saveUserLyricsProvider({ headers: { 'x-spotify-user-id': userId } }, trackInfo, providerData);
+        } else {
+            await this.enhancedStorage.saveSongSettings(userId, trackInfo.id, {
+                manualLyrics: providerData
+            });
+            return true;
+        }
+    }
+
+    async getUserProvider(userId, trackInfo) {
+        if (!userId) throw new Error("User ID is required to get user provider.");
+        if (this.isVercel && this.kvManager.isKVAvailable) {
+            return await this.kvManager.getUserLyricsProvider({ headers: { 'x-spotify-user-id': userId } }, trackInfo);
+        } else {
+            const settings = await this.enhancedStorage.getSongSettings(userId, trackInfo.id);
+            return settings?.manualLyrics || null;
+        }
+    }
+
     // --- 30 Day Cache (Global shared) ---
     async cacheLyrics(trackInfo, lyrics, lyricsType, source) {
         return await this.kvManager.cacheLyricsFor30Days(trackInfo, lyrics, lyricsType, source);
