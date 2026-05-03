@@ -448,9 +448,9 @@ document.addEventListener('DOMContentLoaded', () => {
             wrapper.style.height = `${cardHeight * scale}px`;
         }
 
-        // 取得前 5 首歌曲和前 3 個歌單
+        // 取得前 5 首歌曲和前 5 個歌單
         const top5 = data.topSongs.slice(0, 5);
-        const topPlaylists = (data.topPlaylists || []).slice(0, 3);
+        const topPlaylists = (data.topPlaylists || []).slice(0, 5);
 
         // 格式化時間範圍標籤
         const rangeLabel = getRangeLabel(currentDays);
