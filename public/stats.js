@@ -86,6 +86,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const originalTransform = shareCardPreview.style.transform;
             shareCardPreview.style.transform = 'none';
             
+            // 給瀏覽器一點時間重繪（處理 transform 切換）
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
             const canvas = await html2canvas(shareCardPreview, {
                 backgroundColor: null,
                 scale: 1, // 已經是高解析度尺寸了
