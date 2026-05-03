@@ -149,7 +149,7 @@ const CONTEXT_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 // Track song changes and refresh token every 2 songs
 async function trackSongChange(sessionId, track, userId, progressMs = 0, accessToken = null, isPlaying = true) {
     try {
-        if (!sessionId) return;
+        if (!sessionId) {return;};
         const trackId = track ? (typeof track === 'string' ? track : track.id) : null;
 
         const tracker = songChangeTracker.get(sessionId) || {
@@ -437,7 +437,7 @@ async function getSpotifyUserId(session, sessionId) {
 
 // 保存會話
 async function saveUserSession(sessionId, sessionData) {
-    if (!sessionId || !sessionData) return;
+    if (!sessionId || !sessionData) {return;}
     
     // 清除该 session 的轨道缓存，强制下一次请求重新获取最新状态
     if (sessionData.currentTrackCache) {
@@ -858,7 +858,7 @@ app.get('/api/current-track', async (req, res) => {
 
 // 輔助函數：清除該使用者的所有會話快取
 async function invalidateUserCache(userId) {
-    if (!userId) return;
+    if (!userId) {return;}
     console.log(`🧹 清除使用者 ${userId} 的所有會話快取以進行同步`);
     for (const [sid, session] of userSessions.entries()) {
         if (session.userProfile && session.userProfile.data && session.userProfile.data.id === userId) {
@@ -2000,7 +2000,7 @@ app.get('/api/stats/listening', async (req, res) => {
                     displayName = `Playlist:${extractedId}`;
                 }
                 
-                if (!playlistKey) return;
+                if (!playlistKey) {return;}
                 
                 if (!playlistCounts[playlistKey]) {
                     playlistCounts[playlistKey] = {
@@ -4216,7 +4216,7 @@ class BackgroundPlayerMonitor {
     }
 
     start() {
-        if (this.isActive) return;
+        if (this.isActive) {return;}
         this.isActive = true;
         console.log('🚀 [BackgroundMonitor] Started');
         this.run();
@@ -4228,7 +4228,7 @@ class BackgroundPlayerMonitor {
     }
 
     async run() {
-        if (!this.isActive) return;
+        if (!this.isActive) {return;}
 
         const startTime = Date.now();
         this.stats.lastRun = new Date();
