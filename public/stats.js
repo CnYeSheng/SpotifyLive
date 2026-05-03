@@ -82,12 +82,21 @@ document.addEventListener('DOMContentLoaded', () => {
             downloadShareImage.innerHTML = '生成中...';
             downloadShareImage.disabled = true;
             
+            // 重置縮放以確保捕捉到完整尺寸
+            const originalTransform = shareCardPreview.style.transform;
+            shareCardPreview.style.transform = 'none';
+            
             const canvas = await html2canvas(shareCardPreview, {
                 backgroundColor: null,
-                scale: 2,
+                scale: 1, // 已經是高解析度尺寸了
                 useCORS: true,
-                logging: false
+                logging: false,
+                width: shareCardPreview.offsetWidth,
+                height: shareCardPreview.offsetHeight
             });
+            
+            // 恢復縮放
+            shareCardPreview.style.transform = originalTransform;
             
             const link = document.createElement('a');
             link.download = `spotify-stats-${currentRatio}-${new Date().toISOString().split('T')[0]}.png`;
@@ -362,35 +371,83 @@ document.addEventListener('DOMContentLoaded', () => {
         const songCount = data.songCount;
         const uniqueCount = data.topSongs.length;
 
-        // 根據比例設定卡片尺寸
+        // 根據比例設定卡片尺寸 (使用用戶指定的像素值)
         let cardWidth, cardHeight;
+        let ratioClass = '';
+        let isLandscape = false;
+
         switch (currentRatio) {
             case '16:9':
-                cardWidth = 800;
-                cardHeight = 450;
+                cardWidth = 1920;
+                cardHeight = 1080;
+                ratioClass = 'ratio-16-9';
+                isLandscape = true;
                 break;
             case '9:16':
-                cardWidth = 450;
-                cardHeight = 800;
+                cardWidth = 1080;
+                cardHeight = 1920;
+                ratioClass = 'ratio-9-16';
+                isLandscape = false;
                 break;
             case '1:1':
-                cardWidth = 600;
-                cardHeight = 600;
+                cardWidth = 1080;
+                cardHeight = 1080;
+                ratioClass = 'ratio-1-1';
+                isLandscape = true;
                 break;
             case '4:3':
-                cardWidth = 800;
-                cardHeight = 600;
+                cardWidth = 1350;
+                cardHeight = 1012;
+                ratioClass = 'ratio-4-3';
+                isLandscape = true;
+                break;
+            case '4:5':
+                cardWidth = 1080;
+                cardHeight = 1350;
+                ratioClass = 'ratio-4-5';
+                isLandscape = false;
+                break;
+            case '3:4':
+                cardWidth = 1012;
+                cardHeight = 1350;
+                ratioClass = 'ratio-3-4';
+                isLandscape = false;
+                break;
+            case '5:4':
+                cardWidth = 1350;
+                cardHeight = 1080;
+                ratioClass = 'ratio-5-4';
+                isLandscape = true;
                 break;
             default:
-                cardWidth = 800;
-                cardHeight = 450;
+                cardWidth = 1920;
+                cardHeight = 1080;
+                ratioClass = 'ratio-16-9';
+                isLandscape = true;
         }
 
         shareCardPreview.style.width = `${cardWidth}px`;
-        shareCardPreview.style.minHeight = `${cardHeight}px`;
+        shareCardPreview.style.height = `${cardHeight}px`;
+        shareCardPreview.className = `share-card ${ratioClass}`;
 
-        // 取得前 5 首歌曲
+        // 預覽縮放處理
+        const wrapper = document.querySelector('.share-preview-wrapper');
+        if (wrapper) {
+            // 如果容器寬度為 0 (可能尚未完全渲染)，則嘗試從父容器取得
+            const maxWidth = wrapper.offsetWidth || (window.innerWidth * 0.8);
+            const maxHeight = window.innerHeight * 0.6;
+            const scale = Math.min(maxWidth / cardWidth, maxHeight / cardHeight) || 0.5;
+            
+            shareCardPreview.style.transform = `scale(${scale})`;
+            shareCardPreview.style.transformOrigin = 'center center';
+            
+            // 調整容器高度以匹配縮放後的卡片
+            wrapper.style.height = `${cardHeight * scale}px`;
+        }
+
+        // 取得前 5 首歌曲和前 3 個歌單
         const top5 = data.topSongs.slice(0, 5);
+        const topPlaylists = (data.topPlaylists || []).slice(0, 3);
 
         // 格式化時間範圍標籤
         const rangeLabel = getRangeLabel(currentDays);
@@ -407,7 +464,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="share-card-stats">
                 <div class="share-stat-item">
                     <div class="share-stat-value">${hours}h ${minutes}m</div>
-                    <div class="share-stat-label">總聽歌時長</div>
+                    <div class="share-stat-label">聽歌時長</div>
                 </div>
                 <div class="share-stat-item">
                     <div class="share-stat-value">${songCount}</div>
@@ -415,20 +472,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="share-stat-item">
                     <div class="share-stat-value">${uniqueCount}</div>
-                    <div class="share-stat-label">不重複歌曲</div>
+                    <div class="share-stat-label">不重複</div>
                 </div>
                 <div class="share-stat-item">
                     <div class="share-stat-value">${rangeLabel}</div>
-                    <div class="share-stat-label">統計期間</div>
+                    <div class="share-stat-label">期間</div>
                 </div>
             </div>
 
-            ${top5.length > 0 ? `
-            <div class="share-card-top5">
-                <div class="share-card-top5-title">🔥 Top 5 歌曲</div>
-                <ul class="share-top5-list">
-                    ${top5.map((song, index) => {
-                        return `
+            <div class="share-card-body ${isLandscape ? 'landscape' : ''}">
+                <div class="share-card-section">
+                    <div class="share-card-top5-title">🔥 熱門歌曲</div>
+                    <ul class="share-top5-list">
+                        ${top5.length > 0 ? top5.map((song, index) => `
                             <li class="share-top5-item">
                                 <div class="share-top5-rank">${index + 1}</div>
                                 <div class="share-top5-info">
@@ -437,18 +493,15 @@ document.addEventListener('DOMContentLoaded', () => {
                                 </div>
                                 <div class="share-top5-count">${song.count} 次</div>
                             </li>
-                        `;
-                    }).join('')}
-                </ul>
-            </div>
-            ` : ''}
+                        `).join('') : '<li class="share-top5-item">暫無數據</li>'}
+                    </ul>
+                </div>
 
-            ${data.topPlaylists && data.topPlaylists.length > 0 ? `
-            <div class="share-card-top5" style="margin-top: 20px;">
-                <div class="share-card-top5-title">📀 Top 3 歌單</div>
-                <ul class="share-top5-list">
-                    ${data.topPlaylists.slice(0, 3).map((playlist, index) => {
-                        return `
+                ${(topPlaylists.length > 0 || isLandscape) ? `
+                <div class="share-card-section">
+                    <div class="share-card-top5-title">📀 熱門歌單</div>
+                    <ul class="share-top5-list">
+                        ${topPlaylists.length > 0 ? topPlaylists.map((playlist, index) => `
                             <li class="share-top5-item">
                                 <div class="share-top5-rank">${index + 1}</div>
                                 <div class="share-top5-info">
@@ -457,18 +510,19 @@ document.addEventListener('DOMContentLoaded', () => {
                                 </div>
                                 <div class="share-top5-count">${playlist.count} 次</div>
                             </li>
-                        `;
-                    }).join('')}
-                </ul>
+                        `).join('') : '<li class="share-top5-item">暫無數據</li>'}
+                    </ul>
+                </div>
+                ` : ''}
             </div>
-            ` : ''}
 
             <div class="share-card-footer">
-                <span>Spotify</span>
+                <span>Spotify 即時播放器</span>
                 <span>${new Date().toLocaleDateString('zh-TW')}</span>
             </div>
         `;
     }
+
 
     // 獲取時間範圍標籤
     function getRangeLabel(days) {
@@ -507,4 +561,78 @@ document.addEventListener('DOMContentLoaded', () => {
             fetchStats(currentDays);
         }
     });
+
+    // --- 歌單詳情模態框相關邏輯 ---
+    const playlistModal = document.getElementById('playlist-modal');
+    const closeModal = document.getElementById('close-modal');
+    const modalPlaylistName = document.getElementById('modal-playlist-name');
+    const modalPlaylistDetails = document.getElementById('modal-playlist-details');
+    const modalTrackList = document.getElementById('modal-track-list');
+
+    // 關閉模態框
+    closeModal?.addEventListener('click', () => {
+        playlistModal.style.display = 'none';
+        document.body.style.overflow = 'auto';
+    });
+
+    // 點擊背景關閉
+    window.addEventListener('click', (e) => {
+        if (e.target === playlistModal) {
+            playlistModal.style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }
+    });
+
+    // 顯示歌單詳情（此函數可被外部調用或未來擴展使用）
+    window.showPlaylistDetails = async function(playlistId, playlistName) {
+        if (!playlistModal) return;
+
+        modalPlaylistName.textContent = playlistName || '歌單詳情';
+        modalTrackList.innerHTML = '<div class="loading-tracks">載入中...</div>';
+        modalPlaylistDetails.innerHTML = '';
+        
+        playlistModal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+
+        try {
+            const response = await fetch(`/api/playlist/${playlistId}`);
+            const data = await response.json();
+
+            if (data.success && data.tracks) {
+                // 渲染歌曲列表
+                modalTrackList.innerHTML = data.tracks.map((track, index) => `
+                    <li class="playlist-track-item">
+                        <span class="track-number">${index + 1}</span>
+                        <div class="track-info">
+                            <div class="track-name">${escapeHtml(track.name)}</div>
+                            <div class="track-artist">${escapeHtml(track.artist || '未知歌手')}</div>
+                        </div>
+                        <div class="track-duration">${track.playCount} 次</div>
+                    </li>
+                `).join('');
+
+                // 如果有歌單資訊，渲染概覽
+                if (data.playlistInfo) {
+                    modalPlaylistDetails.innerHTML = `
+                        <div class="playlist-info-card">
+                            <img src="${data.playlistInfo.image || ''}" class="playlist-cover" alt="Cover">
+                            <div class="playlist-meta">
+                                <div class="playlist-name-large">${escapeHtml(data.playlistInfo.name)}</div>
+                                <div class="playlist-description">${escapeHtml(data.playlistInfo.description || '')}</div>
+                                <div class="playlist-stats">
+                                    <span>${data.tracks.length} 首播放歌曲</span>
+                                    <span>建立者: ${escapeHtml(data.playlistInfo.owner || '')}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+            } else {
+                modalTrackList.innerHTML = '<div class="no-tracks">暫無歌曲數據</div>';
+            }
+        } catch (error) {
+            console.error('Failed to fetch playlist details:', error);
+            modalTrackList.innerHTML = '<div class="error-tracks">載入失敗</div>';
+        }
+    };
 });
