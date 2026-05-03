@@ -452,6 +452,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const top5 = data.topSongs.slice(0, 5);
         const topPlaylists = (data.topPlaylists || []).slice(0, 5);
 
+
         // 格式化時間範圍標籤
         const rangeLabel = getRangeLabel(currentDays);
 

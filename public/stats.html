@@ -487,18 +487,54 @@
             font-size: 22px;
         }
         
-        /* 3:4 和 4:5 的直向佈局微調（防止溢出） */
+        /* 3:4 和 4:5 的直向佈局極致壓縮（確保能裝下 5+5 內容） */
         .share-card.ratio-3-4, .share-card.ratio-4-5 {
-            padding: 60px 80px;
+            padding: 40px 60px;
         }
-        .share-card.ratio-3-4 .share-card-body, .share-card.ratio-4-5 .share-card-body {
-            gap: 30px;
+        .share-card.ratio-3-4 .share-card-header, .share-card.ratio-4-5 .share-card-header {
+            margin-bottom: 20px;
         }
-        .share-card.ratio-3-4 .share-top5-item, .share-card.ratio-4-5 .share-top5-item {
-            padding: 12px 25px;
+        .share-card.ratio-3-4 .share-card-title, .share-card.ratio-4-5 .share-card-title {
+            font-size: 36px;
+        }
+        .share-card.ratio-3-4 .share-card-logo, .share-card.ratio-4-5 .share-card-logo {
+            width: 50px;
+            height: 50px;
         }
         .share-card.ratio-3-4 .share-card-stats, .share-card.ratio-4-5 .share-card-stats {
-            margin-bottom: 30px;
+            margin-bottom: 20px;
+            gap: 10px;
+        }
+        .share-card.ratio-3-4 .share-stat-item, .share-card.ratio-4-5 .share-stat-item {
+            padding: 12px 8px;
+        }
+        .share-card.ratio-3-4 .share-stat-value, .share-card.ratio-4-5 .share-stat-value {
+            font-size: 28px;
+        }
+        .share-card.ratio-3-4 .share-card-body, .share-card.ratio-4-5 .share-card-body {
+            gap: 20px;
+        }
+        .share-card.ratio-3-4 .share-card-top5-title, .share-card.ratio-4-5 .share-card-top5-title {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        .share-card.ratio-3-4 .share-top5-list, .share-card.ratio-4-5 .share-top5-list {
+            gap: 6px;
+        }
+        .share-card.ratio-3-4 .share-top5-item, .share-card.ratio-4-5 .share-top5-item {
+            padding: 8px 20px;
+            border-radius: 12px;
+        }
+        .share-card.ratio-3-4 .share-top5-name, .share-card.ratio-4-5 .share-top5-name {
+            font-size: 22px;
+        }
+        .share-card.ratio-3-4 .share-top5-artist, .share-card.ratio-4-5 .share-top5-artist {
+            font-size: 16px;
+        }
+        .share-card.ratio-3-4 .share-card-footer, .share-card.ratio-4-5 .share-card-footer {
+            margin-top: auto;
+            padding-top: 15px;
+            font-size: 18px;
         }
         
         /* 16:9, 4:3, 5:4 等橫向比例 */
