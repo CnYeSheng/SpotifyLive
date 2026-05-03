@@ -139,12 +139,15 @@ const userSessions = new Map();
 // Track song changes for token refresh
 const songChangeTracker = new Map();
 
+// 暫停時間閾值（毫秒）- 超過這個時間才算新的播放
+const PAUSE_THRESHOLD = 5 * 60 * 1000; // 5 分鐘
+
 // Cache for context names (playlist/album/artist names) - expires after 1 hour
 const contextNameCache = new Map();
 const CONTEXT_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
 // Track song changes and refresh token every 2 songs
-async function trackSongChange(sessionId, track, userId, progressMs = 0, accessToken = null) {
+async function trackSongChange(sessionId, track, userId, progressMs = 0, accessToken = null, isPlaying = true) {
     try {
         if (!sessionId) return;
         const trackId = track ? (typeof track === 'string' ? track : track.id) : null;
@@ -155,8 +158,44 @@ async function trackSongChange(sessionId, track, userId, progressMs = 0, accessT
             lastRefreshTime: Date.now(),
             startTime: Date.now(),
             trackInfo: null,
-            lastProgress: 0
+            lastProgress: 0,
+            lastPauseTime: null,  // 最後暫停時間
+            wasPaused: false      // 是否曾暫停
         };
+
+        // 處理暫停狀態
+        if (!isPlaying && trackId) {
+            // 記錄暫停時間
+            tracker.wasPaused = true;
+            if (!tracker.lastPauseTime) {
+                tracker.lastPauseTime = Date.now();
+                console.log(`⏸️ Playback paused: ${track.name} at ${progressMs}ms`);
+            }
+            songChangeTracker.set(sessionId, tracker);
+            return; // 暫停時不創建新記錄
+        }
+
+        // 如果從暫停恢復
+        if (tracker.wasPaused && trackId === tracker.currentTrackId) {
+            const pauseDuration = tracker.lastPauseTime ? (Date.now() - tracker.lastPauseTime) : 0;
+            
+            if (pauseDuration < PAUSE_THRESHOLD) {
+                // 短時間內恢復，不算新的播放
+                console.log(`▶️ Resumed after pause (${Math.floor(pauseDuration/1000)}s), not counting as new play`);
+                tracker.wasPaused = false;
+                tracker.lastPauseTime = null;
+                // 更新 startTime 以考慮暫停時間
+                tracker.startTime += pauseDuration;
+                songChangeTracker.set(sessionId, tracker);
+                return;
+            } else {
+                // 暫停時間過長，算作新的播放
+                console.log(`▶️ Resumed after long pause (${Math.floor(pauseDuration/1000)}s), counting as new play`);
+                tracker.wasPaused = false;
+                tracker.lastPauseTime = null;
+                // 繼續下面的邏輯，創建新記錄
+            }
+        }
 
         // Detect if it's a DIFFERENT song OR if the SAME song started over (repeat/loop)
         const isDifferentSong = tracker.currentTrackId !== trackId;
@@ -733,7 +772,7 @@ app.get('/api/current-track', async (req, res) => {
         // Track song change for token refresh - pass track with context attached
         try {
             const trackWithContext = { ...track, context: data.context };
-            trackSongChange(sessionId, trackWithContext, user.id, currentTrack.progress, session.accessToken);
+            trackSongChange(sessionId, trackWithContext, user.id, currentTrack.progress, session.accessToken, currentTrack.isPlaying);
         } catch (e) {
             console.error('❌ Error in trackSongChange:', e);
         }
