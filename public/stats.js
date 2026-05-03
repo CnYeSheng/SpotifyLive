@@ -405,13 +405,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 cardWidth = 1080;
                 cardHeight = 1350;
                 ratioClass = 'ratio-4-5';
-                isLandscape = false;
+                isLandscape = true; // 改為橫向佈局以防切到
                 break;
             case '3:4':
                 cardWidth = 1012;
                 cardHeight = 1350;
                 ratioClass = 'ratio-3-4';
-                isLandscape = false;
+                isLandscape = true; // 改為橫向佈局以防切到
                 break;
             case '5:4':
                 cardWidth = 1350;
