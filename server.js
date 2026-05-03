@@ -3258,6 +3258,10 @@ app.get('/image', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'image.html'));
 });
 
+app.get('/stats', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'stats.html'));
+});
+
 // 多供應商歌詞搜尋 API（本地開發用）
 app.get('/api/lyrics-search-multi/:artist/:title', async (req, res) => {
     const { artist: originalArtist, title: originalTitle } = req.params;
