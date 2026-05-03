@@ -4198,6 +4198,115 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// ==========================================
+// 🚀 Background Player Monitor
+// ==========================================
+// 這個監控器會在伺服器端定時輪詢所有活動會話，
+// 這樣使用者不需要開啟網頁也能記錄播放時長。
+
+class BackgroundPlayerMonitor {
+    constructor() {
+        this.pollInterval = 45000; // 每 45 秒輪詢一次（平衡即時性與 API 限制）
+        this.isActive = false;
+        this.stats = {
+            totalPolls: 0,
+            activeTrackings: 0,
+            lastRun: null
+        };
+    }
+
+    start() {
+        if (this.isActive) return;
+        this.isActive = true;
+        console.log('🚀 [BackgroundMonitor] Started');
+        this.run();
+    }
+
+    stop() {
+        this.isActive = false;
+        console.log('⏹️ [BackgroundMonitor] Stopped');
+    }
+
+    async run() {
+        if (!this.isActive) return;
+
+        const startTime = Date.now();
+        this.stats.lastRun = new Date();
+        this.stats.totalPolls++;
+
+        try {
+            // 獲取所有目前在記憶體中的會話
+            const sessions = Array.from(userSessions.entries());
+            let activeCount = 0;
+
+            // 過濾掉不活躍或已過期的會話（例如超過 6 小時沒動靜的）
+            const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
+            const eligibleSessions = sessions.filter(([sid, session]) => {
+                // 檢查是否有必要的權限和最近活動
+                const lastActivity = session.currentTrackCache?.timestamp || 0;
+                return session.refreshToken && (lastActivity > sixHoursAgo || lastActivity === 0);
+            });
+
+            for (const [sessionId, session] of eligibleSessions) {
+                try {
+                    // 1. 檢查是否需要刷新 Token
+                    const needsRefresh = session.expiresAt <= Date.now() + (5 * 60 * 1000);
+                    if (needsRefresh) {
+                        const refreshed = await refreshAccessToken(session, sessionId);
+                        if (!refreshed) continue; // 刷新失敗，跳過此會話
+                    }
+
+                    // 2. 獲取當前播放狀態
+                    const response = await makeSpotifyAPICall('https://api.spotify.com/v1/me/player', {
+                        headers: { 'Authorization': `Bearer ${session.accessToken}` }
+                    }, sessionId);
+
+                    if (response.status === 200 && response.data && response.data.item) {
+                        const data = response.data;
+                        const track = data.item;
+                        const userId = session.userProfile?.data?.id || (await getSpotifyUserId(session, sessionId));
+                        
+                        if (userId) {
+                            // 3. 呼叫現有的 trackSongChange 進行記錄
+                            const trackWithContext = { ...track, context: data.context };
+                            await trackSongChange(sessionId, trackWithContext, userId, data.progress_ms, session.accessToken, data.is_playing);
+                            
+                            if (data.is_playing) activeCount++;
+                        }
+                    } else if (response.status === 204 || !response.data?.item) {
+                        // 沒在播放，執行一次 null 追蹤以更新最後一首歌的時長
+                        const userId = session.userProfile?.data?.id;
+                        if (userId) {
+                            await trackSongChange(sessionId, null, userId);
+                        }
+                    }
+                } catch (err) {
+                    // 忽略靜默錯誤
+                }
+
+                // 每個會話之間稍微停頓
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            this.stats.activeTrackings = activeCount;
+        } catch (error) {
+            console.error('[BackgroundMonitor] Global error:', error);
+        }
+
+        // 排定下一次執行
+        const nextRun = Math.max(10000, this.pollInterval - (Date.now() - startTime));
+        setTimeout(() => this.run(), nextRun);
+    }
+}
+
+const backgroundMonitor = new BackgroundPlayerMonitor();
+backgroundMonitor.start();
+
+// Health check endpoint for background monitor
+app.get('/api/admin/monitor-status', (req, res) => {
+    res.json(backgroundMonitor.stats);
+});
+
 // Start server
 if (require.main === module) {
     app.listen(PORT, () => {
