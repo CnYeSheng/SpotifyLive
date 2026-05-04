@@ -1920,7 +1920,68 @@ function cleanupContextCache() {
 // 每 30 分鐘清理一次緩存
 setInterval(cleanupContextCache, 30 * 60 * 1000);
 
-// Get available devices
+// Sync recently played tracks from Spotify to fill gaps (e.g. when server was offline)
+async function syncRecentlyPlayed(sessionId, userId, accessToken) {
+    if (!userId || !accessToken) return;
+    
+    try {
+        console.log(`🔄 [Sync] Fetching recently played for user ${userId.substring(0, 8)}...`);
+        const response = await makeSpotifyAPICall('https://api.spotify.com/v1/me/player/recently-played?limit=50', {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        }, sessionId);
+
+        if (!response.data || !response.data.items || response.data.items.length === 0) {
+            return;
+        }
+
+        // Get existing history for the last 1 day to check for duplicates
+        let history = [];
+        if (process.env.VERCEL && kvStorage.isKVAvailable) {
+            history = await kvStorage.getListeningHistory({ headers: { 'x-spotify-user-id': userId } }, 1);
+        } else {
+            history = await enhancedStorage.getListeningHistory(userId, 1);
+        }
+
+        const existingTimestamps = new Set(history.map(h => new Date(h.playedAt).getTime()));
+        let newRecords = 0;
+
+        for (const item of response.data.items) {
+            const playedAt = new Date(item.played_at);
+            const timestamp = playedAt.getTime();
+
+            // Only record if it doesn't already exist in our history
+            if (!existingTimestamps.has(timestamp)) {
+                const track = item.track;
+                const historyData = {
+                    trackId: track.id,
+                    trackName: track.name,
+                    artistName: Array.isArray(track.artists) ? track.artists.map(a => a.name).join(', ') : track.artistName,
+                    albumName: track.album?.name || track.albumName,
+                    durationMs: track.duration_ms,
+                    playedAt: playedAt,
+                    contextType: item.context?.type || null,
+                    contextName: null, 
+                    contextUri: item.context?.uri || null
+                };
+
+                if (process.env.VERCEL && kvStorage.isKVAvailable) {
+                    await kvStorage.saveListeningHistory({ headers: { 'x-spotify-user-id': userId, 'x-session-id': sessionId } }, historyData);
+                } else {
+                    await enhancedStorage.saveListeningHistory(userId, historyData);
+                }
+                newRecords++;
+            }
+        }
+
+        if (newRecords > 0) {
+            console.log(`✅ [Sync] Added ${newRecords} missing records for user ${userId.substring(0, 8)}`);
+        }
+    } catch (error) {
+        console.error(`❌ [Sync] Failed for ${userId.substring(0, 8)}:`, error.message);
+    }
+}
+
+// Get listening stats
 app.get('/api/stats/listening', async (req, res) => {
     try {
         const days = parseInt(req.query.days) || 7;
@@ -1933,6 +1994,13 @@ app.get('/api/stats/listening', async (req, res) => {
         let history = [];
         const session = await getUserSession(req);
         const userId = session ? await getSpotifyUserId(session, req.sessionId) : null;
+
+        // Trigger sync in background if it's the first page load (usually days=1 or days=7)
+        if (session && userId) {
+            syncRecentlyPlayed(req.sessionId, userId, session.accessToken).catch(err => {
+                console.error('Background sync failed:', err);
+            });
+        }
 
         if (process.env.VERCEL && kvStorage.isKVAvailable) {
             history = await kvStorage.getListeningHistory(req, days, until);
