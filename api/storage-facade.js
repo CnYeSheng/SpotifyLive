@@ -33,6 +33,10 @@ class StorageFacade {
         return await this.kvManager.deleteSession(sessionId);
     }
 
+    async getAllSessions() {
+        return await this.kvManager.getAllSessions();
+    }
+
     // --- Song Settings & Lyrics (Persistent) ---
     async saveLyrics(userId, trackInfo, lyrics, lyricsType, source) {
         if (!userId) throw new Error("User ID is required to save lyrics.");

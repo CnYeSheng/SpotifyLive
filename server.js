@@ -136,6 +136,25 @@ const LYRICS_API_URL = process.env.LYRICS_API_URL || 'https://lyrics.cyss.us.eu.
 // Store user sessions (in production, use a proper database)
 const userSessions = new Map();
 
+// 從存儲中恢復所有過往會話，確保背景監控能立即工作
+async function loadAllSessions() {
+    try {
+        console.log('📂 [System] Loading all persistent sessions...');
+        const allSessions = await kvStorage.getAllSessions();
+        let count = 0;
+        for (const [sid, session] of allSessions.entries()) {
+            userSessions.set(sid, session);
+            count++;
+        }
+        console.log(`✅ [System] Loaded ${count} sessions into memory`);
+    } catch (error) {
+        console.error('❌ [System] Failed to load sessions:', error);
+    }
+}
+
+// 在初始化後加載
+setTimeout(loadAllSessions, 2000);
+
 // Track song changes for token refresh
 const songChangeTracker = new Map();
 

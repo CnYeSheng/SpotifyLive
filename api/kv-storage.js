@@ -120,6 +120,40 @@ class KVStorageManager {
         return `${userKey}:${trackKey}`;
     }
     
+    // 獲取所有 session
+    async getAllSessions() {
+        const allSessions = new Map();
+        
+        // 1. 先從內存緩存獲取
+        for (const [key, value] of this.cache.entries()) {
+            if (key.startsWith('session:')) {
+                const sessionId = key.replace('session:', '');
+                allSessions.set(sessionId, value);
+            }
+        }
+        
+        // 2. 如果 KV 可用，獲取所有 session key
+        if (this.isKVAvailable && this.redis) {
+            try {
+                const keys = await this.redis.keys('session:*');
+                for (const key of keys) {
+                    const sessionId = key.replace('session:', '');
+                    if (!allSessions.has(sessionId)) {
+                        const data = await this.redis.get(key);
+                        if (data) {
+                            const sessionData = typeof data === 'string' ? JSON.parse(data) : data;
+                            allSessions.set(sessionId, sessionData);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('KV 獲取所有 session 失敗:', error);
+            }
+        }
+        
+        return allSessions;
+    }
+
     // 獲取 session
     async getSession(sessionId) {
         if (!sessionId) return null;
