@@ -155,7 +155,7 @@ async function loadAllSessions() {
 // 在初始化後加載
 setTimeout(loadAllSessions, 2000);
 
-// Track song changes for token refresh
+// Track song changes for token refresh and history recording (keyed by userId)
 const songChangeTracker = new Map();
 
 // 暫停時間閾值（毫秒）- 超過這個時間才算新的播放
@@ -168,10 +168,13 @@ const CONTEXT_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 // Track song changes and refresh token every 2 songs
 async function trackSongChange(sessionId, track, userId, progressMs = 0, accessToken = null, isPlaying = true) {
     try {
-        if (!sessionId) {return;};
+        if (!userId) {return;};
         const trackId = track ? (typeof track === 'string' ? track : track.id) : null;
+        
+        // 使用 userId 作為追蹤 Key，這樣多個會話 (sessionId) 會共享同一個追蹤器狀態
+        const trackerKey = userId;
 
-        const tracker = songChangeTracker.get(sessionId) || {
+        const tracker = songChangeTracker.get(trackerKey) || {
             currentTrackId: null,
             songCount: 0,
             lastRefreshTime: Date.now(),
@@ -188,10 +191,10 @@ async function trackSongChange(sessionId, track, userId, progressMs = 0, accessT
             tracker.wasPaused = true;
             if (!tracker.lastPauseTime) {
                 tracker.lastPauseTime = Date.now();
-                console.log(`⏸️ Playback paused: ${track.name} at ${progressMs}ms`);
+                console.log(`⏸️ Playback paused: ${track.name} at ${progressMs}ms for user ${userId.substring(0, 8)}`);
             }
-            songChangeTracker.set(sessionId, tracker);
-            return; // 暫停時不創建新記錄
+            songChangeTracker.set(trackerKey, tracker);
+            return; 
         }
 
         // 如果從暫停恢復
@@ -200,67 +203,54 @@ async function trackSongChange(sessionId, track, userId, progressMs = 0, accessT
             
             if (pauseDuration < PAUSE_THRESHOLD) {
                 // 短時間內恢復，不算新的播放
-                console.log(`▶️ Resumed after pause (${Math.floor(pauseDuration/1000)}s), not counting as new play`);
+                console.log(`▶️ Resumed after pause (${Math.floor(pauseDuration/1000)}s), not counting as new play for user ${userId.substring(0, 8)}`);
                 tracker.wasPaused = false;
                 tracker.lastPauseTime = null;
                 // 更新 startTime 以考慮暫停時間
                 tracker.startTime += pauseDuration;
-                songChangeTracker.set(sessionId, tracker);
+                songChangeTracker.set(trackerKey, tracker);
                 return;
             } else {
                 // 暫停時間過長，算作新的播放
                 console.log(`▶️ Resumed after long pause (${Math.floor(pauseDuration/1000)}s), counting as new play`);
                 tracker.wasPaused = false;
                 tracker.lastPauseTime = null;
-                // 繼續下面的邏輯，創建新記錄
             }
         }
 
         // Detect if it's a DIFFERENT song OR if the SAME song started over (repeat/loop)
         const isDifferentSong = tracker.currentTrackId !== trackId;
-        const isRepeatedSong = !isDifferentSong && trackId && progressMs < tracker.lastProgress - 5000; // Jumped back more than 5s
+        const isRepeatedSong = !isDifferentSong && trackId && progressMs < tracker.lastProgress - 5000; 
 
         if (isDifferentSong || isRepeatedSong) {
             tracker.currentTrackId = trackId;
             tracker.trackInfo = track;
             tracker.startTime = Date.now();
             tracker.lastProgress = progressMs;
-            tracker.isInitialRecorded = false; // Reset for new song/loop
-            
-            // 調試：檢查傳入的 track.context
-            console.log(`🔍 trackSongChange: track.context =`, track.context ? {
-                type: track.context.type,
-                uri: track.context.uri
-            } : 'null');
+            tracker.isInitialRecorded = false; 
             
             // 儲存 context（歌單）資訊
             if (track.context) {
                 const contextType = track.context.type;
                 const contextUri = track.context.uri || track.context.href;
                 
-                // 如果是歌單，嘗試從 URI 提取 ID 並獲取名稱
                 let contextName = null;
                 if (contextType === 'playlist' && contextUri) {
                     const playlistId = contextUri.split(':')[2];
                     if (playlistId) {
-                        // 如果有 accessToken，立即獲取歌單名稱
                         if (accessToken) {
                             try {
                                 contextName = await fetchPlaylistName(playlistId, accessToken, sessionId);
                             } catch (err) {
-                                console.log(`⚠️ Failed to fetch playlist name: ${err.message}`);
                                 contextName = `Playlist:${playlistId}`;
                             }
                         } else {
-                            // 否則使用臨時名稱
                             contextName = `Playlist:${playlistId}`;
                         }
                     }
                 } else if (contextType === 'album') {
-                    // 專輯直接使用 track.album.name
                     contextName = track.album?.name || null;
                 } else if (contextType === 'artist') {
-                    // 藝術家使用第一個藝人名稱
                     contextName = Array.isArray(track.artists) ? track.artists[0]?.name : null;
                 }
                 
@@ -269,17 +259,15 @@ async function trackSongChange(sessionId, track, userId, progressMs = 0, accessT
                     name: contextName,
                     uri: contextUri
                 };
-                console.log(`📀 tracker.context set to:`, tracker.context);
             } else {
                 tracker.context = null;
-                console.log(`⚠️ No context in track, setting tracker.context to null`);
             }
 
             if (trackId) {
                 tracker.songCount++;
-                console.log(`🎵 ${isRepeatedSong ? '🔄 Loop detected:' : 'Song changed:'} ${track.name} (${sessionId.substring(0, 8)}...) Count: ${tracker.songCount}`);
+                console.log(`🎵 ${isRepeatedSong ? '🔄 Loop detected:' : 'Song changed:'} ${track.name} (User: ${userId.substring(0, 8)}...) Count: ${tracker.songCount}`);
             } else {
-                // Playback stopped, update duration of the last song if it was recorded
+                // Playback stopped
                 if (tracker.isInitialRecorded) {
                     const now = Date.now();
                     const listenedDuration = now - tracker.startTime;
@@ -289,36 +277,25 @@ async function trackSongChange(sessionId, track, userId, progressMs = 0, accessT
                     try {
                         if (process.env.VERCEL && kvStorage.isKVAvailable) {
                             await kvStorage.updateLastHistoryDuration({ headers: { 'x-spotify-user-id': userId, 'x-session-id': sessionId } }, durationMs);
-                        } else if (userId) {
+                        } else {
                             await enhancedStorage.updateListeningHistoryDuration(userId, durationMs);
                         }
-                        console.log(`⏹️ Final duration updated for ${tracker.trackInfo?.name}`);
                     } catch (e) {
                         console.error('Failed to update final duration on stop:', e);
                     }
                 }
-                console.log(`⏹️ Playback stopped for session ${sessionId.substring(0, 8)}...`);
             }
 
             // Refresh token every 2 songs
             if (tracker.songCount >= 2) {
-                console.log(`🔄 Refreshing token after ${tracker.songCount} songs for session ${sessionId.substring(0, 8)}...`);
-                tracker.songCount = 0; // Reset counter
-                tracker.lastRefreshTime = Date.now();
-
-                // Trigger token refresh
                 const session = userSessions.get(sessionId);
                 if (session) {
-                    refreshAccessToken(session, sessionId).then(refreshed => {
-                        if (refreshed) {
-                            console.log(`✅ Token refreshed successfully after song change`);
-                        } else {
-                            console.log(`⚠️ Token refresh failed after song change`);
-                        }
-                    }).catch(err => {
+                    refreshAccessToken(session, sessionId).catch(err => {
                         console.error('❌ Error in background token refresh:', err);
                     });
                 }
+                tracker.songCount = 0; 
+                tracker.lastRefreshTime = Date.now();
             }
         } else if (trackId) {
             // Same song, check if we should record or update
@@ -338,7 +315,6 @@ async function trackSongChange(sessionId, track, userId, progressMs = 0, accessT
                             albumName: tracker.trackInfo.album?.name || tracker.trackInfo.album || tracker.trackInfo.albumName,
                             durationMs: durationMs,
                             playedAt: new Date(tracker.startTime),
-                            // 記錄歌單/上下文資訊
                             contextType: tracker.context?.type || null,
                             contextName: tracker.context?.name || null,
                             contextUri: tracker.context?.uri || null
@@ -346,11 +322,11 @@ async function trackSongChange(sessionId, track, userId, progressMs = 0, accessT
 
                         if (process.env.VERCEL && kvStorage.isKVAvailable) {
                             await kvStorage.saveListeningHistory({ headers: { 'x-spotify-user-id': userId, 'x-session-id': sessionId } }, historyData);
-                        } else if (userId) {
+                        } else {
                             await enhancedStorage.saveListeningHistory(userId, historyData);
                         }
                         tracker.isInitialRecorded = true;
-                        console.log(`📝 Initially recorded ${tracker.trackInfo.name} after 5s`);
+                        console.log(`📝 Initially recorded ${tracker.trackInfo.name} after 5s (User: ${userId.substring(0, 8)})`);
                     } catch (e) {
                         console.error('Failed to save initial listening history:', e);
                     }
@@ -359,7 +335,7 @@ async function trackSongChange(sessionId, track, userId, progressMs = 0, accessT
                     try {
                         if (process.env.VERCEL && kvStorage.isKVAvailable) {
                             await kvStorage.updateLastHistoryDuration({ headers: { 'x-spotify-user-id': userId, 'x-session-id': sessionId } }, durationMs);
-                        } else if (userId) {
+                        } else {
                             await enhancedStorage.updateListeningHistoryDuration(userId, durationMs);
                         }
                     } catch (e) {
@@ -369,7 +345,7 @@ async function trackSongChange(sessionId, track, userId, progressMs = 0, accessT
             }
             tracker.lastProgress = progressMs;
         }
-        songChangeTracker.set(sessionId, tracker);
+        songChangeTracker.set(trackerKey, tracker);
     } catch (error) {
         console.error('❌ Error inside trackSongChange:', error);
     }
@@ -1939,11 +1915,23 @@ function cleanupContextCache() {
 // 每 30 分鐘清理一次緩存
 setInterval(cleanupContextCache, 30 * 60 * 1000);
 
+// 記錄上次同步時間，避免過於頻繁
+const lastSyncTime = new Map();
+const SYNC_COOLDOWN = 10 * 60 * 1000; // 10 分鐘同步一次即可
+
 // Sync recently played tracks from Spotify to fill gaps (e.g. when server was offline)
 async function syncRecentlyPlayed(sessionId, userId, accessToken) {
     if (!userId || !accessToken) return;
     
+    // 檢查冷卻時間
+    const now = Date.now();
+    const lastSync = lastSyncTime.get(userId) || 0;
+    if (now - lastSync < SYNC_COOLDOWN) {
+        return;
+    }
+    
     try {
+        lastSyncTime.set(userId, now);
         console.log(`🔄 [Sync] Fetching recently played for user ${userId.substring(0, 8)}...`);
         const response = await makeSpotifyAPICall('https://api.spotify.com/v1/me/player/recently-played?limit=50', {
             headers: { 'Authorization': `Bearer ${accessToken}` }
@@ -1997,6 +1985,8 @@ async function syncRecentlyPlayed(sessionId, userId, accessToken) {
         }
     } catch (error) {
         console.error(`❌ [Sync] Failed for ${userId.substring(0, 8)}:`, error.message);
+        // 如果失敗，縮短冷卻時間以便重試
+        lastSyncTime.set(userId, now - (SYNC_COOLDOWN / 2));
     }
 }
 
@@ -2061,55 +2051,66 @@ app.get('/api/stats/listening', async (req, res) => {
         // 計算歌單統計
         const playlistCounts = {};
         
-        // 調試：檢查歷史數據中的 context 資訊
-        const withContext = history.filter(item => item.contextType === 'playlist').length;
-        console.log(`📊 Total history: ${history.length}, With playlist context: ${withContext}`);
-        if (withContext > 0) {
-            console.log(`📀 Sample context data:`, history.find(item => item.contextType === 'playlist'));
-        }
-        
         history.forEach(item => {
             if (item.contextType === 'playlist') {
-                // 優先使用 contextName，如果是 "Playlist:{id}" 格式則從 URI 提取 ID 作為 key
-                let playlistKey = item.contextName;
-                let displayName = item.contextName;
-                let playlistUri = item.contextUri;
+                let playlistId = null;
+                let playlistUri = item.contextUri || '';
                 
-                // 如果 name 是 "Playlist:{id}" 格式，嘗試從 URI 獲取更可靠的 ID
-                if (item.contextName && item.contextName.startsWith('Playlist:')) {
-                    const extractedId = item.contextName.split(':')[1];
-                    playlistKey = extractedId;
-                    // 保持 displayName 為原始名稱（稍後會被真實名稱覆蓋）
-                } else if (!item.contextName && item.contextUri) {
-                    // 如果沒有 name，從 URI 提取
-                    const extractedId = item.contextUri.split(':')[2];
-                    playlistKey = extractedId;
-                    displayName = `Playlist:${extractedId}`;
+                // 從 URI 提取 ID (支援 spotify:playlist:ID 和 https://.../playlists/ID)
+                if (playlistUri.includes('playlist:')) {
+                    playlistId = playlistUri.split('playlist:')[1].split(':')[0].split('?')[0];
+                } else if (playlistUri.includes('/playlists/')) {
+                    playlistId = playlistUri.split('/playlists/')[1].split('?')[0].split('/')[0];
+                } else if (item.contextName && item.contextName.startsWith('Playlist:')) {
+                    playlistId = item.contextName.split(':')[1];
                 }
                 
-                if (!playlistKey) {return;}
+                // 如果真的提取不到 ID，就用名稱作為 Key (但這通常不應該發生)
+                const playlistKey = playlistId || item.contextName || 'Unknown Playlist';
                 
                 if (!playlistCounts[playlistKey]) {
                     playlistCounts[playlistKey] = {
-                        name: displayName,
-                        uri: playlistUri,
+                        id: playlistId,
+                        name: item.contextName || (playlistId ? `Playlist:${playlistId}` : '未知歌單'),
+                        uri: item.contextUri || (playlistId ? `spotify:playlist:${playlistId}` : ''),
                         count: 0,
                         tracks: new Set()
                     };
                 }
                 
-                // 如果後來獲取了真實名稱，更新它
-                if (item.contextName && !item.contextName.startsWith('Playlist:') && playlistCounts[playlistKey].name.startsWith('Playlist:')) {
+                // 更新名稱：如果目前是 "Playlist:ID" 或 "未知"，且有更好的名稱，則更換
+                const currentName = playlistCounts[playlistKey].name;
+                const isGenericName = !currentName || currentName.startsWith('Playlist:') || currentName === '未知歌單' || currentName === '載入中...';
+                if (item.contextName && !item.contextName.startsWith('Playlist:') && item.contextName !== '載入中...' && isGenericName) {
                     playlistCounts[playlistKey].name = item.contextName;
                 }
                 
                 playlistCounts[playlistKey].count += 1;
-                playlistCounts[playlistKey].tracks.add(item.trackId);
+                if (item.trackId) playlistCounts[playlistKey].tracks.add(item.trackId);
             }
         });
         
-        // 轉換為陣列並計算不重複歌曲數
-        const topPlaylists = Object.values(playlistCounts)
+        // 再次檢查是否有 ID 相同但 Key 不同的項 (例如一個用 ID 當 Key，一個用 Name 當 Key)
+        // 並進行最後合併
+        const finalPlaylistCounts = {};
+        Object.values(playlistCounts).forEach(p => {
+            const finalKey = p.id || p.name;
+            if (!finalPlaylistCounts[finalKey]) {
+                finalPlaylistCounts[finalKey] = p;
+            } else {
+                // 合併數據
+                finalPlaylistCounts[finalKey].count += p.count;
+                p.tracks.forEach(t => finalPlaylistCounts[finalKey].tracks.add(t));
+                // 如果目前的名稱是泛用的，則更新為更具體的
+                const isGeneric = finalPlaylistCounts[finalKey].name.startsWith('Playlist:');
+                if (isGeneric && !p.name.startsWith('Playlist:')) {
+                    finalPlaylistCounts[finalKey].name = p.name;
+                }
+            }
+        });
+        
+        // 轉換為陣列
+        const topPlaylists = Object.values(finalPlaylistCounts)
             .map(playlist => ({
                 name: playlist.name,
                 uri: playlist.uri,

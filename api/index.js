@@ -413,12 +413,99 @@ app.get('/api/stats/listening', async (req, res) => {
         
         const songCounts = {};
         history.forEach(item => {
-            const key = `${item.trackName} - ${item.artistName}`;
-            songCounts[key] = (songCounts[key] || 0) + 1;
+            // 確保 trackName 和 artistName 存在
+            let trackName = item.trackName || item.name || item.title || '未知歌曲';
+            let artistName = item.artistName || item.artist || '未知歌手';
+            
+            // 如果是舊格式（name 欄位包含 " - "），則進行分割
+            if (!item.trackName && item.name && item.name.includes(' - ')) {
+                const parts = item.name.split(' - ');
+                trackName = parts[0] || item.name;
+                artistName = parts.slice(1).join(' - ') || '未知歌手';
+            }
+            
+            const key = `${trackName}|||${artistName}`;
+            if (!songCounts[key]) {
+                songCounts[key] = {
+                    trackName: trackName,
+                    artistName: artistName,
+                    count: 0
+                };
+            }
+            songCounts[key].count += 1;
         });
         
-        const topSongs = Object.entries(songCounts)
-            .map(([name, count]) => ({ name, count }))
+        const topSongs = Object.values(songCounts)
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10);
+            
+        // 計算歌單統計
+        const playlistCounts = {};
+        
+        history.forEach(item => {
+            if (item.contextType === 'playlist') {
+                let playlistId = null;
+                let playlistUri = item.contextUri || '';
+                
+                // 從 URI 提取 ID (支援 spotify:playlist:ID 和 https://.../playlists/ID)
+                if (playlistUri.includes('playlist:')) {
+                    playlistId = playlistUri.split('playlist:')[1].split(':')[0].split('?')[0];
+                } else if (playlistUri.includes('/playlists/')) {
+                    playlistId = playlistUri.split('/playlists/')[1].split('?')[0].split('/')[0];
+                } else if (item.contextName && item.contextName.startsWith('Playlist:')) {
+                    playlistId = item.contextName.split(':')[1];
+                }
+                
+                // 如果真的提取不到 ID，就用名稱作為 Key
+                const playlistKey = playlistId || item.contextName || 'Unknown Playlist';
+                
+                if (!playlistCounts[playlistKey]) {
+                    playlistCounts[playlistKey] = {
+                        id: playlistId,
+                        name: item.contextName || (playlistId ? `Playlist:${playlistId}` : '未知歌單'),
+                        uri: item.contextUri || (playlistId ? `spotify:playlist:${playlistId}` : ''),
+                        count: 0,
+                        tracks: new Set()
+                    };
+                }
+                
+                // 更新名稱：如果目前是 "Playlist:ID" 或 "未知"，且有更好的名稱，則更換
+                const currentName = playlistCounts[playlistKey].name;
+                const isGenericName = !currentName || currentName.startsWith('Playlist:') || currentName === '未知歌單' || currentName === '載入中...';
+                if (item.contextName && !item.contextName.startsWith('Playlist:') && item.contextName !== '載入中...' && isGenericName) {
+                    playlistCounts[playlistKey].name = item.contextName;
+                }
+                
+                playlistCounts[playlistKey].count += 1;
+                if (item.trackId) playlistCounts[playlistKey].tracks.add(item.trackId);
+            }
+        });
+        
+        // 再次檢查是否有 ID 相同但 Key 不同的項
+        const finalPlaylistCounts = {};
+        Object.values(playlistCounts).forEach(p => {
+            const finalKey = p.id || p.name;
+            if (!finalPlaylistCounts[finalKey]) {
+                finalPlaylistCounts[finalKey] = p;
+            } else {
+                // 合併數據
+                finalPlaylistCounts[finalKey].count += p.count;
+                p.tracks.forEach(t => finalPlaylistCounts[finalKey].tracks.add(t));
+                // 如果目前的名稱是泛用的，則更新為更具體的
+                const isGeneric = finalPlaylistCounts[finalKey].name.startsWith('Playlist:');
+                if (isGeneric && !p.name.startsWith('Playlist:')) {
+                    finalPlaylistCounts[finalKey].name = p.name;
+                }
+            }
+        });
+        
+        const topPlaylists = Object.values(finalPlaylistCounts)
+            .map(playlist => ({
+                name: playlist.name,
+                uri: playlist.uri,
+                count: playlist.count,
+                uniqueTracks: playlist.tracks.size
+            }))
             .sort((a, b) => b.count - a.count)
             .slice(0, 10);
             
@@ -427,7 +514,8 @@ app.get('/api/stats/listening', async (req, res) => {
             totalDurationMs: totalDuration,
             songCount: history.length,
             topSongs,
-            history: history.slice(0, 50) // Return only last 50 for history list
+            topPlaylists,
+            history: history.slice(0, 50)
         });
     } catch (error) {
         console.error('Failed to fetch listening stats:', error);

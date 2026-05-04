@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const topSongsList = document.getElementById('top-songs-list');
     const topPlaylistsList = document.getElementById('top-playlists-list');
     const historyList = document.getElementById('history-list');
+    const dateRangeDisplay = document.getElementById('date-range-display');
 
     // 分享功能相關元素
     const shareBtn = document.getElementById('share-btn');
@@ -210,6 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (data.success) {
                 updateUI(data);
+                updateDateRangeDisplay();
             } else {
                 console.error('Failed to fetch stats:', data.error);
                 if (!isSilent) showError('獲取統計數據失敗: ' + data.error);
@@ -219,6 +221,27 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!isSilent) showError('無法連接到伺服器，請檢查網路連線或伺服器狀態。');
         } finally {
             if (!isSilent) loading.style.display = 'none';
+        }
+    }
+
+    function updateDateRangeDisplay() {
+        if (!dateRangeDisplay) return;
+        
+        const now = new Date();
+        const endDate = new Date(now);
+        const startDate = new Date(now);
+        
+        if (currentDays === 1) {
+            // 今日
+            dateRangeDisplay.textContent = `📅 統計範圍: ${now.toLocaleDateString('zh-TW')}`;
+        } else if (currentDays === 2) {
+            // 昨天
+            startDate.setDate(now.getDate() - 1);
+            dateRangeDisplay.textContent = `📅 統計範圍: ${startDate.toLocaleDateString('zh-TW')} (昨日)`;
+        } else {
+            // 過去 X 天
+            startDate.setDate(now.getDate() - currentDays + 1);
+            dateRangeDisplay.textContent = `📅 統計範圍: ${startDate.toLocaleDateString('zh-TW')} - ${endDate.toLocaleDateString('zh-TW')}`;
         }
     }
 
@@ -320,6 +343,31 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // 添加點擊事件 - 展開/收起
             document.querySelectorAll('.playlist-item').forEach(item => {
+                const playlistId = item.dataset.playlistId;
+                const playlistName = item.dataset.playlistName;
+                const expandedDiv = document.getElementById(`playlist-${playlistId}`);
+                const icon = item.querySelector('.expand-icon');
+                const nameSpan = item.querySelector('.song-name');
+
+                // 如果名稱是 "載入中..."，自動觸發名稱獲取
+                if (nameSpan && nameSpan.textContent === '載入中...' && playlistId) {
+                    fetch(`/api/playlist/${playlistId}`)
+                        .then(res => res.json())
+                        .then(pData => {
+                            if (pData.success && pData.playlistInfo) {
+                                nameSpan.textContent = pData.playlistInfo.name;
+                                item.dataset.playlistName = pData.playlistInfo.name;
+                                // 同步更新分享數據中的名稱
+                                if (currentStatsData && currentStatsData.topPlaylists) {
+                                    const p = currentStatsData.topPlaylists.find(pl => 
+                                        pl.uri?.includes(playlistId) || pl.name.includes(playlistId)
+                                    );
+                                    if (p) p.name = pData.playlistInfo.name;
+                                }
+                            }
+                        }).catch(err => console.error('Failed to auto-fetch playlist name:', err));
+                }
+                
                 item.addEventListener('click', async () => {
                     const playlistId = item.dataset.playlistId;
                     const playlistName = item.dataset.playlistName;
@@ -402,7 +450,7 @@ document.addEventListener('DOMContentLoaded', () => {
         historyList.innerHTML = data.history.map(item => {
             const date = new Date(item.playedAt);
             const timeStr = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
-            const dateStr = `${date.getMonth() + 1}/${date.getDate()}`;
+            const dateStr = `${date.getFullYear()}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')}`;
             
             const dMs = item.durationMs || 0;
             const dMin = Math.floor(dMs / 60000);
@@ -412,8 +460,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return `
                 <li class="song-item">
                     <div class="song-info">
-                        <span class="song-name">${item.trackName}</span>
-                        <span class="song-artist">${item.artistName}</span>
+                        <span class="song-name">${escapeHtml(item.trackName)}</span>
+                        <span class="song-artist">${escapeHtml(item.artistName)}</span>
                     </div>
                     <div class="song-meta" style="text-align: right;">
                         <div class="song-time">${dateStr} ${timeStr}</div>
@@ -512,8 +560,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const topPlaylists = (data.topPlaylists || []).slice(0, 5);
 
 
-        // 格式化時間範圍標籤
+        // 格式化時間範圍標籤與具體日期
         const rangeLabel = getRangeLabel(currentDays);
+        let detailedDate = '';
+        const now = new Date();
+        const startDate = new Date(now);
+        
+        if (currentDays === 1) {
+            detailedDate = now.toLocaleDateString('zh-TW');
+        } else if (currentDays === 2) {
+            startDate.setDate(now.getDate() - 1);
+            detailedDate = startDate.toLocaleDateString('zh-TW');
+        } else {
+            startDate.setDate(now.getDate() - currentDays + 1);
+            detailedDate = `${startDate.getMonth() + 1}/${startDate.getDate()} - ${now.getMonth() + 1}/${now.getDate()}`;
+        }
 
         // 生成卡片 HTML
         shareCardPreview.innerHTML = `
@@ -538,8 +599,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="share-stat-label">不重複</div>
                 </div>
                 <div class="share-stat-item">
-                    <div class="share-stat-value">${rangeLabel}</div>
-                    <div class="share-stat-label">期間</div>
+                    <div class="share-stat-value" style="font-size: ${detailedDate.length > 10 ? '24px' : '32px'}">${detailedDate}</div>
+                    <div class="share-stat-label">統計期間 (${rangeLabel})</div>
                 </div>
             </div>
 
