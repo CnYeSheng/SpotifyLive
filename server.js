@@ -2134,7 +2134,7 @@ app.get('/api/stats/listening', async (req, res) => {
     }
 });
 
-// 獲取歌單詳情（包含用戶播放過的歌曲）
+// 獲獲歌單詳情（包含用戶播放過的歌曲）
 app.get('/api/playlist/:id', async (req, res) => {
     try {
         const session = await getUserSession(req);
@@ -2143,6 +2143,7 @@ app.get('/api/playlist/:id', async (req, res) => {
         }
         
         const playlistId = req.params.id;
+        const days = parseInt(req.query.days) || 7; // 預設使用 7 天，與統計摘要一致
         const sessionId = req.headers['x-session-id'] || req.sessionId;
         const userId = session ? await getSpotifyUserId(session, sessionId) : null;
         
@@ -2183,52 +2184,27 @@ app.get('/api/playlist/:id', async (req, res) => {
             duration_ms: item.track?.duration_ms
         })).filter(track => track.id !== null);
         
-        console.log(`🔍 Playlist ${playlistId}: ${allTracks.length} total tracks in playlist`);
-        
-        // 獲取用戶的聽歌歷史
+        // 獲取用戶在指定天數內的聽歌歷史
         let history = [];
         if (process.env.VERCEL && kvStorage.isKVAvailable) {
-            history = await kvStorage.getListeningHistory(req, 90, null); // 獲取最近 90 天的歷史
+            history = await kvStorage.getListeningHistory(req, days, null);
         } else if (userId) {
-            history = await enhancedStorage.getListeningHistory(userId, 90, null);
+            history = await enhancedStorage.getListeningHistory(userId, days, null);
         }
-        
-        console.log(`📊 User history: ${history.length} records`);
         
         // 過濾出只在這個歌單中播放的記錄
         const playlistContextUri = `spotify:playlist:${playlistId}`;
         const playlistHistory = history.filter(item => {
-            // 匹配 contextUri (例如: spotify:playlist:6pOSeZzGpqAR4PCmRr0n4Y)
+            // 匹配 contextUri
             const uriMatch = item.contextUri === playlistContextUri;
             // 或者匹配 contextName (作為備用方案)
             const nameMatch = item.contextName && (item.contextName === playlist.name || item.contextName === `Playlist:${playlistId}`);
             return uriMatch || nameMatch;
         });
         
-        console.log(`🎵 Playlist-specific history: ${playlistHistory.length} records for playlist "${playlist.name}"`);
-        
-        // 調試：顯示前幾條歷史記錄的上下文信息
-        if (playlistHistory.length > 0) {
-            console.log(`   Sample context info:`, {
-                uri: playlistHistory[0].contextUri,
-                name: playlistHistory[0].contextName,
-                type: playlistHistory[0].contextType
-            });
-        } else if (history.length > 0) {
-            console.log(`   No playlist-specific records found. Total history: ${history.length}`);
-            console.log(`   Expected URI: ${playlistContextUri}`);
-            console.log(`   Sample history items:`, history.slice(0, 3).map(h => ({
-                trackId: h.trackId,
-                contextUri: h.contextUri,
-                contextName: h.contextName
-            })));
-        }
-        
         // 找出歌單中用戶實際播放過的歌曲（僅限這個歌單）
         const playedTrackIds = new Set(playlistHistory.map(item => item.trackId));
         const playedTracks = allTracks.filter(track => playedTrackIds.has(track.id));
-        
-        console.log(`✅ Found ${playedTracks.length} played tracks in this playlist`);
         
         // 為每首播放過的歌曲添加播放次數（僅統計在這個歌單中的播放）
         const trackPlayCounts = {};
@@ -2242,7 +2218,7 @@ app.get('/api/playlist/:id', async (req, res) => {
         const playedTracksWithCount = playedTracks.map(track => ({
             ...track,
             playCount: trackPlayCounts[track.id] || 0
-        })).sort((a, b) => b.playCount - a.playCount); // 按播放次數排序
+        })).sort((a, b) => b.playCount - a.playCount);
         
         res.json({
             success: true,
@@ -2255,8 +2231,7 @@ app.get('/api/playlist/:id', async (req, res) => {
                 owner: playlist.owner?.display_name,
                 played_tracks_count: playedTracks.length
             },
-            tracks: playedTracksWithCount,
-            allTracks: allTracks // 也返回所有歌曲供參考
+            tracks: playedTracksWithCount
         });
     } catch (error) {
         console.error('Failed to fetch playlist details:', error);

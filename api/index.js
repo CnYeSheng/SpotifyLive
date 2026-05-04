@@ -523,6 +523,122 @@ app.get('/api/stats/listening', async (req, res) => {
     }
 });
 
+// 獲取歌單詳情（包含用戶播放過的歌曲）
+app.get('/api/playlist/:id', async (req, res) => {
+    try {
+        const session = await getUserSession(req);
+        if (!session) {
+            return res.status(401).json({ error: 'Not authenticated' });
+        }
+        
+        const playlistId = req.params.id;
+        const days = parseInt(req.query.days) || 7; 
+        const sessionId = req.sessionId;
+        const userId = await getSpotifyUserId(session, sessionId);
+        
+        // 檢查 token 是否需要刷新
+        if (session.expiresAt <= Date.now() + 60000) {
+            await refreshAccessToken(session, sessionId);
+        }
+        
+        // 獲取歌單基本資訊
+        const playlistResponse = await makeSpotifyAPICall(`https://api.spotify.com/v1/playlists/${playlistId}`, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        }, sessionId);
+        
+        const playlist = playlistResponse.data;
+        
+        // 獲取歌單中的歌曲
+        const tracksResponse = await makeSpotifyAPICall(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        }, sessionId);
+        
+        const allTracks = tracksResponse.data.items.map(item => ({
+            id: item.track?.id,
+            name: item.track?.name,
+            artist: item.track?.artists?.map(a => a.name).join(', '),
+            album: item.track?.album?.name,
+            image: item.track?.album?.images?.[0]?.url,
+            duration_ms: item.track?.duration_ms
+        })).filter(track => track.id !== null);
+        
+        // 獲取用戶在指定天數內的聽歌歷史
+        const history = await storage.getListeningHistory(req, days, null);
+        
+        // 過濾出只在這個歌單中播放的記錄
+        const playlistContextUri = `spotify:playlist:${playlistId}`;
+        const playlistHistory = history.filter(item => {
+            const uriMatch = item.contextUri === playlistContextUri;
+            const nameMatch = item.contextName && (item.contextName === playlist.name || item.contextName === `Playlist:${playlistId}`);
+            return uriMatch || nameMatch;
+        });
+        
+        // 為每首播放過的歌曲添加播放次數
+        const trackPlayCounts = {};
+        playlistHistory.forEach(item => {
+            trackPlayCounts[item.trackId] = (trackPlayCounts[item.trackId] || 0) + 1;
+        });
+        
+        // 找出歌單中實際播放過的歌曲
+        const playedTrackIds = new Set(playlistHistory.map(item => item.trackId));
+        const playedTracksWithCount = allTracks
+            .filter(track => playedTrackIds.has(track.id))
+            .map(track => ({
+                ...track,
+                playCount: trackPlayCounts[track.id] || 0
+            }))
+            .sort((a, b) => b.playCount - a.playCount);
+        
+        res.json({
+            success: true,
+            playlist: {
+                id: playlist.id,
+                name: playlist.name,
+                description: playlist.description,
+                image: playlist.images?.[0]?.url,
+                total_tracks: playlist.tracks.total,
+                owner: playlist.owner?.display_name,
+                played_tracks_count: playedTracksWithCount.length
+            },
+            tracks: playedTracksWithCount
+        });
+    } catch (error) {
+        console.error('Failed to fetch playlist details:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Cache for context names
+const contextNameCache = new Map();
+const CONTEXT_CACHE_TTL = 60 * 60 * 1000;
+
+async function fetchPlaylistName(playlistId, accessToken, sessionId) {
+    const cacheKey = `playlist:${playlistId}`;
+    if (contextNameCache.has(cacheKey)) {
+        const cached = contextNameCache.get(cacheKey);
+        if (Date.now() - cached.timestamp < CONTEXT_CACHE_TTL) return cached.name;
+    }
+    try {
+        const response = await makeSpotifyAPICall(`https://api.spotify.com/v1/playlists/${playlistId}`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        }, sessionId);
+        const name = response.data?.name || null;
+        if (name) contextNameCache.set(cacheKey, { name, timestamp: Date.now() });
+        return name;
+    } catch (error) { return null; }
+}
+
+async function getContextName(context, accessToken, sessionId) {
+    if (!context) return null;
+    const type = context.type;
+    const uri = context.uri;
+    if (type === 'playlist' && uri) {
+        const id = uri.split(':')[2];
+        if (id) return await fetchPlaylistName(id, accessToken, sessionId);
+    }
+    return null;
+}
+
 app.get('/api/devices', async (req, res) => {
     const session = await getUserSession(req);
     if (!session) return res.status(401).json({ error: 'Not authenticated' });

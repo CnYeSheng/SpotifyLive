@@ -351,18 +351,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // 如果名稱是 "載入中..."，自動觸發名稱獲取
                 if (nameSpan && nameSpan.textContent === '載入中...' && playlistId) {
-                    fetch(`/api/playlist/${playlistId}`)
+                    fetch(`/api/playlist/${playlistId}?days=${currentDays}`)
                         .then(res => res.json())
                         .then(pData => {
-                            if (pData.success && pData.playlistInfo) {
-                                nameSpan.textContent = pData.playlistInfo.name;
-                                item.dataset.playlistName = pData.playlistInfo.name;
+                            if (pData.success && pData.playlist) {
+                                nameSpan.textContent = pData.playlist.name;
+                                item.dataset.playlistName = pData.playlist.name;
                                 // 同步更新分享數據中的名稱
                                 if (currentStatsData && currentStatsData.topPlaylists) {
                                     const p = currentStatsData.topPlaylists.find(pl => 
-                                        pl.uri?.includes(playlistId) || pl.name.includes(playlistId)
+                                        pl.uri?.includes(playlistId) || pl.name.includes(playlistId) || pl.id === playlistId
                                     );
-                                    if (p) p.name = pData.playlistInfo.name;
+                                    if (p) p.name = pData.playlist.name;
                                 }
                             }
                         }).catch(err => console.error('Failed to auto-fetch playlist name:', err));
@@ -389,8 +389,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     icon.style.transform = 'rotate(180deg)';
                     item.classList.add('expanded');
                     
-                    // 如果還沒有載入過，則 fetch
-                    if (!expandedDiv.dataset.loaded) {
+                    // 如果還沒有載入過，或者 timeframe 變了，則 fetch
+                    if (!expandedDiv.dataset.loaded || expandedDiv.dataset.loadedDays != currentDays) {
                         await loadPlaylistTracks(playlistId, expandedDiv);
                     }
                 });
