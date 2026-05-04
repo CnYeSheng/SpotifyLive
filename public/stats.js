@@ -22,6 +22,33 @@ document.addEventListener('DOMContentLoaded', () => {
     let refreshInterval;
     let currentRatio = '16:9';
     let currentStatsData = null;
+    let sessionManager = null;
+
+    // 初始化 Session 管理器
+    const playerMock = {
+        get sessionId() { return localStorage.getItem('spotify_session_id'); },
+        set sessionId(val) { 
+            if (val) localStorage.setItem('spotify_session_id', val);
+            else localStorage.removeItem('spotify_session_id');
+        },
+        handle401Error: async () => {
+            console.log('Session expired, redirecting to auth...');
+            window.location.href = '/api/auth';
+        }
+    };
+
+    if (typeof EnhancedSessionManager !== 'undefined') {
+        sessionManager = new EnhancedSessionManager(playerMock);
+        console.log('✅ Stats 頁面 Session 管理器已啟動');
+        
+        // 如果沒有 sessionId，延遲一下觸發自動登入
+        if (!playerMock.sessionId) {
+            setTimeout(() => {
+                console.log('No session ID found, triggering auto-login...');
+                window.location.href = '/api/auth';
+            }, 2000);
+        }
+    }
 
     // Fetch stats on load
     fetchStats(currentDays);
@@ -124,12 +151,34 @@ document.addEventListener('DOMContentLoaded', () => {
     function startAutoRefresh() {
         refreshInterval = setInterval(() => {
             fetchStats(currentDays, true); // true for silent refresh
-        }, 5000); // 5 seconds
+            recordPlayback(); // 同時記錄播放狀態
+        }, 10000); // 10 秒檢查一次
     }
 
     function stopAutoRefresh() {
         if (refreshInterval) {
             clearInterval(refreshInterval);
+        }
+    }
+
+    async function recordPlayback() {
+        try {
+            const sessionId = localStorage.getItem('spotify_session_id');
+            if (!sessionId) return;
+            
+            // 調用 current-track 接口會觸發服務端記錄播放歷史
+            const response = await fetch('/api/current-track', {
+                headers: { 'X-Session-Id': sessionId }
+            });
+            
+            if (response.status === 401) {
+                console.warn('Playback record failed: Session expired');
+                if (sessionManager) {
+                    sessionManager.onSessionExpired('api-401-error');
+                }
+            }
+        } catch (error) {
+            console.error('Error recording playback:', error);
         }
     }
 
@@ -143,6 +192,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: sessionId ? { 'X-Session-Id': sessionId } : {}
             });
             
+            if (response.status === 401) {
+                console.error('Fetch stats failed: Session expired');
+                if (sessionManager) {
+                    sessionManager.onSessionExpired('api-401-error');
+                } else {
+                    window.location.href = '/api/auth';
+                }
+                return;
+            }
+
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
