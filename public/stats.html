@@ -18,24 +18,45 @@
             color: white;
         }
         .stats-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 16px 20px;
+            align-items: start;
             margin-bottom: 30px;
+        }
+        .stats-header-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+            min-width: 0;
+        }
+        .stats-header-controls {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 10px;
+            min-width: 0;
         }
         .time-range-selector {
             display: flex;
-            gap: 10px;
+            gap: 6px;
             background: rgba(255, 255, 255, 0.1);
             padding: 5px;
             border-radius: 12px;
+            overflow-x: auto;
+            max-width: 100%;
+            scrollbar-width: none;
+        }
+        .time-range-selector::-webkit-scrollbar {
+            display: none;
         }
         .date-range-display {
             font-size: 13px;
             color: #aaa;
-            margin-top: 10px;
             text-align: right;
             font-weight: 500;
+            min-height: 18px;
         }
         .range-btn {
             background: transparent;
@@ -46,6 +67,12 @@
             cursor: pointer;
             transition: all 0.2s;
             font-size: 14px;
+            line-height: 1;
+            white-space: nowrap;
+        }
+        .range-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: white;
         }
         .range-btn.active {
             background: #1db954;
@@ -53,25 +80,76 @@
         }
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
             margin-bottom: 40px;
         }
         .stat-card {
-            background: rgba(255, 255, 255, 0.05);
-            padding: 20px;
-            border-radius: 16px;
-            text-align: center;
+            position: relative;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.055);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 18px;
+            border-radius: 14px;
+            min-height: 118px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        }
+        .stat-card::after {
+            content: '';
+            position: absolute;
+            right: -28px;
+            top: -34px;
+            width: 110px;
+            height: 110px;
+            border-radius: 50%;
+            background: rgba(29, 185, 84, 0.1);
+            pointer-events: none;
+        }
+        .stat-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 16px;
+            position: relative;
+            z-index: 1;
+        }
+        .stat-icon {
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(29, 185, 84, 0.16);
+            color: #1ed760;
+            flex: 0 0 auto;
         }
         .stat-value {
-            font-size: 32px;
+            position: relative;
+            z-index: 1;
+            font-size: 30px;
+            line-height: 1.05;
             font-weight: 700;
             color: #1db954;
-            margin-bottom: 5px;
+            word-break: keep-all;
+        }
+        #total-time {
+            white-space: nowrap;
+            font-size: clamp(18px, 2.4vw, 30px);
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         .stat-label {
+            position: relative;
+            z-index: 1;
             color: #aaa;
             font-size: 14px;
+            font-weight: 600;
+            line-height: 1.3;
         }
         .top-songs-section, .history-section {
             margin-bottom: 40px;
@@ -118,7 +196,7 @@
         }
         .back-btn {
             background: rgba(255, 255, 255, 0.1);
-            border: none;
+            border: 1px solid rgba(255, 255, 255, 0.06);
             color: white;
             padding: 10px 20px;
             border-radius: 12px;
@@ -128,26 +206,127 @@
             gap: 8px;
             text-decoration: none;
             font-size: 14px;
+            font-weight: 600;
+            line-height: 1;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+        .back-btn:hover {
+            background: rgba(255, 255, 255, 0.16);
+            transform: translateY(-1px);
+        }
+        .deduplicate-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            color: #ddd;
+            padding: 9px 14px;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .deduplicate-btn:hover {
+            background: rgba(255, 255, 255, 0.14);
+            color: white;
+        }
+        .deduplicate-btn:disabled {
+            cursor: wait;
+            opacity: 0.65;
+            transform: none;
+        }
+        @media (max-width: 720px) {
+            .stats-container {
+                margin: 16px auto;
+                padding: 16px;
+                border-radius: 18px;
+            }
+            .stats-header {
+                grid-template-columns: 1fr;
+                gap: 14px;
+            }
+            .stats-header-actions,
+            .stats-header-controls {
+                width: 100%;
+            }
+            .stats-header-controls {
+                align-items: stretch;
+            }
+            .time-range-selector {
+                width: 100%;
+            }
+            .time-range-selector .range-btn {
+                flex: 1 0 auto;
+            }
+            .date-range-display {
+                text-align: left;
+            }
+            .share-section {
+                align-items: stretch;
+                padding: 12px;
+            }
+            .share-btn {
+                width: 100%;
+                justify-content: center;
+            }
+            .ratio-selector {
+                width: 100%;
+            }
+            .ratio-btn {
+                flex: 1 0 auto;
+            }
+            .stats-grid {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+            .stat-card {
+                min-height: 96px;
+                padding: 16px;
+            }
+            .stat-card-header {
+                margin-bottom: 10px;
+            }
+            .stat-value {
+                font-size: 26px;
+            }
+            #total-time {
+                font-size: clamp(18px, 5.4vw, 26px);
+            }
+        }
+        @media (min-width: 721px) and (max-width: 880px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .stat-card:first-child {
+                grid-column: 1 / -1;
+            }
         }
         .share-section {
-            margin-bottom: 30px;
+            margin-bottom: 18px;
             display: flex;
-            gap: 12px;
+            gap: 14px;
             align-items: center;
+            justify-content: space-between;
             flex-wrap: wrap;
+            padding: 14px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
         }
         .share-btn {
             background: linear-gradient(135deg, #1db954, #1ed760);
             border: none;
             color: white;
-            padding: 12px 24px;
-            border-radius: 12px;
+            padding: 12px 18px;
+            border-radius: 10px;
             cursor: pointer;
             display: flex;
             align-items: center;
             gap: 8px;
             font-size: 15px;
             font-weight: 600;
+            line-height: 1;
+            white-space: nowrap;
             transition: all 0.2s;
             box-shadow: 0 4px 12px rgba(29, 185, 84, 0.3);
         }
@@ -160,19 +339,29 @@
         }
         .ratio-selector {
             display: flex;
-            gap: 8px;
-            background: rgba(255, 255, 255, 0.05);
-            padding: 6px;
-            border-radius: 10px;
+            gap: 6px;
+            background: rgba(0, 0, 0, 0.18);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            padding: 5px;
+            border-radius: 11px;
+            overflow-x: auto;
+            max-width: 100%;
+            scrollbar-width: none;
+        }
+        .ratio-selector::-webkit-scrollbar {
+            display: none;
         }
         .ratio-btn {
             background: transparent;
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            border: 1px solid transparent;
             color: #ccc;
-            padding: 8px 14px;
+            padding: 8px 12px;
             border-radius: 8px;
             cursor: pointer;
             font-size: 13px;
+            font-weight: 600;
+            line-height: 1;
+            white-space: nowrap;
             transition: all 0.2s;
         }
         .ratio-btn.active {
@@ -182,6 +371,21 @@
         }
         .ratio-btn:hover:not(.active) {
             background: rgba(255, 255, 255, 0.1);
+        }
+        @media (max-width: 720px) {
+            .share-section {
+                align-items: stretch;
+            }
+            .share-btn {
+                width: 100%;
+                justify-content: center;
+            }
+            .ratio-selector {
+                width: 100%;
+            }
+            .ratio-btn {
+                flex: 1 0 auto;
+            }
         }
         /* 分享卡片預覽區域 */
         .share-preview-overlay {
@@ -314,12 +518,21 @@
             border-radius: 18px;
             padding: 18px 10px;
             text-align: center;
+            min-width: 0;
+            overflow: hidden;
         }
         .share-stat-value {
             font-size: 36px;
             font-weight: 700;
             color: #1db954;
             margin-bottom: 4px;
+            line-height: 1.05;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .share-stat-value.time-value {
+            font-size: clamp(20px, 2.2vw, 36px);
         }
         .share-stat-label {
             font-size: 18px;
@@ -888,53 +1101,84 @@
 
     <div class="stats-container">
         <div class="stats-header">
-            <a href="/" class="back-btn">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
-                </svg>
-                返回播放器
-            </a>
-            <div class="time-range-selector">
-                <button class="range-btn active" data-days="1">今日</button>
-                <button class="range-btn" data-days="2">昨天</button>
-                <button class="range-btn" data-days="7">7天</button>
-                <button class="range-btn" data-days="30">30天</button>
-                <button class="range-btn" data-days="60">60天</button>
-                <button class="range-btn" data-days="90">90天</button>
+            <div class="stats-header-actions">
+                <a href="/" class="back-btn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+                    </svg>
+                    返回播放器
+                </a>
+                <button id="deduplicate-btn" class="range-btn deduplicate-btn" type="button">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M9 3L5 6.99h3V14h2V6.99h3L9 3zm7 14.01V10h-2v7.01h-3L15 21l4-3.99h-3z"/>
+                    </svg>
+                    <span>清理重複</span>
+                </button>
             </div>
-            <div id="date-range-display" class="date-range-display"></div>
+            <div class="stats-header-controls">
+                <div class="time-range-selector" aria-label="統計時間範圍">
+                    <button class="range-btn active" type="button" data-days="1">今日</button>
+                    <button class="range-btn" type="button" data-days="2">昨天</button>
+                    <button class="range-btn" type="button" data-days="7">7天</button>
+                    <button class="range-btn" type="button" data-days="30">30天</button>
+                    <button class="range-btn" type="button" data-days="60">60天</button>
+                    <button class="range-btn" type="button" data-days="90">90天</button>
+                </div>
+                <div id="date-range-display" class="date-range-display"></div>
+            </div>
         </div>
 
         <div class="share-section">
-            <button id="share-btn" class="share-btn">
+            <button id="share-btn" class="share-btn" type="button">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/>
                 </svg>
                 分享統計
             </button>
-            <div class="ratio-selector">
-                <button class="ratio-btn active" data-ratio="16:9">16:9</button>
-                <button class="ratio-btn" data-ratio="9:16">9:16</button>
-                <button class="ratio-btn" data-ratio="3:4">3:4</button>
-                <button class="ratio-btn" data-ratio="4:3">4:3</button>
-                <button class="ratio-btn" data-ratio="4:5">4:5</button>
-                <button class="ratio-btn" data-ratio="5:4">5:4</button>
-                <button class="ratio-btn" data-ratio="1:1">1:1</button>
+            <div class="ratio-selector" aria-label="分享圖片比例">
+                <button class="ratio-btn active" type="button" data-ratio="16:9">16:9</button>
+                <button class="ratio-btn" type="button" data-ratio="9:16">9:16</button>
+                <button class="ratio-btn" type="button" data-ratio="3:4">3:4</button>
+                <button class="ratio-btn" type="button" data-ratio="4:3">4:3</button>
+                <button class="ratio-btn" type="button" data-ratio="4:5">4:5</button>
+                <button class="ratio-btn" type="button" data-ratio="5:4">5:4</button>
+                <button class="ratio-btn" type="button" data-ratio="1:1">1:1</button>
             </div>
         </div>
 
         <div class="stats-grid">
             <div class="stat-card">
+                <div class="stat-card-header">
+                    <div class="stat-label">聽歌時長</div>
+                    <div class="stat-icon">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 1.75A10.25 10.25 0 1 0 22.25 12 10.26 10.26 0 0 0 12 1.75Zm0 18.5A8.25 8.25 0 1 1 20.25 12 8.26 8.26 0 0 1 12 20.25Zm.75-13.5h-1.5v5.67l4.62 2.77.77-1.28-3.89-2.31Z"/>
+                        </svg>
+                    </div>
+                </div>
                 <div id="total-time" class="stat-value">0h 0m</div>
-                <div class="stat-label">總聽歌時長</div>
             </div>
             <div class="stat-card">
+                <div class="stat-card-header">
+                    <div class="stat-label">聽歌次數</div>
+                    <div class="stat-icon">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M9 18V5l12-2v13.5a3.5 3.5 0 1 1-2-3.16V6.36l-8 1.33V17a3.5 3.5 0 1 1-2-3.16Z"/>
+                        </svg>
+                    </div>
+                </div>
                 <div id="total-songs" class="stat-value">0</div>
-                <div class="stat-label">聽歌次數</div>
             </div>
             <div class="stat-card">
+                <div class="stat-card-header">
+                    <div class="stat-label">不重複歌曲</div>
+                    <div class="stat-icon">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm1 4v2h12V8H6Zm0 4v2h8v-2H6Zm0 4v2h5v-2H6Z"/>
+                        </svg>
+                    </div>
+                </div>
                 <div id="unique-songs" class="stat-value">0</div>
-                <div class="stat-label">不重複歌曲</div>
             </div>
         </div>
 

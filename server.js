@@ -1917,16 +1917,24 @@ setInterval(cleanupContextCache, 30 * 60 * 1000);
 
 // 記錄上次同步時間，避免過於頻繁
 const lastSyncTime = new Map();
-const SYNC_COOLDOWN = 10 * 60 * 1000; // 10 分鐘同步一次即可
+const SYNC_COOLDOWN = 5 * 60 * 1000; // 5 分鐘同步一次即可
 
 // Sync recently played tracks from Spotify to fill gaps (e.g. when server was offline)
 async function syncRecentlyPlayed(sessionId, userId, accessToken) {
     if (!userId || !accessToken) return;
     
-    // 檢查冷卻時間
+    // 1. Throttling: 檢查冷卻時間
     const now = Date.now();
     const lastSync = lastSyncTime.get(userId) || 0;
     if (now - lastSync < SYNC_COOLDOWN) {
+        return;
+    }
+
+    // 2. Distributed Lock: 防止併發同步
+    const lockKey = `sync:${userId}`;
+    const acquired = await kvStorage.acquireLock(lockKey, 120); 
+    if (!acquired) {
+        console.log(`⚠️ [Sync] User ${userId.substring(0, 8)} is already syncing, skipping...`);
         return;
     }
     
@@ -1949,33 +1957,37 @@ async function syncRecentlyPlayed(sessionId, userId, accessToken) {
             history = await enhancedStorage.getListeningHistory(userId, 1);
         }
 
-        const existingTimestamps = new Set(history.map(h => new Date(h.playedAt).getTime()));
+        // 使用「秒」級精度和同首歌時間窗口，避免 live tracker + recently-played 雙來源重複。
+        const existingTimestamps = new Set(history.map(h => Math.floor(getHistoryPlayedAtMs(h) / 1000)));
         let newRecords = 0;
 
         for (const item of response.data.items) {
             const playedAt = new Date(item.played_at);
-            const timestamp = playedAt.getTime();
+            const tsSeconds = Math.floor(playedAt.getTime() / 1000);
+            const track = item.track;
+            const historyData = {
+                trackId: track.id,
+                trackName: track.name,
+                artistName: Array.isArray(track.artists) ? track.artists.map(a => a.name).join(', ') : track.artistName,
+                albumName: track.album?.name || track.albumName,
+                durationMs: track.duration_ms,
+                playedAt: playedAt,
+                contextType: item.context?.type || null,
+                contextName: null, 
+                contextUri: item.context?.uri || null
+            };
 
-            // Only record if it doesn't already exist in our history
-            if (!existingTimestamps.has(timestamp)) {
-                const track = item.track;
-                const historyData = {
-                    trackId: track.id,
-                    trackName: track.name,
-                    artistName: Array.isArray(track.artists) ? track.artists.map(a => a.name).join(', ') : track.artistName,
-                    albumName: track.album?.name || track.albumName,
-                    durationMs: track.duration_ms,
-                    playedAt: playedAt,
-                    contextType: item.context?.type || null,
-                    contextName: null, 
-                    contextUri: item.context?.uri || null
-                };
-
+            // Only record if it doesn't already exist in our history (Check by second)
+            if (!existingTimestamps.has(tsSeconds) && !hasNearbySameTrack(history, historyData)) {
                 if (process.env.VERCEL && kvStorage.isKVAvailable) {
                     await kvStorage.saveListeningHistory({ headers: { 'x-spotify-user-id': userId, 'x-session-id': sessionId } }, historyData);
                 } else {
                     await enhancedStorage.saveListeningHistory(userId, historyData);
                 }
+                
+                // 內部即時去重
+                existingTimestamps.add(tsSeconds);
+                history.unshift(historyData);
                 newRecords++;
             }
         }
@@ -1987,8 +1999,120 @@ async function syncRecentlyPlayed(sessionId, userId, accessToken) {
         console.error(`❌ [Sync] Failed for ${userId.substring(0, 8)}:`, error.message);
         // 如果失敗，縮短冷卻時間以便重試
         lastSyncTime.set(userId, now - (SYNC_COOLDOWN / 2));
+    } finally {
+        await kvStorage.releaseLock(lockKey).catch(() => {});
     }
 }
+
+// --- History Management ---
+
+function getHistoryPlayedAtMs(item) {
+    const value = item?.playedAt || item?.timestamp;
+    if (!value) return 0;
+    if (typeof value === 'number') return value;
+    const parsed = new Date(value).getTime();
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getHistoryTrackKey(item) {
+    return item?.trackId || `${item?.trackName || item?.name || ''}|||${item?.artistName || item?.artist || ''}`;
+}
+
+function getSameTrackWindowSeconds(item) {
+    const durationSeconds = Math.ceil((item?.durationMs || item?.duration_ms || 0) / 1000);
+    return Math.max(180, Math.min(durationSeconds + 60, 600));
+}
+
+function hasNearbySameTrack(history, candidate) {
+    const candidateAt = getHistoryPlayedAtMs(candidate);
+    const candidateTrack = getHistoryTrackKey(candidate);
+    if (!candidateAt || !candidateTrack) return false;
+
+    return (history || []).some(item => {
+        if (candidateTrack !== getHistoryTrackKey(item)) return false;
+        const itemAt = getHistoryPlayedAtMs(item);
+        if (!itemAt) return false;
+        const windowSeconds = Math.max(getSameTrackWindowSeconds(candidate), getSameTrackWindowSeconds(item));
+        return Math.abs(candidateAt - itemAt) / 1000 <= windowSeconds;
+    });
+}
+
+function deduplicateListeningHistory(history, closeWindowSeconds = 30) {
+    const seen = new Set();
+    const unique = [];
+
+    for (const item of history || []) {
+        const playedAtMs = getHistoryPlayedAtMs(item);
+        if (!playedAtMs) {
+            unique.push(item);
+            continue;
+        }
+
+        const ts = Math.floor(playedAtMs / 1000);
+        const trackKey = getHistoryTrackKey(item);
+        const identifier = `${trackKey}:${ts}`;
+        const lastItem = unique[unique.length - 1];
+        const lastTs = lastItem ? Math.floor(getHistoryPlayedAtMs(lastItem) / 1000) : null;
+        const sameTrackWindowSeconds = Math.max(closeWindowSeconds, getSameTrackWindowSeconds(item));
+        const isTooClose = lastItem &&
+            trackKey === getHistoryTrackKey(lastItem) &&
+            Math.abs(ts - lastTs) <= sameTrackWindowSeconds;
+
+        if (!seen.has(identifier) && !isTooClose) {
+            seen.add(identifier);
+            unique.push(item);
+        }
+    }
+
+    return unique;
+}
+
+app.get('/api/history/deduplicate', async (req, res) => {
+    console.log('🔍 [Deduplicate] Received request in server.js');
+    try {
+        const session = await getUserSession(req);
+        if (!session) {
+            console.log('❌ [Deduplicate] Not authenticated');
+            return res.status(401).json({ error: 'Not authenticated' });
+        }
+        
+        const userId = session.userProfile?.data?.id || await getSpotifyUserId(session, req.sessionId);
+        if (!userId) {
+            console.log('❌ [Deduplicate] User ID not found');
+            return res.status(400).json({ error: 'User ID not found' });
+        }
+        
+        console.log(`🔄 [Deduplicate] Starting for user ${userId.substring(0, 8)}`);
+        let result;
+        if (process.env.VERCEL && kvStorage.isKVAvailable) {
+            req.headers['x-spotify-user-id'] = userId;
+            result = await kvStorage.deduplicateHistory(req);
+        } else {
+            // 本地模式去重 (EnhancedStorage)
+            console.log(`🔍 [Deduplicate] Local mode for user ${userId.substring(0, 8)}`);
+            const history = await enhancedStorage.getListeningHistory(userId, 365); 
+            const originalCount = history.length;
+            const uniqueHistory = deduplicateListeningHistory(history);
+            
+            if (uniqueHistory.length < originalCount) {
+                console.log(`💾 [Deduplicate] Saving cleaned history: ${originalCount} -> ${uniqueHistory.length}`);
+                await enhancedStorage.saveFullListeningHistory(userId, uniqueHistory);
+            }
+            
+            result = { originalCount, newCount: uniqueHistory.length, removedCount: originalCount - uniqueHistory.length };
+        }
+        
+        console.log(`✅ [Deduplicate] Finished: removed ${result.removedCount} items`);
+        res.json({ 
+            success: true, 
+            message: `清理完成，共移除 ${result.removedCount} 條重複紀錄`,
+            data: result
+        });
+    } catch (error) {
+        console.error('❌ [Deduplicate] Error:', error);
+        res.status(500).json({ error: 'Failed to deduplicate history', message: error.message });
+    }
+});
 
 // Get listening stats
 app.get('/api/stats/listening', async (req, res) => {
@@ -2016,6 +2140,7 @@ app.get('/api/stats/listening', async (req, res) => {
         } else if (userId) {
             history = await enhancedStorage.getListeningHistory(userId, days, until);
         }
+        history = deduplicateListeningHistory(history);
         
         // Calculate stats
         const totalDuration = history.reduce((sum, item) => sum + (item.durationMs || 0), 0);
@@ -2047,6 +2172,7 @@ app.get('/api/stats/listening', async (req, res) => {
         const topSongs = Object.values(songCounts)
             .sort((a, b) => b.count - a.count)
             .slice(0, 10);
+        const uniqueSongCount = Object.keys(songCounts).length;
         
         // 計算歌單統計
         const playlistCounts = {};
@@ -2124,6 +2250,7 @@ app.get('/api/stats/listening', async (req, res) => {
             success: true,
             totalDurationMs: totalDuration,
             songCount: history.length,
+            uniqueSongCount,
             topSongs,
             topPlaylists,
             history: history.slice(0, 50)
@@ -2191,6 +2318,7 @@ app.get('/api/playlist/:id', async (req, res) => {
         } else if (userId) {
             history = await enhancedStorage.getListeningHistory(userId, days, null);
         }
+        history = deduplicateListeningHistory(history);
         
         // 過濾出只在這個歌單中播放的記錄
         const playlistContextUri = `spotify:playlist:${playlistId}`;

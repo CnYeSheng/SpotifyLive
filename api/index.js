@@ -104,9 +104,13 @@ const songChangeTracker = new Map();
 
 async function trackSongChange(sessionId, track, userId) {
     try {
-        if (!sessionId || !track) return;
+        if (!userId || !track) return;
         const trackId = typeof track === 'string' ? track : track.id;
-        const tracker = songChangeTracker.get(sessionId) || { 
+        
+        // 使用 userId 作為追蹤 Key，這樣多個 Lambda 實例（如果共享內存或通過緩存）或多個會話會共享狀態
+        const trackerKey = userId;
+        
+        const tracker = songChangeTracker.get(trackerKey) || { 
             currentTrackId: null, 
             songCount: 0, 
             lastRefreshTime: Date.now(),
@@ -153,7 +157,7 @@ async function trackSongChange(sessionId, track, userId) {
                 const session = userSessions.get(sessionId);
                 if (session) refreshAccessToken(session, sessionId).catch(() => {});
             }
-            songChangeTracker.set(sessionId, tracker);
+            songChangeTracker.set(trackerKey, tracker);
         }
     } catch (error) {
         console.error('Track song change error:', error);
@@ -337,10 +341,28 @@ app.get('/api/current-track', async (req, res) => {
 });
 
 // Sync recently played tracks from Spotify to fill gaps (e.g. when server was offline)
+const lastSyncTime = new Map();
+
 async function syncRecentlyPlayed(sessionId, userId, accessToken) {
     if (!userId || !accessToken) return;
     
+    // 1. Throttling: 每 5 分鐘同步一次，避免 Serverless Lambda 頻繁觸發
+    const now = Date.now();
+    const lastSync = lastSyncTime.get(userId) || 0;
+    if (now - lastSync < 5 * 60 * 1000) {
+        return;
+    }
+
+    // 2. Distributed Lock: 使用 Redis 鎖防止多個 Lambda 實例同時同步
+    const lockKey = `sync:${userId}`;
+    const acquired = await storage.acquireLock(lockKey, 120); // 鎖定 2 分鐘
+    if (!acquired) {
+        console.log(`⚠️ [Sync] User ${userId.substring(0, 8)} is already syncing in another instance, skipping...`);
+        return;
+    }
+    
     try {
+        lastSyncTime.set(userId, now);
         console.log(`🔄 [Sync] Fetching recently played for user ${userId.substring(0, 8)}...`);
         const response = await makeSpotifyAPICall('https://api.spotify.com/v1/me/player/recently-played?limit=50', {
             headers: { 'Authorization': `Bearer ${accessToken}` }
@@ -352,29 +374,31 @@ async function syncRecentlyPlayed(sessionId, userId, accessToken) {
 
         // Get existing history for the last 1 day to check for duplicates
         const history = await storage.getListeningHistory({ headers: { 'x-spotify-user-id': userId } }, 1);
-        const existingTimestamps = new Set(history.map(h => new Date(h.playedAt).getTime()));
+        const existingTimestamps = new Set(history.map(h => Math.floor(getHistoryPlayedAtMs(h) / 1000)));
         let newRecords = 0;
 
         for (const item of response.data.items) {
             const playedAt = new Date(item.played_at);
-            const timestamp = playedAt.getTime();
+            const timestamp = Math.floor(playedAt.getTime() / 1000);
+            const track = item.track;
+            const historyData = {
+                trackId: track.id,
+                trackName: track.name,
+                artistName: Array.isArray(track.artists) ? track.artists.map(a => a.name).join(', ') : (track.artistName || track.artist),
+                albumName: track.album?.name || (track.albumName || track.album),
+                durationMs: track.duration_ms || track.duration,
+                playedAt: playedAt,
+                contextType: item.context?.type || null,
+                contextName: null, 
+                contextUri: item.context?.uri || null
+            };
 
-            // Only record if it doesn't already exist in our history
-            if (!existingTimestamps.has(timestamp)) {
-                const track = item.track;
-                const historyData = {
-                    trackId: track.id,
-                    trackName: track.name,
-                    artistName: Array.isArray(track.artists) ? track.artists.map(a => a.name).join(', ') : track.artistName,
-                    albumName: track.album?.name || track.albumName,
-                    durationMs: track.duration_ms,
-                    playedAt: playedAt,
-                    contextType: item.context?.type || null,
-                    contextName: null, 
-                    contextUri: item.context?.uri || null
-                };
-
+            // Only record if it doesn't already exist in our history (second precision)
+            if (!existingTimestamps.has(timestamp) && !hasNearbySameTrack(history, historyData)) {
                 await storage.saveListeningHistory({ headers: { 'x-spotify-user-id': userId, 'x-session-id': sessionId } }, historyData);
+                // 內部即時去重，防止 Spotify API 返回重複項或併發寫入
+                existingTimestamps.add(timestamp);
+                history.unshift(historyData);
                 newRecords++;
             }
         }
@@ -384,8 +408,105 @@ async function syncRecentlyPlayed(sessionId, userId, accessToken) {
         }
     } catch (error) {
         console.error(`❌ [Sync] Failed for ${userId.substring(0, 8)}:`, error.message);
+    } finally {
+        // 釋放鎖
+        await storage.releaseLock(lockKey).catch(() => {});
     }
 }
+
+// --- History Management ---
+
+function getHistoryPlayedAtMs(item) {
+    const value = item?.playedAt || item?.timestamp;
+    if (!value) return 0;
+    if (typeof value === 'number') return value;
+    const parsed = new Date(value).getTime();
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getHistoryTrackKey(item) {
+    return item?.trackId || `${item?.trackName || item?.name || ''}|||${item?.artistName || item?.artist || ''}`;
+}
+
+function getSameTrackWindowSeconds(item) {
+    const durationSeconds = Math.ceil((item?.durationMs || item?.duration_ms || 0) / 1000);
+    return Math.max(180, Math.min(durationSeconds + 60, 600));
+}
+
+function hasNearbySameTrack(history, candidate) {
+    const candidateAt = getHistoryPlayedAtMs(candidate);
+    const candidateTrack = getHistoryTrackKey(candidate);
+    if (!candidateAt || !candidateTrack) return false;
+
+    return (history || []).some(item => {
+        if (candidateTrack !== getHistoryTrackKey(item)) return false;
+        const itemAt = getHistoryPlayedAtMs(item);
+        if (!itemAt) return false;
+        const windowSeconds = Math.max(getSameTrackWindowSeconds(candidate), getSameTrackWindowSeconds(item));
+        return Math.abs(candidateAt - itemAt) / 1000 <= windowSeconds;
+    });
+}
+
+function deduplicateListeningHistory(history, closeWindowSeconds = 30) {
+    const seen = new Set();
+    const unique = [];
+
+    for (const item of history || []) {
+        const playedAtMs = getHistoryPlayedAtMs(item);
+        if (!playedAtMs) {
+            unique.push(item);
+            continue;
+        }
+
+        const ts = Math.floor(playedAtMs / 1000);
+        const trackKey = getHistoryTrackKey(item);
+        const identifier = `${trackKey}:${ts}`;
+        const lastItem = unique[unique.length - 1];
+        const lastTs = lastItem ? Math.floor(getHistoryPlayedAtMs(lastItem) / 1000) : null;
+        const sameTrackWindowSeconds = Math.max(closeWindowSeconds, getSameTrackWindowSeconds(item));
+        const isTooClose = lastItem &&
+            trackKey === getHistoryTrackKey(lastItem) &&
+            Math.abs(ts - lastTs) <= sameTrackWindowSeconds;
+
+        if (!seen.has(identifier) && !isTooClose) {
+            seen.add(identifier);
+            unique.push(item);
+        }
+    }
+
+    return unique;
+}
+
+app.get('/api/history/deduplicate', async (req, res) => {
+    console.log('🔍 [Deduplicate] Received request');
+    try {
+        const session = await getUserSession(req);
+        if (!session) {
+            console.log('❌ [Deduplicate] Not authenticated');
+            return res.status(401).json({ error: 'Not authenticated' });
+        }
+        
+        const userId = session.userProfile?.data?.id || await getSpotifyUserId(session, req.sessionId);
+        if (!userId) {
+            console.log('❌ [Deduplicate] User ID not found');
+            return res.status(400).json({ error: 'User ID not found' });
+        }
+        
+        console.log(`🔄 [Deduplicate] Starting for user ${userId.substring(0, 8)}`);
+        req.headers['x-spotify-user-id'] = userId;
+        const result = await storage.deduplicateHistory(req);
+        
+        console.log(`✅ [Deduplicate] Finished: removed ${result.removedCount} items`);
+        res.json({ 
+            success: true, 
+            message: `清理完成，共移除 ${result.removedCount} 條重複紀錄`,
+            data: result
+        });
+    } catch (error) {
+        console.error('❌ [Deduplicate] Error:', error);
+        res.status(500).json({ error: 'Failed to deduplicate history', message: error.message });
+    }
+});
 
 app.get('/api/stats/listening', async (req, res) => {
     try {
@@ -406,7 +527,7 @@ app.get('/api/stats/listening', async (req, res) => {
             });
         }
 
-        const history = await storage.getListeningHistory(req, days, until);
+        const history = deduplicateListeningHistory(await storage.getListeningHistory(req, days, until));
         
         // Calculate stats
         const totalDuration = history.reduce((sum, item) => sum + (item.durationMs || 0), 0);
@@ -438,6 +559,7 @@ app.get('/api/stats/listening', async (req, res) => {
         const topSongs = Object.values(songCounts)
             .sort((a, b) => b.count - a.count)
             .slice(0, 10);
+        const uniqueSongCount = Object.keys(songCounts).length;
             
         // 計算歌單統計
         const playlistCounts = {};
@@ -513,6 +635,7 @@ app.get('/api/stats/listening', async (req, res) => {
             success: true,
             totalDurationMs: totalDuration,
             songCount: history.length,
+            uniqueSongCount,
             topSongs,
             topPlaylists,
             history: history.slice(0, 50)
@@ -563,7 +686,7 @@ app.get('/api/playlist/:id', async (req, res) => {
         })).filter(track => track.id !== null);
         
         // 獲取用戶在指定天數內的聽歌歷史
-        const history = await storage.getListeningHistory(req, days, null);
+        const history = deduplicateListeningHistory(await storage.getListeningHistory(req, days, null));
         
         // 過濾出只在這個歌單中播放的記錄
         const playlistContextUri = `spotify:playlist:${playlistId}`;

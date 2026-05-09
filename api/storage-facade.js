@@ -217,6 +217,24 @@ class StorageFacade {
         }
         return [];
     }
+
+    async deduplicateHistory(req) {
+        if (this.isVercel && this.kvManager.isKVAvailable) {
+            return await this.kvManager.deduplicateHistory(req);
+        }
+        // Local storage deduplication could be implemented in EnhancedStorage if needed,
+        // but the main issue is with Vercel/KV.
+        return { success: false, error: 'Not supported in local mode' };
+    }
+
+    // --- Locking ---
+    async acquireLock(lockKey, ttl) {
+        return await this.kvManager.acquireLock(lockKey, ttl);
+    }
+
+    async releaseLock(lockKey) {
+        return await this.kvManager.releaseLock(lockKey);
+    }
     
     // ✨ 雲端同步相關方法
     async getAllUserLyrics(req) {

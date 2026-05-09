@@ -806,6 +806,27 @@ class EnhancedStorage {
         }
     }
 
+    async saveFullListeningHistory(userId, fullHistory) {
+        if (!userId || !Array.isArray(fullHistory)) return;
+        try {
+            if (this.dbType === 'json') {
+                const historyKey = `history_${userId}`;
+                // Keep only last 2000 records
+                this.localData[historyKey] = fullHistory.slice(-2000);
+                
+                // 使用同步寫入確保資料完整性
+                fs.writeFileSync(this.localFilePath, JSON.stringify(this.localData, null, 2));
+                console.log(`✅ 已重新寫入用戶 ${userId} 的完整歷史紀錄 (${fullHistory.length} 條)`);
+            } else {
+                // For SQL/Mongo, we'd need to clear and re-insert, or use a better strategy.
+                // For now, this is mainly for JSON mode duplication fixes.
+                console.log('saveFullListeningHistory not implemented for ' + this.dbType);
+            }
+        } catch (e) {
+            console.error('Save full history error:', e.message);
+        }
+    }
+
     async saveListeningHistory(userId, historyData) {
         if (!userId || !historyData) return;
         try {

@@ -791,12 +791,123 @@ class KVStorageManager {
             
             // 過濾時間
             return history.filter(item => {
-                const playedAt = item.playedAt || item.timestamp;
+                const playedAt = this.getPlayedAtMs(item);
                 return playedAt >= since && (!until || playedAt < until);
             });
         } catch (error) {
             console.error('❌ 獲取聽歌歷史失敗:', error.message);
             return [];
+        }
+    }
+
+    // --- 分佈式鎖 (Distributed Locking) ---
+    async acquireLock(lockKey, ttlSeconds = 60) {
+        if (!this.isKVAvailable || !this.redis) return true; // 如果 KV 不可用，默認允許執行（放行）
+        try {
+            // 使用 SET NX (Not Exists) 實現簡單鎖
+            const result = await this.redis.set(`lock:${lockKey}`, 'locked', {
+                nx: true,
+                ex: ttlSeconds
+            });
+            return result === 'OK';
+        } catch (error) {
+            console.error(`❌ 獲取鎖失敗 ${lockKey}:`, error.message);
+            return true; // 出錯時放行，避免功能中斷
+        }
+    }
+
+    async releaseLock(lockKey) {
+        if (!this.isKVAvailable || !this.redis) return;
+        try {
+            await this.redis.del(`lock:${lockKey}`);
+        } catch (error) {
+            console.error(`❌ 釋放鎖失敗 ${lockKey}:`, error.message);
+        }
+    }
+
+    getPlayedAtMs(item) {
+        const value = item?.playedAt || item?.timestamp;
+        if (!value) return 0;
+        if (typeof value === 'number') return value;
+        const parsed = new Date(value).getTime();
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    // --- 聽歌歷史去重 (History Deduplication) ---
+    async deduplicateHistory(req) {
+        try {
+            const userKey = this.generateUserKey(req);
+            const key = `${userKey}:history`;
+            
+            let history = [];
+            if (this.isKVAvailable && this.redis) {
+                const data = await this.redis.lrange(key, 0, -1);
+                history = data.map(item => typeof item === 'string' ? JSON.parse(item) : item);
+            } else {
+                const cacheKey = `history:${userKey}`;
+                history = this.cache.get(cacheKey) || [];
+            }
+
+            const originalCount = history.length;
+            if (originalCount === 0) return { originalCount: 0, newCount: 0 };
+
+            console.log(`🧹 [Deduplicate] Processing ${originalCount} records for ${userKey}`);
+
+            const seen = new Set();
+            const uniqueHistory = [];
+            
+            // 從新到舊遍歷 (如果是 Redis Lrange 0 -1 或者是 cache unshift 進來的)
+            for (const item of history) {
+                const playedAtMs = this.getPlayedAtMs(item);
+                if (!playedAtMs) {
+                    uniqueHistory.push(item);
+                    continue;
+                }
+                
+                // 1. 秒級精度檢查
+                const ts = Math.floor(playedAtMs / 1000);
+                const trackKey = item.trackId || `${item.trackName || item.name || ''}|||${item.artistName || item.artist || ''}`;
+                const identifier = `${trackKey}:${ts}`;
+                
+                // 2. 序列檢查：如果同一首歌在 30 秒內重複出現，也視為重複
+                const lastItem = uniqueHistory[uniqueHistory.length - 1];
+                let isTooClose = false;
+                if (lastItem) {
+                    const lastTs = Math.floor(this.getPlayedAtMs(lastItem) / 1000);
+                    const lastTrackKey = lastItem.trackId || `${lastItem.trackName || lastItem.name || ''}|||${lastItem.artistName || lastItem.artist || ''}`;
+                    if (trackKey === lastTrackKey && Math.abs(ts - lastTs) < 30) {
+                        isTooClose = true;
+                    }
+                }
+
+                if (!seen.has(identifier) && !isTooClose) {
+                    seen.add(identifier);
+                    uniqueHistory.push(item);
+                }
+            }
+            
+            if (uniqueHistory.length < originalCount) {
+                if (this.isKVAvailable && this.redis) {
+                    // 重寫 Redis 數據
+                    await this.redis.del(key);
+                    // LPUSH 是將新元素放在列表開頭，所以要反向 push 保持最新在前的順序
+                    const reversed = [...uniqueHistory].reverse();
+                    for (let i = 0; i < reversed.length; i += 100) {
+                        const chunk = reversed.slice(i, i + 100).map(item => JSON.stringify(item));
+                        await this.redis.lpush(key, ...chunk);
+                    }
+                }
+            }
+
+            // 更新內存緩存
+            const cacheKey = `history:${userKey}`;
+            this.cache.set(cacheKey, uniqueHistory);
+            
+            console.log(`✅ [Deduplicate] Result: ${originalCount} -> ${uniqueHistory.length}`);
+            return { originalCount, newCount: uniqueHistory.length, removedCount: originalCount - uniqueHistory.length };
+        } catch (error) {
+            console.error('❌ 去重聽歌歷史失敗:', error.message);
+            throw error;
         }
     }
 }

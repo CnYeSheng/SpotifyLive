@@ -2,7 +2,7 @@
 
 document.addEventListener('DOMContentLoaded', () => {
     const loading = document.getElementById('loading');
-    const rangeBtns = document.querySelectorAll('.range-btn');
+    const rangeBtns = document.querySelectorAll('.time-range-selector .range-btn');
     const totalTimeEl = document.getElementById('total-time');
     const totalSongsEl = document.getElementById('total-songs');
     const uniqueSongsEl = document.getElementById('unique-songs');
@@ -72,8 +72,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // 分享按鈕點擊事件
     shareBtn?.addEventListener('click', () => {
         if (currentStatsData) {
-            renderShareCard(currentStatsData);
             sharePreview.classList.add('show');
+            requestAnimationFrame(() => renderShareCard(currentStatsData));
         }
     });
 
@@ -99,6 +99,47 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderShareCard(currentStatsData);
             }
         });
+    });
+
+    // 清理重複紀錄按鈕
+    const deduplicateBtn = document.getElementById('deduplicate-btn');
+    deduplicateBtn?.addEventListener('click', async () => {
+        if (!confirm('確定要執行自動修復並清理重複的播放紀錄嗎？')) return;
+        
+        try {
+            deduplicateBtn.disabled = true;
+            deduplicateBtn.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2v4l3-3-3-1zm0 20v-4l-3 3 3 1zm8.49-13.49l-2.83 2.83 4.24.01-1.41-2.84zM2.1 12.65l1.41 2.84 2.83-2.83-4.24-.01zm16.38 5.83l-2.83-2.83-.01 4.24 2.84-1.41zM5.52 5.52l2.83 2.83.01-4.24-2.84 1.41z"/>
+                </svg>
+                <span>清理中...</span>
+            `;
+            
+            const sessionId = localStorage.getItem('spotify_session_id');
+            const response = await fetch('/api/history/deduplicate', {
+                headers: sessionId ? { 'X-Session-Id': sessionId } : {}
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                alert(result.message || '清理完成！');
+                fetchStats(currentDays); // 刷新數據
+            } else {
+                alert('清理失敗: ' + (result.error || '未知錯誤'));
+            }
+        } catch (error) {
+            console.error('Deduplication failed:', error);
+            alert('無法連接到伺服器，請稍後再試。');
+        } finally {
+            deduplicateBtn.disabled = false;
+            deduplicateBtn.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M9 3L5 6.99h3V14h2V6.99h3L9 3zm7 14.01V10h-2v7.01h-3L15 21l4-3.99h-3z"/>
+                </svg>
+                <span>清理重複</span>
+            `;
+        }
     });
 
     // 下載分享圖片
@@ -152,34 +193,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function startAutoRefresh() {
         refreshInterval = setInterval(() => {
             fetchStats(currentDays, true); // true for silent refresh
-            recordPlayback(); // 同時記錄播放狀態
         }, 10000); // 10 秒檢查一次
     }
 
     function stopAutoRefresh() {
         if (refreshInterval) {
             clearInterval(refreshInterval);
-        }
-    }
-
-    async function recordPlayback() {
-        try {
-            const sessionId = localStorage.getItem('spotify_session_id');
-            if (!sessionId) return;
-            
-            // 調用 current-track 接口會觸發服務端記錄播放歷史
-            const response = await fetch('/api/current-track', {
-                headers: { 'X-Session-Id': sessionId }
-            });
-            
-            if (response.status === 401) {
-                console.warn('Playback record failed: Session expired');
-                if (sessionManager) {
-                    sessionManager.onSessionExpired('api-401-error');
-                }
-            }
-        } catch (error) {
-            console.error('Error recording playback:', error);
         }
     }
 
@@ -258,10 +277,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const hours = Math.floor(data.totalDurationMs / (1000 * 60 * 60));
         const minutes = Math.floor((data.totalDurationMs % (1000 * 60 * 60)) / (1000 * 60));
         const seconds = Math.floor((data.totalDurationMs % (1000 * 60)) / 1000);
-        
-        totalTimeEl.textContent = `${hours} 時 ${minutes} 分 ${seconds} 秒`;
+        totalTimeEl.textContent = `${hours}h ${minutes}m ${seconds}s`;
         totalSongsEl.textContent = data.songCount;
-        uniqueSongsEl.textContent = data.topSongs.length;
+        uniqueSongsEl.textContent = data.uniqueSongCount ?? data.topSongs.length;
 
         // Update Top Songs List
         topSongsList.innerHTML = data.topSongs.map(song => `
@@ -478,8 +496,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const hours = Math.floor(data.totalDurationMs / (1000 * 60 * 60));
         const minutes = Math.floor((data.totalDurationMs % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((data.totalDurationMs % (1000 * 60)) / 1000);
+        const totalTimeText = `${hours}h ${minutes}m ${seconds}s`;
         const songCount = data.songCount;
-        const uniqueCount = data.topSongs.length;
+        const uniqueCount = data.uniqueSongCount ?? data.topSongs.length;
 
         // 根據比例設定卡片尺寸 (使用用戶指定的像素值)
         let cardWidth, cardHeight;
@@ -587,7 +607,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             <div class="share-card-stats">
                 <div class="share-stat-item">
-                    <div class="share-stat-value">${hours}h ${minutes}m</div>
+                    <div class="share-stat-value time-value">${totalTimeText}</div>
                     <div class="share-stat-label">聽歌時長</div>
                 </div>
                 <div class="share-stat-item">
