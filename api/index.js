@@ -733,6 +733,34 @@ app.get('/api/playlist/:id', async (req, res) => {
 
 // Cache for context names
 const contextNameCache = new Map();
+
+function normalizeStoredUserSetting(item) {
+    if (!item) return null;
+    const trackId = item.trackId || item.track_id || item.trackInfo?.id;
+    if (!trackId) return null;
+    const trackInfo = item.trackInfo || {
+        id: trackId,
+        name: item.trackName || item.name || '',
+        artist: item.artistName || item.artist || ''
+    };
+    const meta = item.customLyricsMeta || item.metaData || {};
+    return {
+        ...item,
+        trackId,
+        trackInfo,
+        lyrics: item.lyrics || item.lyricsContent || null,
+        lyricsContent: item.lyricsContent || item.lyrics || null,
+        lyricsType: item.lyricsType || meta.type || 'synced',
+        customLyricsMeta: meta,
+        source: item.source || meta.source || 'custom',
+        lastModified: item.lastModified || item.updatedAt || item.updated_at || item.timestamp || 0,
+        updatedAt: item.updatedAt || item.updated_at || item.lastModified || item.timestamp || 0
+    };
+}
+
+function normalizeStoredUserSettings(items) {
+    return (items || []).map(normalizeStoredUserSetting).filter(Boolean);
+}
 const CONTEXT_CACHE_TTL = 60 * 60 * 1000;
 
 async function fetchPlaylistName(playlistId, accessToken, sessionId) {
@@ -930,9 +958,9 @@ app.post('/api/kv/migrate', async (req, res) => {
 app.get('/api/kv/all-lyrics', async (req, res) => {
     try {
         console.log('📡 獲取所有歌詞請求...');
-        const allLyrics = await storage.getAllUserLyrics(req);
+        const allLyrics = normalizeStoredUserSettings(await storage.getAllUserLyrics(req));
         console.log(`✅ 成功獲取 ${allLyrics.length} 首歌詞`);
-        res.json({ success: true, data: allLyrics, count: allLyrics.length });
+        res.json({ success: true, data: allLyrics, lyrics: allLyrics, total: allLyrics.length, count: allLyrics.length });
     } catch (error) {
         console.error('❌ 獲取所有歌詞失敗:', error);
         console.error('錯誤堆棧:', error.stack);
@@ -1177,8 +1205,8 @@ app.post('/api/kv/user-provider/get', async (req, res) => {
 // ✨ 獲取所有用戶歌詞
 app.get('/api/kv/get-all-lyrics', async (req, res) => {
     try {
-        const allLyrics = await storage.getAllUserLyrics(req);
-        res.json({ success: true, data: allLyrics, count: allLyrics.length });
+        const allLyrics = normalizeStoredUserSettings(await storage.getAllUserLyrics(req));
+        res.json({ success: true, data: allLyrics, lyrics: allLyrics, count: allLyrics.length });
     } catch (error) {
         console.error('獲取所有歌詞失敗:', error);
         res.status(500).json({ success: false, error: error.message });
@@ -1195,7 +1223,7 @@ app.get('/api/kv/user-lyrics', async (req, res) => {
     }
     
     try {
-        const allLyrics = await storage.getAllUserLyrics(req);
+        const allLyrics = normalizeStoredUserSettings(await storage.getAllUserLyrics(req));
         res.json({ success: true, data: allLyrics });
     } catch (error) {
         console.error('獲取用戶歌詞失敗:', error);
@@ -1213,9 +1241,17 @@ app.get('/api/kv/user-providers', async (req, res) => {
     }
     
     try {
-        // 從 storage 獲取所有用戶的供應商偏好
-        // 注意：這需要 enhancedStorage 支持，如果沒有則返回空數組
-        res.json({ success: true, data: [] });
+        const allSettings = normalizeStoredUserSettings(await storage.getAllUserLyrics(req));
+        const data = allSettings
+            .filter(item => item.manualLyrics?.source)
+            .map(item => ({
+                key: item.trackId,
+                provider: item.manualLyrics.source,
+                settings: item.manualLyrics,
+                trackInfo: item.trackInfo,
+                lastUsed: item.updatedAt || item.lastModified || 0
+            }));
+        res.json({ success: true, data });
     } catch (error) {
         console.error('獲取用戶供應商偏好失敗:', error);
         res.status(500).json({ success: false, error: error.message });
@@ -1232,9 +1268,21 @@ app.get('/api/kv/get-time-offsets', async (req, res) => {
     }
     
     try {
-        // 從 storage 獲取所有時間偏移
-        // 這裡需要根據實際存儲結構來實現
-        res.json({ success: true, offsets: {} });
+        const allSettings = normalizeStoredUserSettings(await storage.getAllUserLyrics(req));
+        const data = allSettings
+            .filter(item => item.offset !== undefined && item.offset !== null)
+            .map(item => ({
+                key: item.trackId,
+                timeOffset: item.offset,
+                offset: item.offset,
+                trackInfo: item.trackInfo,
+                lastUpdated: item.updatedAt || item.lastModified || 0
+            }));
+        const offsets = {};
+        data.forEach(item => {
+            offsets[item.key] = item;
+        });
+        res.json({ success: true, data, offsets });
     } catch (error) {
         console.error('獲取時間偏移失敗:', error);
         res.status(500).json({ success: false, error: error.message });
@@ -1283,6 +1331,63 @@ app.post('/api/kv/batch-save-lyrics', async (req, res) => {
         res.json({ success: true, saved: successCount, total: lyrics.length });
     } catch (error) {
         console.error('批量保存歌詞失敗:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/kv/sync-lyrics', async (req, res) => {
+    const session = await getUserSession(req);
+    const userId = await getSpotifyUserId(session, req.sessionId);
+    const { lyrics } = req.body;
+
+    if (!userId || !Array.isArray(lyrics)) {
+        return res.status(400).json({ error: 'Invalid request' });
+    }
+
+    try {
+        let successCount = 0;
+        let errorCount = 0;
+        for (const item of lyrics) {
+            try {
+                await storage.saveLyrics(userId, item.trackInfo, item.lyrics, item.lyricsType, item.source || item.customLyricsMeta || 'manual');
+                successCount++;
+            } catch (e) {
+                errorCount++;
+                console.error(`同步歌詞失敗 ${item.trackInfo?.id}:`, e);
+            }
+        }
+        res.json({ success: true, successCount, errorCount, total: lyrics.length });
+    } catch (error) {
+        console.error('同步歌詞失敗:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/kv/sync-time-adjustments', async (req, res) => {
+    const session = await getUserSession(req);
+    const userId = await getSpotifyUserId(session, req.sessionId);
+    const { adjustments } = req.body;
+
+    if (!userId || !Array.isArray(adjustments)) {
+        return res.status(400).json({ error: 'Invalid request' });
+    }
+
+    try {
+        let successCount = 0;
+        let errorCount = 0;
+        for (const item of adjustments) {
+            try {
+                const trackInfo = item.trackInfo || { id: item.trackId || item.key };
+                await storage.saveOffset(userId, trackInfo, item.timeOffset ?? item.offset ?? 0);
+                successCount++;
+            } catch (e) {
+                errorCount++;
+                console.error(`同步時間調整失敗 ${item.trackInfo?.id || item.key}:`, e);
+            }
+        }
+        res.json({ success: true, successCount, errorCount, total: adjustments.length });
+    } catch (error) {
+        console.error('同步時間調整失敗:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });

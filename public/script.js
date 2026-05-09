@@ -458,7 +458,10 @@ class SpotifyLyricsPlayer {
             return;
         }
 
-        const cloudData = await downloadResponse.json();
+        const cloudResult = await downloadResponse.json();
+        const cloudData = Array.isArray(cloudResult)
+            ? cloudResult
+            : (cloudResult.data || Object.values(cloudResult.offsets || {}));
         const localOffsets =
             JSON.parse(localStorage.getItem('lyrics_time_adjustments') || '{}');
 

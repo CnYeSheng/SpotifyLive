@@ -1167,7 +1167,7 @@ app.get(['/api/export-lyrics', '/api/kv/export-all-lyrics'], async (req, res) =>
         const userId = await getSpotifyUserId(session, req.sessionId);
         if (!userId) return res.status(401).json({ error: 'Could not identify user' });
 
-        const userLyrics = await enhancedStorage.getAllLyrics(userId);
+        const userLyrics = normalizeStoredUserSettings(await enhancedStorage.getAllLyrics(userId));
         
         if (req.path.includes('export-lyrics')) {
              res.setHeader('Content-Disposition', 'attachment; filename="lyrics-export.json"');
@@ -1254,10 +1254,10 @@ app.post('/api/kv/batch-save-lyrics', async (req, res) => {
                 await enhancedStorage.saveSongSettings(userId, trackInfo.id, {
                     lyricsContent: lyricData.lyrics,
                     lyricsType: lyricData.lyricsType,
-                    customLyricsMeta: {
-                        type: lyricData.customLyricsMeta?.type || 'plain',
-                        source: lyricData.customLyricsMeta?.source || 'manual',
-                        savedAt: Date.now()
+                    customLyricsMeta: lyricData.customLyricsMeta || {
+                        type: lyricData.lyricsType || 'plain',
+                        source: lyricData.source || 'manual',
+                        savedAt: lyricData.lastModified || lyricData.timestamp || Date.now()
                     },
                     trackInfo: trackInfo
                 });
@@ -1293,11 +1293,12 @@ app.get('/api/kv/all-lyrics', async (req, res) => {
         const userId = await getSpotifyUserId(session, req.sessionId);
         if (!userId) return res.status(401).json({ error: 'Could not identify user' });
 
-        const userLyrics = await enhancedStorage.getAllLyrics(userId);
+        const userLyrics = normalizeStoredUserSettings(await enhancedStorage.getAllLyrics(userId));
 
         res.json({
             success: true,
             total: userLyrics.length,
+            data: userLyrics,
             lyrics: userLyrics
         });
     } catch (error) {
@@ -1317,7 +1318,7 @@ app.get('/api/kv/user-lyrics', async (req, res) => {
         const userId = await getSpotifyUserId(session, req.sessionId);
         if (!userId) return res.status(401).json({ error: 'Could not identify user' });
 
-        const userLyrics = await enhancedStorage.getAllLyrics(userId);
+        const userLyrics = normalizeStoredUserSettings(await enhancedStorage.getAllLyrics(userId));
 
         res.json({
             success: true,
@@ -1349,7 +1350,11 @@ app.post('/api/kv/sync-all', async (req, res) => {
                     await enhancedStorage.saveSongSettings(userId, trackId, {
                         lyricsContent: value.lyrics,
                         lyricsType: value.lyricsType,
-                        customLyricsMeta: value.source,
+                        customLyricsMeta: value.customLyricsMeta || {
+                            type: value.lyricsType || 'plain',
+                            source: value.source || 'manual',
+                            savedAt: value.lastModified || value.timestamp || Date.now()
+                        },
                         trackInfo: value.trackInfo
                     });
                     successCount++;
@@ -1364,9 +1369,11 @@ app.post('/api/kv/sync-all', async (req, res) => {
         if (syncData.timeAdjustments && typeof syncData.timeAdjustments === 'object') {
             for (const [key, value] of Object.entries(syncData.timeAdjustments)) {
                 try {
-                    const trackId = key.includes('-') ? key.split('-')[0] : key;
+                    const trackId = value?.trackInfo?.id || (key.includes('-') ? key.split('-')[0] : key);
+                    const offset = typeof value === 'number' ? value : value.timeOffset;
                     await enhancedStorage.saveSongSettings(userId, trackId, {
-                        offset: value.timeOffset
+                        offset: offset || 0,
+                        trackInfo: value?.trackInfo || { id: trackId }
                     });
                     successCount++;
                 } catch (e) {
@@ -1398,11 +1405,12 @@ app.get('/api/kv/get-all-lyrics', async (req, res) => {
         const userId = await getSpotifyUserId(session, req.sessionId);
         if (!userId) return res.status(401).json({ error: 'Could not identify user' });
 
-        const userLyrics = await enhancedStorage.getAllLyrics(userId);
+        const userLyrics = normalizeStoredUserSettings(await enhancedStorage.getAllLyrics(userId));
 
         res.json({
             success: true,
             total: userLyrics.length,
+            data: userLyrics,
             lyrics: userLyrics
         });
     } catch (error) {
@@ -1559,10 +1567,10 @@ app.post('/api/kv/sync-lyrics', async (req, res) => {
                 await enhancedStorage.saveSongSettings(userId, trackInfo.id, {
                     lyricsContent: lyricData.lyrics,
                     lyricsType: lyricData.lyricsType,
-                    customLyricsMeta: {
-                        type: lyricData.customLyricsMeta?.type || 'plain',
-                        source: lyricData.customLyricsMeta?.source || 'manual',
-                        savedAt: Date.now()
+                    customLyricsMeta: lyricData.customLyricsMeta || {
+                        type: lyricData.lyricsType || 'plain',
+                        source: lyricData.source || 'manual',
+                        savedAt: lyricData.lastModified || lyricData.timestamp || Date.now()
                     },
                     trackInfo: trackInfo
                 });
@@ -1649,7 +1657,7 @@ app.get('/api/kv/time-adjustments', async (req, res) => {
         const userId = await getSpotifyUserId(session, req.sessionId);
         if (!userId) return res.status(401).json({ error: 'Could not identify user' });
 
-        const userSettings = await enhancedStorage.getAllLyrics(userId);
+        const userSettings = normalizeStoredUserSettings(await enhancedStorage.getAllLyrics(userId));
 
         // Extract time offsets
         const timeAdjustments = userSettings
@@ -1666,6 +1674,66 @@ app.get('/api/kv/time-adjustments', async (req, res) => {
         });
     } catch (error) {
         console.error('Error getting time adjustments:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/kv/get-time-offsets', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    try {
+        const session = await getUserSession(req);
+        if (!session) return res.status(401).json({ error: 'Not authenticated' });
+        const userId = await getSpotifyUserId(session, req.sessionId);
+        if (!userId) return res.status(401).json({ error: 'Could not identify user' });
+
+        const userSettings = normalizeStoredUserSettings(await enhancedStorage.getAllLyrics(userId));
+        const data = userSettings
+            .filter(item => item.offset !== undefined && item.offset !== null)
+            .map(item => ({
+                key: item.trackId,
+                timeOffset: item.offset,
+                offset: item.offset,
+                trackInfo: item.trackInfo,
+                lastUpdated: item.updatedAt || item.lastModified || 0
+            }));
+        const offsets = {};
+        data.forEach(item => {
+            offsets[item.key] = item;
+        });
+
+        res.json({ success: true, data, offsets });
+    } catch (error) {
+        console.error('Error getting time offsets:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/kv/user-providers', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    try {
+        const session = await getUserSession(req);
+        if (!session) return res.status(401).json({ error: 'Not authenticated' });
+        const userId = await getSpotifyUserId(session, req.sessionId);
+        if (!userId) return res.status(401).json({ error: 'Could not identify user' });
+
+        const userSettings = normalizeStoredUserSettings(await enhancedStorage.getAllLyrics(userId));
+        const data = userSettings
+            .filter(item => item.manualLyrics?.source)
+            .map(item => ({
+                key: item.trackId,
+                provider: item.manualLyrics.source,
+                settings: item.manualLyrics,
+                trackInfo: item.trackInfo,
+                lastUsed: item.updatedAt || item.lastModified || 0
+            }));
+
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error('Error getting user providers:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -2012,6 +2080,36 @@ function getHistoryPlayedAtMs(item) {
     if (typeof value === 'number') return value;
     const parsed = new Date(value).getTime();
     return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeStoredUserSetting(item) {
+    if (!item) return null;
+    const trackId = item.trackId || item.track_id || item.trackInfo?.id;
+    if (!trackId) return null;
+
+    const trackInfo = item.trackInfo || {
+        id: trackId,
+        name: item.trackName || item.name || '',
+        artist: item.artistName || item.artist || ''
+    };
+    const meta = item.customLyricsMeta || item.metaData || {};
+
+    return {
+        ...item,
+        trackId,
+        trackInfo,
+        lyrics: item.lyrics || item.lyricsContent || null,
+        lyricsContent: item.lyricsContent || item.lyrics || null,
+        lyricsType: item.lyricsType || meta.type || 'synced',
+        customLyricsMeta: meta,
+        source: item.source || meta.source || 'custom',
+        lastModified: item.lastModified || item.updatedAt || item.updated_at || item.timestamp || 0,
+        updatedAt: item.updatedAt || item.updated_at || item.lastModified || item.timestamp || 0
+    };
+}
+
+function normalizeStoredUserSettings(items) {
+    return (items || []).map(normalizeStoredUserSetting).filter(Boolean);
 }
 
 function getHistoryTrackKey(item) {

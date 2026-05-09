@@ -947,91 +947,212 @@ function initUserLyricsManager() {
     };
 
     // 同步並合併所有用戶數據 (雙向同步策略)
-    SpotifyLyricsPlayer.prototype.syncAndMergeAllData = async function() {
+    SpotifyLyricsPlayer.prototype.syncAndMergeAllData = async function(silent = false) {
         if (this.isSyncingAll) return;
         this.isSyncingAll = true;
 
         try {
             this.log('🔄 開始執行全量雙向同步...');
-            this.showSyncProgress(0, 0, '正在獲取雲端數據...');
+            if (!silent) this.showSyncProgress(0, 0, '正在獲取雲端數據...');
+
+            const parseJson = (key) => {
+                try {
+                    return JSON.parse(localStorage.getItem(key) || '{}');
+                } catch (_) {
+                    return {};
+                }
+            };
+            const toTime = (value) => {
+                if (!value) return 0;
+                if (typeof value === 'number') return value;
+                const parsed = new Date(value).getTime();
+                return Number.isFinite(parsed) ? parsed : 0;
+            };
+            const normalizeTrackInfo = (item, fallbackKey = '') => {
+                const trackInfo = item?.trackInfo || {};
+                const id = trackInfo.id || item?.trackId || item?.id || fallbackKey.split('-')[0];
+                if (!id) return null;
+                return {
+                    id,
+                    name: trackInfo.name || item?.trackName || item?.name || '',
+                    artist: trackInfo.artist || item?.artistName || item?.artist || ''
+                };
+            };
+            const storageKeyFor = (trackInfo) => {
+                if (window.lyricsStorageManager?.generateTrackKey) {
+                    return window.lyricsStorageManager.generateTrackKey(trackInfo);
+                }
+                return this.generateTrackCacheKey(trackInfo).replace(/[^\w\-_]/g, '');
+            };
+            const newerThan = (a, b) => toTime(a?.lastModified || a?.updatedAt || a?.updated_at || a?.timestamp || a?.savedTime) >
+                toTime(b?.lastModified || b?.updatedAt || b?.updated_at || b?.timestamp || b?.savedTime);
+            const normalizeLyricEntry = (item, fallbackKey = '') => {
+                const trackInfo = normalizeTrackInfo(item, fallbackKey);
+                const lyrics = item?.lyrics || item?.lyricsContent;
+                if (!trackInfo || !Array.isArray(lyrics) || lyrics.length === 0) return null;
+                const meta = item.customLyricsMeta || {};
+                const ts = item.lastModified || item.updatedAt || item.updated_at || item.timestamp || Date.now();
+                return {
+                    trackInfo,
+                    lyrics,
+                    lyricsType: item.lyricsType || meta.type || 'synced',
+                    source: item.source || meta.source || { source: 'custom' },
+                    customLyricsMeta: meta,
+                    lastModified: ts,
+                    timestamp: ts,
+                    version: item.version || 2
+                };
+            };
+            const normalizeOffsetEntry = (item, fallbackKey = '') => {
+                const trackInfo = normalizeTrackInfo(item, fallbackKey);
+                if (!trackInfo) return null;
+                const timeOffset = typeof item === 'number' ? item : (item.timeOffset ?? item.offset);
+                if (timeOffset === undefined || timeOffset === null) return null;
+                const ts = item.lastUpdated || item.lastModified || item.updatedAt || item.updated_at || item.timestamp || item.savedTime || Date.now();
+                return { trackInfo, timeOffset, timestamp: ts, lastUpdated: ts };
+            };
 
             // 1. 從 localStorage 獲取本地數據
-            const localCustomLyrics = JSON.parse(localStorage.getItem('user_custom_lyrics') || '{}');
-            const localProviders = JSON.parse(localStorage.getItem('user_lyrics_providers') || '{}');
+            const localCustomLyrics = parseJson('user_custom_lyrics');
+            const localSavedLyrics = parseJson('saved_lyrics');
+            const localLyricsBackup = parseJson('lyrics_backup');
+            const localOffsets = parseJson('lyrics_time_adjustments');
+            const localLegacyOffsets = parseJson('lyrics_offsets');
+            const localProviders = parseJson('user_lyrics_providers');
 
             // 2. 獲取雲端數據
             let cloudLyrics = [];
             let cloudTimeAdjustments = [];
+            let cloudProviders = [];
 
             if (this.sessionId) {
                 try {
-                    // 獲取雲端所有歌詞和時間調整
                     const response = await fetch('/api/kv/all-lyrics', {
                         headers: { 'X-Session-Id': this.sessionId }
                     });
                     if (response.ok) {
                         const result = await response.json();
-                        if (result.success && result.data) {
-                            cloudLyrics = result.data;
+                        if (result.success) {
+                            cloudLyrics = result.lyrics || result.data || [];
                         }
                     }
                 } catch (error) {
-                    this.log(`⚠️ 獲取雲端數據失敗: ${error.message}`);
+                    this.log(`⚠️ 獲取雲端歌詞失敗: ${error.message}`);
+                }
+
+                try {
+                    const response = await fetch('/api/kv/get-time-offsets', {
+                        headers: { 'X-Session-Id': this.sessionId }
+                    });
+                    if (response.ok) {
+                        const result = await response.json();
+                        if (Array.isArray(result)) {
+                            cloudTimeAdjustments = result;
+                        } else if (result.success) {
+                            cloudTimeAdjustments = result.data || Object.values(result.offsets || {});
+                        }
+                    }
+                } catch (error) {
+                    this.log(`⚠️ 獲取雲端時間調整失敗: ${error.message}`);
+                }
+
+                try {
+                    const response = await fetch('/api/kv/user-providers', {
+                        headers: { 'X-Session-Id': this.sessionId }
+                    });
+                    if (response.ok) {
+                        const result = await response.json();
+                        if (result.success) {
+                            cloudProviders = result.data || [];
+                        }
+                    }
+                } catch (error) {
+                    this.log(`⚠️ 獲取雲端供應商偏好失敗: ${error.message}`);
                 }
             }
 
             // 3. 合併邏輯 (Merge)
             // 合併規則：如果兩邊都有，比較 lastModified，本地優先 (相等或本地較新)
-            const mergedLyrics = { ...localCustomLyrics };
-            
-            cloudLyrics.forEach(cloudItem => {
-                if (!cloudItem.trackInfo || !cloudItem.trackInfo.id) return;
-                
-                const trackKey = this.generateTrackCacheKey(cloudItem.trackInfo);
-                const localItem = mergedLyrics[trackKey];
-                
-                const cloudTS = cloudItem.updated_at || cloudItem.timestamp || 0;
-                
-                if (!localItem) {
-                    // 本地無，直接加入
-                    mergedLyrics[trackKey] = {
-                        trackInfo: cloudItem.trackInfo,
-                        lyrics: cloudItem.lyricsContent || cloudItem.lyrics,
-                        lyricsType: cloudItem.lyricsType || 'synced',
-                        source: cloudItem.customLyricsMeta || { source: 'custom' },
-                        lastModified: cloudTS,
-                        timestamp: cloudTS
+            const mergedCustomLyrics = {};
+            const mergedSavedLyrics = {};
+            const mergedLyricsBackup = {};
+            const addLyric = (entry, keyHint = '') => {
+                const normalized = normalizeLyricEntry(entry, keyHint);
+                if (!normalized) return;
+                const playerKey = this.generateTrackCacheKey(normalized.trackInfo);
+                const storageKey = storageKeyFor(normalized.trackInfo);
+                const existing = mergedSavedLyrics[playerKey] || mergedCustomLyrics[playerKey] || mergedLyricsBackup[storageKey];
+                if (!existing || newerThan(normalized, existing)) {
+                    mergedCustomLyrics[playerKey] = normalized;
+                    mergedSavedLyrics[playerKey] = normalized;
+                    mergedLyricsBackup[storageKey] = normalized;
+                }
+            };
+
+            Object.entries(localCustomLyrics).forEach(([key, value]) => addLyric(value, key));
+            Object.entries(localSavedLyrics).forEach(([key, value]) => addLyric(value, key));
+            Object.entries(localLyricsBackup).forEach(([key, value]) => addLyric(value, key));
+            cloudLyrics.forEach(item => addLyric(item, item.trackId));
+
+            const mergedOffsets = {};
+            const mergedLegacyOffsets = {};
+            const addOffset = (entry, keyHint = '') => {
+                const normalized = normalizeOffsetEntry(entry, keyHint);
+                if (!normalized) return;
+                const playerKey = this.generateTrackCacheKey(normalized.trackInfo);
+                const storageKey = storageKeyFor(normalized.trackInfo);
+                const existing = mergedOffsets[playerKey] || mergedLegacyOffsets[storageKey];
+                if (!existing || newerThan(normalized, existing)) {
+                    mergedOffsets[playerKey] = normalized;
+                    mergedLegacyOffsets[storageKey] = {
+                        offset: normalized.timeOffset,
+                        savedTime: normalized.lastUpdated || normalized.timestamp
                     };
-                } else {
-                    // 本地有，比較時間戳
-                    const localTS = localItem.lastModified || localItem.timestamp || 0;
-                    
-                    if (new Date(cloudTS) > new Date(localTS)) {
-                        // 雲端較新，更新本地
-                        mergedLyrics[trackKey] = {
-                            trackInfo: cloudItem.trackInfo,
-                            lyrics: cloudItem.lyricsContent || cloudItem.lyrics,
-                            lyricsType: cloudItem.lyricsType || 'synced',
-                            source: cloudItem.customLyricsMeta || { source: 'custom' },
-                            lastModified: cloudTS,
-                            timestamp: cloudTS
-                        };
-                    }
+                }
+            };
+
+            Object.entries(localOffsets).forEach(([key, value]) => addOffset(value, key));
+            Object.entries(localLegacyOffsets).forEach(([key, value]) => addOffset({ ...value, timeOffset: value.offset }, key));
+            cloudTimeAdjustments.forEach(item => addOffset(item, item.key || item.trackId));
+
+            const mergedProviders = { ...localProviders };
+            cloudProviders.forEach(item => {
+                const trackInfo = normalizeTrackInfo(item, item.key);
+                if (!trackInfo || !item.provider) return;
+                const key = this.generateTrackCacheKey(trackInfo);
+                const providerEntry = {
+                    trackInfo,
+                    provider: item.provider,
+                    settings: item.settings || {},
+                    lastUsed: item.lastUsed || Date.now()
+                };
+                if (!mergedProviders[key] || newerThan(providerEntry, mergedProviders[key])) {
+                    mergedProviders[key] = providerEntry;
                 }
             });
 
             // 4. 保存合併後的數據到本地
-            localStorage.setItem('user_custom_lyrics', JSON.stringify(mergedLyrics));
-            this.savedLyrics = new Map(Object.entries(mergedLyrics));
+            localStorage.setItem('user_custom_lyrics', JSON.stringify(mergedCustomLyrics));
+            localStorage.setItem('saved_lyrics', JSON.stringify(mergedSavedLyrics));
+            localStorage.setItem('lyrics_backup', JSON.stringify(mergedLyricsBackup));
+            localStorage.setItem('lyrics_time_adjustments', JSON.stringify(mergedOffsets));
+            localStorage.setItem('lyrics_offsets', JSON.stringify(mergedLegacyOffsets));
+            localStorage.setItem('user_lyrics_providers', JSON.stringify(mergedProviders));
+            this.savedLyrics = new Map(Object.entries(mergedSavedLyrics));
+            this.lyricsTimeAdjustments = new Map(Object.entries(mergedOffsets));
 
             // 5. 批次上傳回雲端 (確保雲端也是最新的合併結果)
-            const entriesToUpload = Object.values(mergedLyrics).filter(item => item && item.trackInfo && item.trackInfo.id);
-            this.log(`📤 開始上傳合併後的數據到雲端: 共 ${entriesToUpload.length} 項`);
-            this.showSyncProgress(0, entriesToUpload.length, '正在上傳合併數據...');
+            const entriesToUpload = Object.values(mergedSavedLyrics).filter(item => item && item.trackInfo && item.trackInfo.id);
+            const offsetsToUpload = Object.values(mergedOffsets).filter(item => item && item.trackInfo && item.trackInfo.id);
+            const providersToUpload = Object.values(mergedProviders).filter(item => item && item.trackInfo && item.trackInfo.id && (item.provider || item.source));
+            const totalToUpload = entriesToUpload.length + offsetsToUpload.length + providersToUpload.length;
+            this.log(`📤 開始上傳合併後的數據到雲端: 共 ${totalToUpload} 項`);
+            if (!silent) this.showSyncProgress(0, totalToUpload, '正在上傳合併數據...');
 
             const batchSize = 20;
             let successCount = 0;
             let failedCount = 0;
+            let processed = 0;
 
             for (let i = 0; i < entriesToUpload.length; i += batchSize) {
                 const batch = entriesToUpload.slice(i, i + batchSize);
@@ -1053,11 +1174,56 @@ function initUserLyricsManager() {
                 } catch (e) {
                     failedCount += batch.length;
                 }
-                this.showSyncProgress(i + batch.length, entriesToUpload.length, `正在同步...`);
+                processed += batch.length;
+                if (!silent) this.showSyncProgress(processed, totalToUpload, `正在同步歌詞...`);
             }
 
-            this.hideSyncProgress();
-            this.showSuccessMessage(`✅ 全量同步完成！成功: ${successCount}, 失敗: ${failedCount}`);
+            for (let i = 0; i < offsetsToUpload.length; i += batchSize) {
+                const batch = offsetsToUpload.slice(i, i + batchSize);
+                try {
+                    const response = await fetch('/api/kv/sync-time-adjustments', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Session-Id': this.sessionId
+                        },
+                        body: JSON.stringify({ adjustments: batch })
+                    });
+                    if (response.ok) successCount += batch.length;
+                    else failedCount += batch.length;
+                } catch (_) {
+                    failedCount += batch.length;
+                }
+                processed += batch.length;
+                if (!silent) this.showSyncProgress(processed, totalToUpload, `正在同步時間調整...`);
+            }
+
+            for (const item of providersToUpload) {
+                try {
+                    const response = await fetch('/api/kv/user-provider', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Session-Id': this.sessionId
+                        },
+                        body: JSON.stringify({
+                            trackInfo: item.trackInfo,
+                            provider: item.provider || item.source
+                        })
+                    });
+                    if (response.ok) successCount++;
+                    else failedCount++;
+                } catch (_) {
+                    failedCount++;
+                }
+                processed++;
+                if (!silent) this.showSyncProgress(processed, totalToUpload, `正在同步供應商偏好...`);
+            }
+
+            if (!silent) {
+                this.hideSyncProgress();
+                this.showSuccessMessage(`✅ 全量同步完成！成功: ${successCount}, 失敗: ${failedCount}`);
+            }
             this.log(`✅ 全量同步完成: ${successCount} 成功, ${failedCount} 失敗`);
 
             if (typeof this.updateSyncStatus === 'function') {
@@ -1065,8 +1231,10 @@ function initUserLyricsManager() {
             }
 
         } catch (error) {
-            this.hideSyncProgress();
-            this.showErrorMessage(`❌ 同步失敗: ${error.message}`);
+            if (!silent) {
+                this.hideSyncProgress();
+                this.showErrorMessage(`❌ 同步失敗: ${error.message}`);
+            }
             this.log(`❌ 同步過程中發生錯誤: ${error.message}`);
         } finally {
             this.isSyncingAll = false;
