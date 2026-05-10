@@ -175,40 +175,51 @@ document.addEventListener('DOMContentLoaded', () => {
     // 下載分享圖片
     downloadShareImage?.addEventListener('click', async () => {
         if (!shareCardPreview) return;
-        
+
+        const originalText = downloadShareImage.innerHTML;
+        downloadShareImage.innerHTML = '生成中...';
+        downloadShareImage.disabled = true;
+
+        // 記錄原始 transform 以便截圖後還原
+        const originalTransform = shareCardPreview.style.transform;
+
         try {
-            const originalText = downloadShareImage.innerHTML;
-            downloadShareImage.innerHTML = '生成中...';
-            downloadShareImage.disabled = true;
-            
-            // 重置縮放以確保捕捉到完整尺寸
-            const originalTransform = shareCardPreview.style.transform;
+            // 暫時取消縮放，讓 html-to-image 正確讀取真實尺寸
+            // 注意：不能把卡片移到畫面外，html-to-image 對 off-screen 元素會輸出全黑
             shareCardPreview.style.transform = 'none';
-            
-            // 給瀏覽器一點時間重繪（處理 transform 切換）
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
-            const canvas = await html2canvas(shareCardPreview, {
-                backgroundColor: null,
-                scale: 1, // 已經是高解析度尺寸了
-                useCORS: true,
-                logging: false,
-                width: shareCardPreview.offsetWidth,
-                height: shareCardPreview.offsetHeight
+
+            // 給瀏覽器時間重繪
+            await new Promise(resolve => setTimeout(resolve, 200));
+
+            const cardWidth = shareCardPreview.offsetWidth;
+            const cardHeight = shareCardPreview.offsetHeight;
+
+            const dataUrl = await htmlToImage.toPng(shareCardPreview, {
+                pixelRatio: 2,
+                backgroundColor: '#121212',
+                width: cardWidth,
+                height: cardHeight,
+                skipFonts: true,   // 跳過跨來源 CSS 讀取，避免 SecurityError
+                style: {
+                    transform: 'none',
+                    transformOrigin: 'top left',
+                    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                },
             });
-            
-            // 恢復縮放
+
+            // 還原縮放
             shareCardPreview.style.transform = originalTransform;
-            
+
             const link = document.createElement('a');
             link.download = `spotify-stats-${currentRatio}-${new Date().toISOString().split('T')[0]}.png`;
-            link.href = canvas.toDataURL('image/png');
+            link.href = dataUrl;
             link.click();
-            
+
             downloadShareImage.innerHTML = originalText;
             downloadShareImage.disabled = false;
         } catch (error) {
             console.error('生成圖片失敗:', error);
+            shareCardPreview.style.transform = originalTransform; // 確保還原
             alert('生成圖片失敗，請稍後再試');
             downloadShareImage.innerHTML = `
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="vertical-align: middle; margin-right: 6px;">
@@ -534,7 +545,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const hours = Math.floor(data.totalDurationMs / (1000 * 60 * 60));
         const minutes = Math.floor((data.totalDurationMs % (1000 * 60 * 60)) / (1000 * 60));
         const seconds = Math.floor((data.totalDurationMs % (1000 * 60)) / 1000);
-        const totalTimeText = `${hours}h ${minutes}m ${seconds}s`;
+        
+        // 根據比例決定時間顯示格式：1:1 僅顯示時分，其餘保持精確到秒
+        const totalTimeText = currentRatio === '1:1' 
+            ? `${hours}h ${minutes}m` 
+            : `${hours}h ${minutes}m ${seconds}s`;
         const songCount = data.songCount;
         const uniqueCount = data.uniqueSongCount ?? data.topSongs.length;
 
@@ -661,7 +676,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="share-stat-label">不重複</div>
                 </div>
                 <div class="share-stat-item">
-                    <div class="share-stat-value" style="font-size: ${detailedDate.length > 10 ? '24px' : '32px'}">${detailedDate}</div>
+                    <div class="share-stat-value">${detailedDate}</div>
                     <div class="share-stat-label">${rangeLabel}</div>
                 </div>
             </div>
