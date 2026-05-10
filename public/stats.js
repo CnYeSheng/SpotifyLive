@@ -54,6 +54,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Fetch stats on load
     fetchStats(currentDays);
     startAutoRefresh();
+    
+    // 初始化選擇器滑塊位置
+    setTimeout(() => {
+        document.querySelectorAll('.time-range-selector, .ratio-selector').forEach(selector => {
+            updateSelectorPill(selector);
+        });
+    }, 100);
 
     // Range selector click handler
     rangeBtns.forEach(btn => {
@@ -63,6 +70,12 @@ document.addEventListener('DOMContentLoaded', () => {
             currentDays = parseInt(btn.dataset.days);
             fetchStats(currentDays);
             
+            // 更新滑塊
+            updateSelectorPill(btn.parentElement);
+            
+            // 平滑滾動到選擇項 (行動版)
+            btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+
             // Restart auto-refresh to sync with the manual click
             stopAutoRefresh();
             startAutoRefresh();
@@ -95,11 +108,28 @@ document.addEventListener('DOMContentLoaded', () => {
             ratioBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             currentRatio = btn.dataset.ratio;
+            
+            // 更新滑塊
+            updateSelectorPill(btn.parentElement);
+            
+            // 平滑滾動到選擇項 (行動版)
+            btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+
             if (currentStatsData) {
                 renderShareCard(currentStatsData);
             }
         });
     });
+
+    // 輔助函數：更新選擇器滑塊位置
+    function updateSelectorPill(selectorContainer) {
+        const activeBtn = selectorContainer.querySelector('.active');
+        const pill = selectorContainer.querySelector('.selector-pill');
+        if (!activeBtn || !pill) return;
+
+        pill.style.width = `${activeBtn.offsetWidth}px`;
+        pill.style.left = `${activeBtn.offsetLeft}px`;
+    }
 
     // 清理重複紀錄按鈕
     const deduplicateBtn = document.getElementById('deduplicate-btn');
@@ -277,16 +307,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const hours = Math.floor(data.totalDurationMs / (1000 * 60 * 60));
         const minutes = Math.floor((data.totalDurationMs % (1000 * 60 * 60)) / (1000 * 60));
         const seconds = Math.floor((data.totalDurationMs % (1000 * 60)) / 1000);
-        totalTimeEl.textContent = `${hours}h ${minutes}m ${seconds}s`;
-        totalSongsEl.textContent = data.songCount;
-        uniqueSongsEl.textContent = data.uniqueSongCount ?? data.topSongs.length;
+        
+        // 優化顯示：包含秒數
+        totalTimeEl.textContent = hours > 0 ? `${hours}h ${minutes}m ${seconds}s` : `${minutes}m ${seconds}s`;
+        totalSongsEl.textContent = data.songCount.toLocaleString();
+        uniqueSongsEl.textContent = (data.uniqueSongCount ?? data.topSongs.length).toLocaleString();
 
         // Update Top Songs List
-        topSongsList.innerHTML = data.topSongs.map(song => `
+        topSongsList.innerHTML = data.topSongs.map((song, index) => `
             <li class="song-item">
-                <div class="song-info">
-                    <span class="song-name">${escapeHtml(song.trackName)}</span>
-                    <span class="song-artist">${escapeHtml(song.artistName)}</span>
+                <div style="display: flex; align-items: center; gap: 20px; flex: 1;">
+                    <div style="font-size: 18px; font-weight: 800; color: var(--spotify-green); width: 30px; text-align: center; opacity: 0.8;">${index + 1}</div>
+                    <div class="song-info">
+                        <span class="song-name">${escapeHtml(song.trackName)}</span>
+                        <span class="song-artist">${escapeHtml(song.artistName)}</span>
+                    </div>
                 </div>
                 <div class="song-count">${song.count} 次</div>
             </li>
@@ -300,7 +335,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const playlistId = item.dataset.playlistId;
                 const expandedDiv = document.getElementById(`playlist-${playlistId}`);
                 if (expandedDiv && expandedDiv.dataset.loaded) {
-                    // 保存已載入的內容
                     expandedPlaylists.set(playlistId, {
                         html: expandedDiv.innerHTML,
                         loaded: true
@@ -310,7 +344,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
             
-            topPlaylistsList.innerHTML = data.topPlaylists.map(playlist => {
+            topPlaylistsList.innerHTML = data.topPlaylists.map((playlist, index) => {
                 let playlistId = null;
                 let displayName = escapeHtml(playlist.name);
                 
@@ -323,23 +357,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 return `
                     <div class="playlist-group">
-                        <ul class="song-list">
-                            <li class="song-item playlist-item" data-playlist-id="${playlistId || ''}" data-playlist-name="${escapeHtml(playlist.name)}">
+                        <div class="song-item playlist-item" data-playlist-id="${playlistId || ''}" data-playlist-name="${escapeHtml(playlist.name)}">
+                            <div style="display: flex; align-items: center; gap: 20px; flex: 1;">
+                                <div style="font-size: 18px; font-weight: 800; color: var(--spotify-green); width: 30px; text-align: center; opacity: 0.8;">${index + 1}</div>
                                 <div class="song-info">
                                     <span class="song-name">${displayName}</span>
                                     <span class="song-artist">${playlist.uniqueTracks} 首歌曲 · ${playlist.count} 次播放</span>
                                 </div>
-                                <svg class="expand-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
-                                </svg>
-                            </li>
-                        </ul>
+                            </div>
+                            <svg class="expand-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+                            </svg>
+                        </div>
                         <div class="playlist-tracks-expanded" id="playlist-${playlistId}" style="display: none;">
                             <div class="loading-tracks">載入中...</div>
                         </div>
                     </div>
                 `;
             }).join('') || '<div class="no-playlists">暫無歌單數據</div>';
+            
+            // ... rest of the logic remains same ...
             
             // 恢復之前展開的歌單狀態和內容
             expandedPlaylists.forEach((savedData, id) => {
