@@ -598,11 +598,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 生成卡片 HTML
         shareCardPreview.innerHTML = `
+            <!-- 裝飾性背景元素 -->
+            <div class="share-card-bg-blob blob-1"></div>
+            <div class="share-card-bg-blob blob-2"></div>
+            <div class="share-card-bg-blob blob-3"></div>
+            
             <div class="share-card-header">
                 <svg class="share-card-logo" viewBox="0 0 24 24" fill="#1db954">
                     <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
                 </svg>
-                <span class="share-card-title">Spotify 聽歌統計</span>
+                <span class="share-card-title">Spotify 聽歌回顧</span>
             </div>
             
             <div class="share-card-stats">
@@ -620,13 +625,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="share-stat-item">
                     <div class="share-stat-value" style="font-size: ${detailedDate.length > 10 ? '24px' : '32px'}">${detailedDate}</div>
-                    <div class="share-stat-label">統計期間 (${rangeLabel})</div>
+                    <div class="share-stat-label">${rangeLabel}</div>
                 </div>
             </div>
 
             <div class="share-card-body ${isLandscape ? 'landscape' : ''}">
                 <div class="share-card-section">
-                    <div class="share-card-top5-title">🔥 熱門歌曲</div>
+                    <div class="share-card-top5-title">熱門歌曲</div>
                     <ul class="share-top5-list">
                         ${top5.length > 0 ? top5.map((song, index) => `
                             <li class="share-top5-item">
@@ -643,7 +648,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 ${(topPlaylists.length > 0 || isLandscape) ? `
                 <div class="share-card-section">
-                    <div class="share-card-top5-title">📀 熱門歌單</div>
+                    <div class="share-card-top5-title">熱門歌單</div>
                     <ul class="share-top5-list">
                         ${topPlaylists.length > 0 ? topPlaylists.map((playlist, index) => `
                             <li class="share-top5-item">
@@ -661,8 +666,10 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
 
             <div class="share-card-footer">
-                <span>Spotify 即時播放器</span>
-                <span>${new Date().toLocaleDateString('zh-TW')}</span>
+                <div class="footer-brand">
+                    <span class="footer-app-name">Spotify 即時歌詞播放器</span>
+                </div>
+                <div class="footer-date-tag">${new Date().toLocaleDateString('zh-TW')}</div>
             </div>
         `;
     }
