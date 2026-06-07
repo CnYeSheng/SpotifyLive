@@ -604,7 +604,7 @@ function initUserLyricsManager() {
                             ">
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <div>
-                                        <strong>${this.escapeHtml(trackInfo.artist || '未知藝人')} - ${this.escapeHtml(trackInfo.name || '未知歌曲')}</strong>
+                                        <strong>${this.escapeHtml(trackInfo.artist || '')} - ${this.escapeHtml(trackInfo.name || '')}</strong>
                                         <br>
                                         <small style="color: #888;">
                                             ${entry.lyricsType === 'synced' ? '同步歌詞' : '普通歌詞'} •
@@ -663,7 +663,7 @@ function initUserLyricsManager() {
                             ">
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <div>
-                                        <strong>${this.escapeHtml(trackInfo.artist || '未知藝人')} - ${this.escapeHtml(trackInfo.name || '未知歌曲')}</strong>
+                                        <strong>${this.escapeHtml(trackInfo.artist || '')} - ${this.escapeHtml(trackInfo.name || '')}</strong>
                                         <br>
                                         <small style="color: #888;">
                                             供應商: ${this.escapeHtml(entry.provider || '未知')} •
@@ -1131,15 +1131,46 @@ function initUserLyricsManager() {
                 }
             });
 
-            // 4. 保存合併後的數據到本地
-            localStorage.setItem('user_custom_lyrics', JSON.stringify(mergedCustomLyrics));
-            localStorage.setItem('saved_lyrics', JSON.stringify(mergedSavedLyrics));
-            localStorage.setItem('lyrics_backup', JSON.stringify(mergedLyricsBackup));
-            localStorage.setItem('lyrics_time_adjustments', JSON.stringify(mergedOffsets));
-            localStorage.setItem('lyrics_offsets', JSON.stringify(mergedLegacyOffsets));
-            localStorage.setItem('user_lyrics_providers', JSON.stringify(mergedProviders));
+            // 4. 保存合併後的數據到本地 (帶有空間檢查)
+            const safeSetItem = (key, data) => {
+                try {
+                    localStorage.setItem(key, JSON.stringify(data));
+                    return true;
+                } catch (error) {
+                    if (error.name === 'QuotaExceededError') {
+                        this.log(`⚠️ 存儲空間不足，嘗試清理緩存後重試: ${key}`);
+                        // 1. 嘗試清理臨時緩存
+                        localStorage.removeItem('lyrics_cache');
+                        localStorage.removeItem('enhanced_lyrics_cache');
+                        
+                        try {
+                            localStorage.setItem(key, JSON.stringify(data));
+                            return true;
+                        } catch (retryError) {
+                            this.log(`❌ 存儲空間仍然不足，無法保存 ${key}`);
+                            return false;
+                        }
+                    }
+                    this.log(`❌ 保存 ${key} 失敗: ${error.message}`);
+                    return false;
+                }
+            };
+
+            safeSetItem('user_custom_lyrics', mergedCustomLyrics);
+            safeSetItem('saved_lyrics', mergedSavedLyrics);
+            safeSetItem('lyrics_backup', mergedLyricsBackup);
+            safeSetItem('lyrics_time_adjustments', mergedOffsets);
+            safeSetItem('lyrics_offsets', mergedLegacyOffsets);
+            safeSetItem('user_lyrics_providers', mergedProviders);
+
             this.savedLyrics = new Map(Object.entries(mergedSavedLyrics));
             this.lyricsTimeAdjustments = new Map(Object.entries(mergedOffsets));
+
+            // 檢查是否所有關鍵數據都成功保存
+            const isFull = localStorage.getItem('saved_lyrics') === null;
+            if (isFull && !silent) {
+                this.showErrorMessage('⚠️ 瀏覽器存儲空間已滿，部分數據僅保存在雲端。建議清理舊歌詞或使用雲端同步。');
+            }
 
             // 5. 批次上傳回雲端 (確保雲端也是最新的合併結果)
             const entriesToUpload = Object.values(mergedSavedLyrics).filter(item => item && item.trackInfo && item.trackInfo.id);

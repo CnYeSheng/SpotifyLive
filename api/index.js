@@ -535,14 +535,14 @@ app.get('/api/stats/listening', async (req, res) => {
         const songCounts = {};
         history.forEach(item => {
             // 確保 trackName 和 artistName 存在
-            let trackName = item.trackName || item.name || item.title || '未知歌曲';
-            let artistName = item.artistName || item.artist || '未知歌手';
+            let trackName = item.trackName || item.name || item.title || '';
+            let artistName = item.artistName || item.artist || '';
             
             // 如果是舊格式（name 欄位包含 " - "），則進行分割
             if (!item.trackName && item.name && item.name.includes(' - ')) {
                 const parts = item.name.split(' - ');
                 trackName = parts[0] || item.name;
-                artistName = parts.slice(1).join(' - ') || '未知歌手';
+                artistName = parts.slice(1).join(' - ') || '';
             }
             
             const key = `${trackName}|||${artistName}`;

@@ -495,7 +495,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     <span class="track-num">${index + 1}</span>
                                     <div class="expanded-track-info">
                                         <div class="expanded-track-name">${escapeHtml(track.name)}</div>
-                                        <div class="expanded-track-artist">${escapeHtml(track.artist || '未知歌手')}</div>
+                                        <div class="expanded-track-artist">${escapeHtml(track.artist || '')}</div>
                                     </div>
                                     <div class="expanded-track-count">${track.playCount} 次</div>
                                 </li>
@@ -808,7 +808,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="track-number">${index + 1}</span>
                         <div class="track-info">
                             <div class="track-name">${escapeHtml(track.name)}</div>
-                            <div class="track-artist">${escapeHtml(track.artist || '未知歌手')}</div>
+                            <div class="track-artist">${escapeHtml(track.artist || '')}</div>
                         </div>
                         <div class="track-duration">${track.playCount} 次</div>
                     </li>

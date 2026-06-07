@@ -168,9 +168,9 @@ SpotifyLyricsPlayer.prototype.processUploadedLyrics = function(content) {
                 trackId: trackId,
                 trackInfo: {
                     id: trackId,
-                    name: this.currentTrack.name || '未知歌曲',
-                    artist: this.currentTrack.artist || '未知歌手',
-                    album: this.currentTrack.album || '未知專輯'
+                    name: this.currentTrack.name || '',
+                    artist: this.currentTrack.artist || '',
+                    album: this.currentTrack.album || ''
                 },
                 lyrics: parsed.lyrics, // 保存解析後的歌詞陣列
                 lyricsType: parsed.type,

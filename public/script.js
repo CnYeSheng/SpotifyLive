@@ -1944,8 +1944,8 @@ async initializeStorage() {
             const nextTrack = this.currentTrack.queue[0];
             this.nextSongData = {
                 id: nextTrack.id,
-                name: nextTrack.name || '未知歌曲',
-                artist: nextTrack.artists?.map(a => a.name).join(', ') || nextTrack.artist || '未知歌手',
+                name: nextTrack.name || '',
+                artist: nextTrack.artists?.map(a => a.name).join(', ') || nextTrack.artist || '',
                 image: nextTrack.image || nextTrack.album?.images?.[0]?.url || null
             };
             
@@ -2007,13 +2007,13 @@ async initializeStorage() {
         this.log(`📝 更新下一首预览内容: ${name} - ${artist || (artists ? artists[0]?.name : 'Unknown')}`);
         
         if (this.nextSongTitle) {
-            const songName = name || '未知歌曲';
+            const songName = name || '';
             this.nextSongTitle.textContent = typeof convertToTraditional === 'function' ? 
                 convertToTraditional(songName) : songName;
         }
         
         if (this.nextSongArtist) {
-            const artistNames = artist || (artists ? artists.map(a => a.name).join(', ') : '未知藝人');
+            const artistNames = artist || (artists ? artists.map(a => a.name).join(', ') : '');
             this.nextSongArtist.textContent = typeof convertToTraditional === 'function' ? 
                 convertToTraditional(artistNames) : artistNames;
         }
@@ -6728,7 +6728,7 @@ showOffsetMessage() {
 
     const playlistHTML = tracks.map((track, index) => {
         // ✅ 正確解析 artists 與 album images
-        const artistNames = track.artists?.map(a => a.name).join(', ') || '未知歌手';
+        const artistNames = track.artists?.map(a => a.name).join(', ') || '';
         const imageUrl = track.image || track.album?.images?.[0]?.url || null;
         
 
@@ -6744,7 +6744,7 @@ showOffsetMessage() {
                            justify-content: center; color: #999; font-size: 20px;">🎵</div>`
             }
             <div class="playlist-item-info">
-                <div class="playlist-item-title">${this.escapeHtml(track.name || '未知歌曲')}</div>
+                <div class="playlist-item-title">${this.escapeHtml(track.name || '')}</div>
                 <div class="playlist-item-artist">${this.escapeHtml(artistNames)}</div>
             </div>
         </div>`;

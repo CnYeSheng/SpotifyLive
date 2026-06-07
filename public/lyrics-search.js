@@ -350,7 +350,7 @@ SpotifyLyricsPlayer.prototype.displaySearchResults = function(results) {
             
             <div class="result-content">
                 <div class="result-title">${this.escapeHtml(result.title || result.artist)}</div>
-                <div class="result-artist">${this.escapeHtml(result.artist || '未知歌手')}</div>
+                <div class="result-artist">${this.escapeHtml(result.artist || '')}</div>
             </div>
             
             <div class="result-preview">"${this.escapeHtml(preview)}"</div>

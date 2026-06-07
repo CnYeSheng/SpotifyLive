@@ -452,6 +452,9 @@ function initEnhancedLyricsCaching() {
                 localStorage.setItem('saved_lyrics', JSON.stringify(savedObject));
             } catch (error) {
                 this.log(`❌ 保存永久歌詞失敗：${error.message}`);
+                if (error.name === 'QuotaExceededError' && typeof this.cleanupSavedLyrics === 'function') {
+                    this.cleanupSavedLyrics();
+                }
             }
         };
     }

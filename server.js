@@ -2246,14 +2246,14 @@ app.get('/api/stats/listening', async (req, res) => {
         const songCounts = {};
         history.forEach(item => {
             // 確保 trackName 和 artistName 存在，如果不存在則嘗試從其他欄位獲取
-            let trackName = item.trackName || item.name || item.title || '未知歌曲';
-            let artistName = item.artistName || item.artist || '未知歌手';
+            let trackName = item.trackName || item.name || item.title || '';
+            let artistName = item.artistName || item.artist || '';
             
             // 如果是舊格式（name 欄位包含 " - "），則進行分割
             if (!item.trackName && item.name && item.name.includes(' - ')) {
                 const parts = item.name.split(' - ');
                 trackName = parts[0] || item.name;
-                artistName = parts.slice(1).join(' - ') || '未知歌手';
+                artistName = parts.slice(1).join(' - ') || '';
             }
             
             const key = `${trackName}|||${artistName}`;
@@ -2918,7 +2918,7 @@ app.get('/api/library/check/:trackId', async (req, res) => {
                 const rawQueue = retry.data.queue.slice(0, 20);
                 const queue = rawQueue.map((track) => {
                     const artists = track.artists || [];
-                    const artistNames = artists.map(artist => artist.name).join(', ') || '未知歌手';
+                    const artistNames = artists.map(artist => artist.name).join(', ') || '';
                     const album = track.album || {};
                     const images = album.images || [];
                     const imageUrl = images.length > 0 ? images[0].url : null;
@@ -2990,7 +2990,7 @@ app.get('/api/player/queue', async (req, res) => {
         const queue = rawQueue.map((track, index) => {
             // 修復：確保正確處理藝術家和封面信息
             const artists = track.artists || [];
-            const artistNames = artists.map(artist => artist.name).join(', ') || '未知歌手';
+            const artistNames = artists.map(artist => artist.name).join(', ') || '';
             
             const album = track.album || {};
             const images = album.images || [];
@@ -3212,8 +3212,8 @@ app.get('/api/search-lyrics/:query', async (req, res) => {
                 parser: (data) => {
                     if (Array.isArray(data)) {
                         return data.map(item => ({
-                            title: item.title || item.name || '未知標題',
-                            artist: item.artist || item.singer || '未知歌手',
+                            title: item.title || item.name || '',
+                            artist: item.artist || item.singer || '',
                             source: 'wmcc.jp.eu.org',
                             id: item.id || `${item.title}-${item.artist}`,
                             preview: item.lyrics ? item.lyrics.substring(0, 100) + '...' : '預覽不可用'
@@ -3228,8 +3228,8 @@ app.get('/api/search-lyrics/:query', async (req, res) => {
                 parser: (data) => {
                     if (Array.isArray(data)) {
                         return data.map(item => ({
-                            title: item.name || '未知標題',
-                            artist: item.artistName || '未知歌手',
+                            title: item.name || '',
+                            artist: item.artistName || '',
                             source: 'Lrclib',
                             id: item.id ? item.id.toString() : `${item.name}-${item.artistName}`,
                             preview: item.syncedLyrics ? item.syncedLyrics.substring(0, 100) + '...' : (item.plainLyrics ? item.plainLyrics.substring(0, 100) : '無預覽')
@@ -4705,3 +4705,4 @@ if (require.main === module) {
 }
 
 module.exports = app;
+rts = app;
