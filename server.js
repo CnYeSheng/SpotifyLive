@@ -2526,21 +2526,110 @@ app.get('/api/playlists', async (req, res) => {
     }
     
     try {
+        const sessionId = req.headers['x-session-id'] || req.sessionId;
+        const userId = await getSpotifyUserId(session, sessionId);
+        
+        if (!userId) {
+            return res.status(500).json({ error: 'Failed to identify user' });
+        }
+
         const response = await axios.get('https://api.spotify.com/v1/me/playlists?limit=50', {
             headers: { 'Authorization': `Bearer ${session.accessToken}` }
         });
         
-        const playlists = response.data.items.map(playlist => ({
-            id: playlist.id,
-            name: playlist.name,
-            image: playlist.images[0]?.url,
-            tracks: playlist.tracks.total
-        }));
+        const playlists = (response.data.items || []).map(playlist => {
+            if (!playlist) return null;
+            
+            // 權限判斷：我是擁有者，或者這是協作歌單
+            const isOwner = playlist.owner?.id === userId;
+            const canEdit = isOwner || playlist.collaborative === true;
+            
+            return {
+                id: playlist.id,
+                name: playlist.name || '未命名歌單',
+                image: playlist.images?.[0]?.url,
+                tracks: playlist.tracks?.total || 0,
+                owner: playlist.owner?.id,
+                collaborative: playlist.collaborative,
+                canEdit: canEdit
+            };
+        }).filter(Boolean);
         
         res.json({ playlists });
     } catch (error) {
         console.error('Error fetching playlists:', error.response?.data || error.message);
         res.status(500).json({ error: 'Failed to fetch playlists' });
+    }
+});
+
+// Add track to playlist
+app.post('/api/playlists/:playlistId/tracks', async (req, res) => {
+    const session = await getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    try {
+        const { playlistId } = req.params;
+        const { trackId } = req.body;
+        
+        await axios.post(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
+            uris: [`spotify:track:${trackId}`]
+        }, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error adding track to playlist:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to add track to playlist' });
+    }
+});
+
+// Remove track from playlist
+app.delete('/api/playlists/:playlistId/tracks', async (req, res) => {
+    const session = await getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    try {
+        const { playlistId } = req.params;
+        const { trackId } = req.body;
+        
+        await axios.delete(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` },
+            data: {
+                tracks: [{ uri: `spotify:track:${trackId}` }]
+            }
+        });
+        
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error removing track from playlist:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to remove track from playlist' });
+    }
+});
+
+// Check if track is in playlist
+app.get('/api/playlists/:playlistId/tracks/:trackId', async (req, res) => {
+    const session = await getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    try {
+        const { playlistId, trackId } = req.params;
+        
+        const response = await axios.get(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`, {
+            headers: { 'Authorization': `Bearer ${session.accessToken}` }
+        });
+        
+        const isInPlaylist = response.data.items.some(item => item.track?.id === trackId);
+        res.json({ isInPlaylist });
+    } catch (error) {
+        console.error('Error checking track in playlist:', error.response?.data || error.message);
+        res.status(500).json({ error: 'Failed to check track in playlist' });
     }
 });
 

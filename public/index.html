@@ -92,9 +92,19 @@
                 
                 <!-- 額外功能按鈕 -->
                 <div class="extra-controls">
-                    <button id="add-to-playlist-btn" class="control-btn" title="加入播放清單">
+                    <button id="share-song-btn" class="control-btn" title="分享歌曲">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92c0-1.61-1.31-2.92-2.92-2.92z"/>
+                        </svg>
+                    </button>
+                    <button id="add-to-playlists-btn" class="control-btn" title="加入歌單">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                        </svg>
+                    </button>
+                    <button id="add-to-playlist-btn" class="control-btn" title="加入喜歡的歌曲">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
                         </svg>
                     </button>
                     <button id="playlist-btn" class="control-btn" title="播放清單">
@@ -225,11 +235,11 @@
                             </div>
                         </div>
                         
-                        <button id="lyrics-fast-btn" class="lyrics-control-btn" title="歌詞慢0.5秒">
+                        <button id="lyrics-fast-btn" class="lyrics-control-btn" title="歌詞慢0.1秒">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/>
                             </svg>
-                            -0.5s
+                            -0.1s
                         </button>
                         <button id="lyrics-reset-btn" class="lyrics-control-btn" title="重置歌詞時間">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -237,11 +247,17 @@
                             </svg>
                             重置
                         </button>
-                        <button id="lyrics-slow-btn" class="lyrics-control-btn" title="歌詞快0.5秒">
+                        <button id="lyrics-slow-btn" class="lyrics-control-btn" title="歌詞快0.1秒">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/>
                             </svg>
-                            +0.5s
+                            +0.1s
+                        </button>
+                        <button id="export-lyrics-btn" class="lyrics-control-btn" title="匯出歌詞">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                            </svg>
+                            匯出
                         </button>
                         <button id="search-lyrics-btn" class="lyrics-control-btn" title="搜尋歌詞">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -332,6 +348,30 @@
                 <button class="font-option" data-size="extra-large">特大</button>
             </div>
             <button id="close-modal" class="close-btn">關閉</button>
+        </div>
+    </div>
+
+    <!-- 用戶播放清單模態框 -->
+    <div id="user-playlists-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>選擇播放清單</h3>
+            <div id="user-playlists-content" class="user-playlists-content">
+                <div class="loading">載入中...</div>
+            </div>
+            <button id="close-user-playlists-modal" class="close-btn">關閉</button>
+        </div>
+    </div>
+
+    <!-- 歌詞匯出模態框 -->
+    <div id="export-lyrics-options-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>匯出歌詞</h3>
+            <p>請選擇匯出格式：</p>
+            <div class="export-options">
+                <button id="export-wbw-btn" class="font-option">匯出逐字歌詞 (Syllabic)</button>
+                <button id="export-lrc-btn" class="font-option">匯出動態歌詞 (LRC)</button>
+            </div>
+            <button id="close-export-modal" class="close-btn">關閉</button>
         </div>
     </div>
 
@@ -919,7 +959,7 @@
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/>
                     </svg>
-                    -0.5s
+                    -0.1s
                 </button>
                 <button class="mobile-lyrics-btn" id="mobile-lyrics-reset">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -931,7 +971,7 @@
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/>
                     </svg>
-                    +0.5s
+                    +0.1s
                 </button>
                 <button class="mobile-lyrics-btn" id="mobile-search">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">

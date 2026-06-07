@@ -1500,6 +1500,11 @@ async initializeStorage() {
         this.nextTrackPreview = document.getElementById('next-track-preview');
         this.nextTrackName = document.getElementById('next-track-name');
         
+        // 增強功能按鈕
+        this.shareSongBtn = document.getElementById('share-song-btn');
+        this.addToPlaylistsBtn = document.getElementById('add-to-playlists-btn');
+        this.exportLyricsBtn = document.getElementById('export-lyrics-btn');
+        
         // 下一首歌曲預覽元素
         this.nextSongPreview = document.getElementById('next-song-preview');
         this.nextSongCover = document.getElementById('next-song-cover');
@@ -1518,6 +1523,15 @@ async initializeStorage() {
         this.devicesModal = document.getElementById('devices-modal');
         this.closeDevicesModalBtn = document.getElementById('close-devices-modal');
         this.devicesContent = document.getElementById('devices-content');
+        
+        // 增強模態框
+        this.userPlaylistsModal = document.getElementById('user-playlists-modal');
+        this.userPlaylistsContent = document.getElementById('user-playlists-content');
+        this.closeUserPlaylistsModalBtn = document.getElementById('close-user-playlists-modal');
+        this.exportLyricsOptionsModal = document.getElementById('export-lyrics-options-modal');
+        this.closeExportModalBtn = document.getElementById('close-export-modal');
+        this.exportWbwBtn = document.getElementById('export-wbw-btn');
+        this.exportLrcBtn = document.getElementById('export-lrc-btn');
         
         // 設置模態框元素
         this.settingsModal = document.getElementById('settings-modal');
@@ -1649,6 +1663,19 @@ async initializeStorage() {
             this.showDevicesModal();
         });
 
+        // 增強功能按鈕事件
+        this.shareSongBtn?.addEventListener('click', () => {
+            this.copySongLink();
+        });
+
+        this.addToPlaylistsBtn?.addEventListener('click', () => {
+            this.showUserPlaylistsModal();
+        });
+
+        this.exportLyricsBtn?.addEventListener('click', () => {
+            this.showExportLyricsOptionsModal();
+        });
+
         // 模態框關閉事件
         this.closePlaylistModalBtn?.addEventListener('click', () => {
             this.playlistModal.style.display = 'none';
@@ -1656,6 +1683,25 @@ async initializeStorage() {
 
         this.closeDevicesModalBtn?.addEventListener('click', () => {
             this.devicesModal.style.display = 'none';
+        });
+
+        this.closeUserPlaylistsModalBtn?.addEventListener('click', () => {
+            this.userPlaylistsModal.style.display = 'none';
+        });
+
+        this.closeExportModalBtn?.addEventListener('click', () => {
+            this.exportLyricsOptionsModal.style.display = 'none';
+        });
+
+        // 匯出選項按鈕
+        this.exportWbwBtn?.addEventListener('click', () => {
+            this.exportLyrics('syllabic');
+            this.exportLyricsOptionsModal.style.display = 'none';
+        });
+
+        this.exportLrcBtn?.addEventListener('click', () => {
+            this.exportLyrics('lrc');
+            this.exportLyricsOptionsModal.style.display = 'none';
         });
 
         // 點擊模態框背景關閉
@@ -1671,9 +1717,21 @@ async initializeStorage() {
             }
         });
 
+        this.userPlaylistsModal?.addEventListener('click', (e) => {
+            if (e.target === this.userPlaylistsModal) {
+                this.userPlaylistsModal.style.display = 'none';
+            }
+        });
+
+        this.exportLyricsOptionsModal?.addEventListener('click', (e) => {
+            if (e.target === this.exportLyricsOptionsModal) {
+                this.exportLyricsOptionsModal.style.display = 'none';
+            }
+        });
+
         // 歌詞時間控制按鈕事件
         document.getElementById('lyrics-fast-btn')?.addEventListener('click', () => {
-            this.adjustLyricsOffset(-500); // 快0.5秒
+            this.adjustLyricsOffset(-100); // 快0.1秒
         });
 
         document.getElementById('lyrics-reset-btn')?.addEventListener('click', () => {
@@ -1681,7 +1739,7 @@ async initializeStorage() {
         });
 
         document.getElementById('lyrics-slow-btn')?.addEventListener('click', () => {
-            this.adjustLyricsOffset(500); // 慢0.5秒
+            this.adjustLyricsOffset(100); // 慢0.1秒
         });
 
         // 歌詞搜尋按鈕事件
@@ -5293,6 +5351,268 @@ showOffsetMessage() {
         } else if (status === false) {
             statusDot.classList.add('error');
         }
+    }
+
+    // 分享歌曲連結
+    copySongLink() {
+        if (!this.currentTrack || !this.currentTrack.id) {
+            this.showErrorMessage('沒有正在播放的歌曲');
+            return;
+        }
+
+        const songLink = `https://open.spotify.com/track/${this.currentTrack.id}`;
+        
+        // 優先使用 navigator.clipboard
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(songLink)
+                .then(() => {
+                    this.showSuccessMessage('✅ 歌曲連結已複製到剪貼簿');
+                })
+                .catch(err => {
+                    this.fallbackCopyTextToClipboard(songLink);
+                });
+        } else {
+            this.fallbackCopyTextToClipboard(songLink);
+        }
+    }
+
+    fallbackCopyTextToClipboard(text) {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        textArea.style.top = '0';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+
+        try {
+            const successful = document.execCommand('copy');
+            if (successful) {
+                this.showSuccessMessage('✅ 歌曲連結已複製到剪貼簿');
+            } else {
+                this.showErrorMessage('無法複製連結，請手動複製');
+            }
+        } catch (err) {
+            this.showErrorMessage('無法複製連結，請手動複製');
+        }
+
+        document.body.removeChild(textArea);
+    }
+
+    // 顯示用戶播放清單模態框
+    async showUserPlaylistsModal() {
+        if (!this.currentTrack) {
+            this.showErrorMessage('沒有正在播放的歌曲');
+            return;
+        }
+
+        this.userPlaylistsModal.style.display = 'flex';
+        this.userPlaylistsContent.innerHTML = '<div class="loading">載入播放清單中...</div>';
+
+        try {
+            const response = await fetch('/api/playlists', {
+                headers: { 'X-Session-Id': this.sessionId }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                // 只顯示有權限編輯的播放清單
+                const editablePlaylists = data.playlists.filter(p => p.canEdit);
+                
+                if (editablePlaylists.length === 0) {
+                    if (data.playlists.length > 0) {
+                        this.userPlaylistsContent.innerHTML = '<div class="loading">您目前沒有可編輯的播放清單<br><small>(僅顯示您擁有的或協作歌單)</small></div>';
+                    } else {
+                        this.userPlaylistsContent.innerHTML = '<div class="loading">您目前沒有任何播放清單</div>';
+                    }
+                    return;
+                }
+
+                // 檢查目前歌曲是否在這些歌單中（並行檢查前 30 個以保證效能）
+                const playlistsWithStatus = await Promise.all(editablePlaylists.slice(0, 30).map(async p => {
+                    try {
+                        const checkRes = await fetch(`/api/playlists/${p.id}/tracks/${this.currentTrack.id}`, {
+                            headers: { 'X-Session-Id': this.sessionId }
+                        });
+                        const checkData = await checkRes.json();
+                        return { ...p, isInPlaylist: checkData.isInPlaylist };
+                    } catch (e) {
+                        return { ...p, isInPlaylist: false };
+                    }
+                }));
+
+                this.displayUserPlaylists(playlistsWithStatus);
+            } else {
+                this.userPlaylistsContent.innerHTML = '<div class="error">無法載入播放清單</div>';
+            }
+        } catch (error) {
+            this.userPlaylistsContent.innerHTML = '<div class="error">載入失敗，請重試</div>';
+        }
+    }
+
+    // 顯示用戶播放清單
+    displayUserPlaylists(playlists) {
+        const html = playlists.map(playlist => `
+            <div class="playlist-item ${playlist.isInPlaylist ? 'current' : ''}" data-playlist-id="${playlist.id}">
+                <img src="${playlist.image || 'https://via.placeholder.com/50'}" class="playlist-item-img">
+                <div class="playlist-item-info">
+                    <div class="playlist-item-title">${this.escapeHtml(playlist.name)}</div>
+                    <div class="playlist-item-tracks">${playlist.tracks} 首歌曲</div>
+                </div>
+                <div class="playlist-item-actions">
+                    <button class="playlist-action-btn toggle-btn ${playlist.isInPlaylist ? 'liked' : ''}" 
+                            title="${playlist.isInPlaylist ? '從此歌單移除' : '加入此歌單'}">
+                        ${playlist.isInPlaylist ? '➖' : '➕'}
+                    </button>
+                </div>
+            </div>
+        `).join('');
+
+        this.userPlaylistsContent.innerHTML = html;
+
+        // 綁定按鈕事件
+        this.userPlaylistsContent.querySelectorAll('.playlist-item').forEach(item => {
+            const playlistId = item.dataset.playlistId;
+            const playlistName = item.querySelector('.playlist-item-title').textContent;
+            const toggleBtn = item.querySelector('.toggle-btn');
+            const isInPlaylist = toggleBtn.classList.contains('liked');
+
+            toggleBtn.onclick = (e) => {
+                e.stopPropagation();
+                const action = isInPlaylist ? 'remove' : 'add';
+                this.modifyPlaylist(playlistId, playlistName, action);
+            };
+            
+            // 點擊整個項目也可以觸發
+            item.onclick = () => {
+                const action = isInPlaylist ? 'remove' : 'add';
+                this.modifyPlaylist(playlistId, playlistName, action);
+            };
+        });
+    }
+
+    // 修改播放清單（新增/移除歌曲）
+    async modifyPlaylist(playlistId, playlistName, action) {
+        const trackId = this.currentTrack.id;
+        const method = action === 'add' ? 'POST' : 'DELETE';
+        const actionText = action === 'add' ? '加入' : '移除';
+
+        try {
+            const response = await fetch(`/api/playlists/${playlistId}/tracks`, {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Session-Id': this.sessionId
+                },
+                body: JSON.stringify({ trackId })
+            });
+
+            if (response.ok) {
+                this.showSuccessMessage(`✅ 已將歌曲從「${playlistName}」中${actionText}`);
+                // 更新播放清單內容（延遲一下讓 Spotify API 同步）
+                setTimeout(() => this.showUserPlaylistsModal(), 500);
+            } else {
+                const data = await response.json();
+                this.showErrorMessage(`❌ ${actionText}失敗: ${data.error || '未知錯誤'}`);
+            }
+        } catch (error) {
+            this.showErrorMessage(`❌ ${actionText}失敗，請檢查網路連線`);
+        }
+    }
+
+    // 顯示歌詞匯出選項模態框
+    showExportLyricsOptionsModal() {
+        if (!this.lyrics || this.lyrics.length === 0) {
+            this.showErrorMessage('目前沒有可匯出的歌詞');
+            return;
+        }
+
+        // 檢查是否有逐字歌詞數據
+        const hasSyllabic = this.lyrics.some(line => line.words && line.words.length > 0);
+        
+        if (hasSyllabic) {
+            this.exportLyricsOptionsModal.style.display = 'flex';
+        } else {
+            // 如果沒有逐字數據，直接匯出標準 LRC
+            this.exportLyrics('lrc');
+        }
+    }
+
+    // 匯出歌詞
+    exportLyrics(type) {
+        if (!this.lyrics || this.lyrics.length === 0) return;
+
+        const trackInfo = this.currentTrack;
+        const baseName = trackInfo ? `${trackInfo.artist} - ${trackInfo.name}` : 'lyrics';
+        let filename, content;
+
+        if (type === 'syllabic') {
+            filename = `${baseName}_syllabic.lrc`;
+            content = this.generateSyllabicLrc();
+        } else {
+            filename = `${baseName}.lrc`;
+            content = this.generateStandardLrc();
+        }
+
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        this.showSuccessMessage(`✅ 歌詞已匯出: ${filename}`);
+    }
+
+    // 生成逐字歌詞 LRC 格式
+    generateSyllabicLrc() {
+        let lrc = '';
+        this.lyrics.forEach(line => {
+            if (line.time !== undefined) {
+                const timeStr = this.formatLrcTime(line.time);
+                let lineText = '';
+                
+                if (line.words && line.words.length > 0) {
+                    lineText = line.words.map(w => {
+                        const wordTime = this.formatLrcTime(w.time);
+                        return `<${wordTime}>${w.text}`;
+                    }).join(' ');
+                } else {
+                    lineText = line.text;
+                }
+                
+                lrc += `[${timeStr}]${lineText}\n`;
+            } else {
+                lrc += `${line.text || line}\n`;
+            }
+        });
+        return lrc;
+    }
+
+    // 生成標準 LRC 格式
+    generateStandardLrc() {
+        let lrc = '';
+        this.lyrics.forEach(line => {
+            if (line.time !== undefined) {
+                const timeStr = this.formatLrcTime(line.time);
+                lrc += `[${timeStr}]${line.text}\n`;
+            } else {
+                lrc += `${line.text || line}\n`;
+            }
+        });
+        return lrc;
+    }
+
+    // 格式化 LRC 時間 [mm:ss.xx]
+    formatLrcTime(ms) {
+        const minutes = Math.floor(ms / 60000);
+        const seconds = Math.floor((ms % 60000) / 1000);
+        const centiseconds = Math.floor((ms % 1000) / 10);
+        return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${centiseconds.toString().padStart(2, '0')}`;
     }
 
     formatTime(ms) {

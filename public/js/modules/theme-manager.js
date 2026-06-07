@@ -1,31 +1,10 @@
-// 主題切換模塊
+// 主題切換模塊 - 已簡化為預設 Spotify 風格
 const ThemeManager = {
     currentTheme: 'dark',
     
     themes: {
-        light: {
-            name: 'Light',
-            variables: {
-                '--bg-primary': '#ffffff',
-                '--bg-secondary': '#f5f5f5',
-                '--bg-tertiary': '#e0e0e0',
-                '--text-primary': '#1a1a1a',
-                '--text-secondary': '#4a4a4a',
-                '--text-tertiary': '#6a6a6a',
-                '--accent-color': '#1db954',
-                '--accent-hover': '#1ed760',
-                '--border-color': '#e0e0e0',
-                '--shadow-color': 'rgba(0, 0, 0, 0.1)',
-                '--card-bg': '#ffffff',
-                '--player-bg': '#f8f8f8',
-                '--lyrics-text': '#1a1a1a',
-                '--lyrics-highlight': '#1db954',
-                '--scrollbar-thumb': '#c0c0c0',
-                '--scrollbar-track': '#f0f0f0'
-            }
-        },
         dark: {
-            name: 'Dark',
+            name: 'Spotify Dark',
             variables: {
                 '--bg-primary': '#121212',
                 '--bg-secondary': '#1a1a1a',
@@ -36,7 +15,7 @@ const ThemeManager = {
                 '--accent-color': '#1db954',
                 '--accent-hover': '#1ed760',
                 '--border-color': '#333333',
-                '--shadow-color': 'rgba(0, 0, 0, 0.3)',
+                '--shadow-color': 'rgba(0, 0, 0, 0.5)',
                 '--card-bg': '#181818',
                 '--player-bg': '#121212',
                 '--lyrics-text': '#ffffff',
@@ -44,78 +23,20 @@ const ThemeManager = {
                 '--scrollbar-thumb': '#5a5a5a',
                 '--scrollbar-track': '#2a2a2a'
             }
-        },
-        ocean: {
-            name: 'Ocean',
-            variables: {
-                '--bg-primary': '#0a1628',
-                '--bg-secondary': '#0f2442',
-                '--bg-tertiary': '#1a3a6e',
-                '--text-primary': '#e0f0ff',
-                '--text-secondary': '#a8c8e8',
-                '--text-tertiary': '#7aa8c8',
-                '--accent-color': '#00d4ff',
-                '--accent-hover': '#33ddff',
-                '--border-color': '#1a4a7e',
-                '--shadow-color': 'rgba(0, 100, 200, 0.2)',
-                '--card-bg': '#0f2a4a',
-                '--player-bg': '#0a1e3a',
-                '--lyrics-text': '#e0f0ff',
-                '--lyrics-highlight': '#00d4ff',
-                '--scrollbar-thumb': '#1a5a8a',
-                '--scrollbar-track': '#0a2a4a'
-            }
-        },
-        sunset: {
-            name: 'Sunset',
-            variables: {
-                '--bg-primary': '#1a0a1a',
-                '--bg-secondary': '#2a1a2a',
-                '--bg-tertiary': '#3a2a3a',
-                '--text-primary': '#ffe0f0',
-                '--text-secondary': '#ffb8d8',
-                '--text-tertiary': '#ff90c0',
-                '--accent-color': '#ff6b9d',
-                '--accent-hover': '#ff85ab',
-                '--border-color': '#4a2a4a',
-                '--shadow-color': 'rgba(200, 50, 100, 0.2)',
-                '--card-bg': '#2a1a2a',
-                '--player-bg': '#1a0a1a',
-                '--lyrics-text': '#ffe0f0',
-                '--lyrics-highlight': '#ff6b9d',
-                '--scrollbar-thumb': '#6a3a5a',
-                '--scrollbar-track': '#3a1a2a'
-            }
         }
     },
     
     // 初始化
     init() {
-        // 從 localStorage 讀取用戶偏好（優先使用 app_theme）
-        const savedTheme = localStorage.getItem('app_theme') || localStorage.getItem('theme');
-        
-        if (savedTheme && this.themes[savedTheme]) {
-            this.currentTheme = savedTheme;
-        } else {
-            // 檢測系統偏好
-            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            this.currentTheme = prefersDark ? 'dark' : 'light';
-        }
-        
-        // 應用主題
+        // 固定使用 dark 主題
+        this.currentTheme = 'dark';
         this.applyTheme(this.currentTheme);
-        
-        console.log(`[Theme] Initialized with theme: ${this.currentTheme}`);
+        console.log(`[Theme] Initialized with Spotify default theme`);
     },
     
     // 應用主題
     applyTheme(themeName) {
-        const theme = this.themes[themeName];
-        if (!theme) {
-            console.warn(`[Theme] Unknown theme: ${themeName}`);
-            return false;
-        }
-        
+        const theme = this.themes['dark']; // 強制使用 dark
         const root = document.documentElement;
         
         // 設置 CSS 變數
@@ -124,68 +45,38 @@ const ThemeManager = {
         });
         
         // 更新 data-theme 屬性
-        root.setAttribute('data-theme', themeName);
+        root.setAttribute('data-theme', 'dark');
         
-        // 移除所有主題類
-        Object.keys(this.themes).forEach(t => {
-            root.classList.remove(`theme-${t}`);
-        });
+        // 移除所有主題類並添加當前主題類
+        root.classList.remove('theme-light', 'theme-ocean', 'theme-sunset');
+        root.classList.add('theme-dark');
         
-        // 添加當前主題類
-        root.classList.add(`theme-${themeName}`);
-        
-        console.log(`[Theme] Applied theme: ${themeName}`);
         return true;
     },
     
-    // 切換主題
+    // 切換主題 (此版本僅保留單一主題)
     setTheme(themeName) {
-        if (!this.themes[themeName]) {
-            console.warn(`[Theme] Unknown theme: ${themeName}`);
-            return false;
-        }
-        
-        this.currentTheme = themeName;
-        localStorage.setItem('app_theme', themeName); // 使用 app_theme 作為統一存儲
-        localStorage.setItem('theme', themeName); // 保持向後兼容
-        this.applyTheme(themeName);
-        
-        // 觸發自定義事件
-        window.dispatchEvent(new CustomEvent('themeChanged', {
-            detail: { theme: themeName }
-        }));
-        
-        console.log(`[Theme] Theme changed to: ${themeName}`);
-        return true;
+        return this.applyTheme('dark');
     },
     
-    // 切換到下一個主題
+    // 切換到下一個主題 (此版本僅保留單一主題)
     toggleTheme() {
-        const themeKeys = Object.keys(this.themes);
-        const currentIndex = themeKeys.indexOf(this.currentTheme);
-        const nextIndex = (currentIndex + 1) % themeKeys.length;
-        const nextTheme = themeKeys[nextIndex];
-        
-        this.setTheme(nextTheme);
-        return nextTheme;
+        return 'dark';
     },
     
     // 獲取當前主題
     getCurrentTheme() {
-        return this.currentTheme;
+        return 'dark';
     },
     
     // 獲取所有可用主題
     getAvailableThemes() {
-        return Object.keys(this.themes).map(key => ({
-            key,
-            name: this.themes[key].name
-        }));
+        return [{ key: 'dark', name: 'Spotify Dark' }];
     },
     
     // 獲取主題信息
     getThemeInfo(themeName) {
-        return this.themes[themeName] || null;
+        return this.themes['dark'];
     }
 };
 
