@@ -99,7 +99,16 @@
                     document.getElementById('lyrics-content').innerHTML = '';
                 }
             }
+            // Cross-device settings sync
+            if (d.type === 'settings-sync') {
+                update();
+            }
         };
+
+        // Connect SSE for real-time cross-device sync
+        if (spotifyManager.sessionId) {
+            spotifyManager.connectSSE();
+        }
 
         async function fetchLyrics(artist, title) {
             try {

@@ -154,7 +154,16 @@
                     document.getElementById('lyrics-content').innerHTML = '';
                 }
             }
+            // Cross-device settings sync: re-fetch when settings change
+            if (d.type === 'settings-sync') {
+                update();
+            }
         };
+
+        // Connect SSE for real-time cross-device sync
+        if (spotifyManager.sessionId) {
+            spotifyManager.connectSSE();
+        }
 
         // Update URL and local session when broadcasted
         spotifyManager.onSessionUpdate = (newId) => {

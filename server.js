@@ -119,7 +119,24 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors({ origin: true, credentials: true, allowedHeaders: ['Content-Type', 'X-Session-Id', 'X-Spotify-User-Id'] }));
+const ALLOWED_ORIGINS = [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    process.env.DOMAIN ? `https://${process.env.DOMAIN}` : null,
+    process.env.REDIRECT_URI ? new URL(process.env.REDIRECT_URI).origin : null,
+].filter(Boolean);
+
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin || ALLOWED_ORIGINS.includes(origin) || ALLOWED_ORIGINS.some(o => origin.startsWith(o))) {
+            callback(null, true);
+        } else {
+            callback(null, true);
+        }
+    },
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'X-Session-Id', 'X-Spotify-User-Id']
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(express.static('public'));
@@ -164,6 +181,11 @@ const PAUSE_THRESHOLD = 5 * 60 * 1000; // 5 分鐘
 // Cache for context names (playlist/album/artist names) - expires after 1 hour
 const contextNameCache = new Map();
 const CONTEXT_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+// Settings version tracker for cross-device sync (keyed by userId)
+const settingsVersion = new Map();
+// SSE connections for real-time push (keyed by userId, value = Set of response objects)
+const sseConnections = new Map();
 
 // Track song changes and refresh token every 2 songs
 async function trackSongChange(sessionId, track, userId, progressMs = 0, accessToken = null, isPlaying = true) {
@@ -815,18 +837,6 @@ app.get('/api/current-track', async (req, res) => {
             }
         }
         
-        if (error.response?.status === 429) {
-            const retryAfter = error.response.headers['retry-after'] ? 
-                parseInt(error.response.headers['retry-after']) * 1000 : 5000;
-            console.log(`⚠️ Spotify API rate limited, retry after ${retryAfter}ms`);
-            return res.status(429).json({ 
-                error: 'Too many requests', 
-                retryAfter: retryAfter,
-                message: 'Spotify API rate limit exceeded, please wait before retrying'
-            });
-        }
-        
-        // Handle common API errors
         if (error.response?.status === 403) {
             console.log('🚫 Access forbidden - check Spotify Premium status or scopes');
             return res.status(403).json({ 
@@ -855,6 +865,11 @@ app.get('/api/current-track', async (req, res) => {
 async function invalidateUserCache(userId) {
     if (!userId) {return;}
     console.log(`🧹 清除使用者 ${userId} 的所有會話快取以進行同步`);
+    
+    // Increment settings version for cross-device sync
+    const currentVersion = (settingsVersion.get(userId) || 0) + 1;
+    settingsVersion.set(userId, currentVersion);
+    
     for (const [sid, session] of userSessions.entries()) {
         if (session.userProfile && session.userProfile.data && session.userProfile.data.id === userId) {
             delete session.currentTrackCache;
@@ -862,6 +877,15 @@ async function invalidateUserCache(userId) {
             if (typeof kvStorage !== 'undefined' && kvStorage.saveSession) {
                 await kvStorage.saveSession(sid, session);
             }
+        }
+    }
+    
+    // Notify all SSE connections for this user
+    const connections = sseConnections.get(userId);
+    if (connections && connections.size > 0) {
+        const payload = `data: ${JSON.stringify({ type: 'settings-changed', version: currentVersion })}\n\n`;
+        for (const conn of connections) {
+            try { conn.write(payload); } catch (e) { connections.delete(conn); }
         }
     }
 }
@@ -2909,35 +2933,15 @@ app.get('/api/library/check/:trackId', async (req, res) => {
                 return res.status(401).json({ error: 'Token expired, please re-authenticate' });
             }
             try {
-                const retry = await makeSpotifyAPICall('https://api.spotify.com/v1/me/player/queue', {
+                const retry = await makeSpotifyAPICall(`https://api.spotify.com/v1/me/tracks/contains?ids=${trackId}`, {
                     headers: { 'Authorization': `Bearer ${session.accessToken}` }
                 }, sessionId);
-                if (!retry.data || !retry.data.queue) {
-                    return res.json({ queue: [], nextTrack: null });
-                }
-                const rawQueue = retry.data.queue.slice(0, 20);
-                const queue = rawQueue.map((track) => {
-                    const artists = track.artists || [];
-                    const artistNames = artists.map(artist => artist.name).join(', ') || '';
-                    const album = track.album || {};
-                    const images = album.images || [];
-                    const imageUrl = images.length > 0 ? images[0].url : null;
-                    return {
-                        id: track.id,
-                        name: track.name,
-                        artist: artistNames,
-                        image: imageUrl,
-                        duration: track.duration_ms,
-                        artists: artists,
-                        album: album
-                    };
-                });
-                const nextTrack = queue[0] || null;
-                return res.json({ queue, nextTrack });
-            } catch (e) {
-                return res.status(e.response?.status || 500).json({ 
-                    error: 'Failed to get queue',
-                    details: e.response?.data?.error?.message || e.message
+                const isLiked = retry.data && retry.data[0] === true;
+                return res.json({ isLiked });
+            } catch (retryError) {
+                return res.status(retryError.response?.status || 500).json({ 
+                    error: 'Failed to check track status after token refresh',
+                    details: retryError.response?.data?.error?.message || retryError.message
                 });
             }
         }
@@ -3697,161 +3701,6 @@ app.get('/api/lyrics-search-multi/:artist/:title', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
-
-// 搜尋 Musixmatch 歌詞
-async function searchMusixmatchLyrics(artist, title) {
-    try {
-        console.log(`🔍 Musixmatch 搜尋: ${artist} - ${title}`);
-        
-        // 使用統一的API端點格式
-        const apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Musixmatch`;
-        
-        const response = await axios.get(apiUrl, {
-            timeout: 15000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-        });
-        
-        if (response.data && response.data.lyrics && response.data.lyrics.length > 0) {
-            return {
-                success: true,
-                lyrics: response.data.lyrics,
-                type: response.data.type || 'plain',
-                source: 'musixmatch'
-            };
-        }
-        
-        return { success: false, error: 'No lyrics found in Musixmatch' };
-    } catch (error) {
-        console.log(`⚠️ Musixmatch API 錯誤: ${error.message}`);
-        return { success: false, error: error.message };
-    }
-}
-
-// 搜尋 LRCLib 歌詞
-async function searchLrclibLyrics(artist, title) {
-    try {
-        console.log(`🔍 LRCLib 搜尋: ${artist} - ${title}`);
-        
-        // 使用統一的API端點格式
-        const apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Lrclib`;
-        
-        const response = await axios.get(apiUrl, {
-            timeout: 15000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-        });
-        
-        if (response.data && response.data.lyrics && response.data.lyrics.length > 0) {
-            return {
-                success: true,
-                lyrics: response.data.lyrics,
-                type: response.data.type || 'plain',
-                source: 'lrclib'
-            };
-        }
-        
-        return { success: false, error: 'No lyrics found in LRCLib' };
-    } catch (error) {
-        console.log(`⚠️ LRCLib API 錯誤: ${error.message}`);
-        return { success: false, error: error.message };
-    }
-}
-
-// 搜尋 NetEase 歌詞
-async function searchNeteaseLyrics(artist, title) {
-    try {
-        console.log(`🔍 NetEase 搜尋: ${artist} - ${title}`);
-        
-        // 使用統一的API端點格式
-        const apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=NetEase`;
-        
-        const response = await axios.get(apiUrl, {
-            timeout: 15000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-        });
-        
-        if (response.data && response.data.lyrics && response.data.lyrics.length > 0) {
-            return {
-                success: true,
-                lyrics: response.data.lyrics,
-                type: response.data.type || 'plain',
-                source: 'netease'
-            };
-        }
-        
-        return { success: false, error: 'No lyrics found in NetEase' };
-    } catch (error) {
-        console.log(`⚠️ NetEase API 錯誤: ${error.message}`);
-        return { success: false, error: error.message };
-    }
-}
-
-// 搜尋 Kugou 歌詞
-async function searchKugouLyrics(artist, title) {
-    try {
-        console.log(`🔍 Kugou 搜尋: ${artist} - ${title}`);
-        
-        // 使用統一的API端點格式
-        const apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=Kugou`;
-        
-        const response = await axios.get(apiUrl, {
-            timeout: 15000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-        });
-        
-        if (response.data && response.data.lyrics && response.data.lyrics.length > 0) {
-            return {
-                success: true,
-                lyrics: response.data.lyrics,
-                type: response.data.type || 'plain',
-                source: 'kugou'
-            };
-        }
-        
-        return { success: false, error: 'No lyrics found in Kugou' };
-    } catch (error) {
-        console.log(`⚠️ Kugou API 錯誤: ${error.message}`);
-        return { success: false, error: error.message };
-    }
-}
-
-// 搜尋 QQMusic 歌詞
-async function searchQQMusicLyrics(artist, title) {
-    try {
-        console.log(`🔍 QQMusic 搜尋: ${artist} - ${title}`);
-        
-        // 使用統一的API端點格式
-        const apiUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=QQMusic`;
-        
-        const response = await axios.get(apiUrl, {
-            timeout: 15000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-        });
-        
-        if (response.data && response.data.lyrics && response.data.lyrics.length > 0) {
-            return {
-                success: true,
-                lyrics: response.data.lyrics,
-                type: response.data.type || 'plain',
-                source: 'qqmusic'
-            };
-        }
-        
-        return { success: false, error: 'No lyrics found in QQMusic' };
-    } catch (error) {
-        console.log(`⚠️ QQMusic API 錯誤: ${error.message}`);
-        return { success: false, error: error.message };
-    }
-}
 
 // 原有的歌詞端點（保持向後兼容）
 // 從特定供應商搜索歌詞 - 用於用戶自定義設置
@@ -4689,6 +4538,61 @@ app.get('/api/admin/monitor-status', (req, res) => {
     res.json(backgroundMonitor.stats);
 });
 
+// ==========================================
+// Cross-Device Sync: SSE + Version Check
+// ==========================================
+
+// SSE endpoint for real-time cross-device push notifications
+app.get('/api/events', async (req, res) => {
+    const session = await getUserSession(req);
+    if (!session) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    const userId = session.userProfile?.data?.id || await getSpotifyUserId(session, req.sessionId);
+    if (!userId) {
+        return res.status(400).json({ error: 'User ID not found' });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    // Send initial version
+    const currentVersion = settingsVersion.get(userId) || 0;
+    res.write(`data: ${JSON.stringify({ type: 'connected', version: currentVersion })}\n\n`);
+
+    // Register connection
+    if (!sseConnections.has(userId)) sseConnections.set(userId, new Set());
+    sseConnections.get(userId).add(res);
+
+    // Heartbeat to keep connection alive
+    const heartbeat = setInterval(() => {
+        try { res.write(': heartbeat\n\n'); } catch (e) { clearInterval(heartbeat); }
+    }, 25000);
+
+    req.on('close', () => {
+        clearInterval(heartbeat);
+        const conns = sseConnections.get(userId);
+        if (conns) {
+            conns.delete(res);
+            if (conns.size === 0) sseConnections.delete(userId);
+        }
+    });
+});
+
+// Lightweight settings version check endpoint (for polling fallback)
+app.get('/api/settings-version', async (req, res) => {
+    const session = await getUserSession(req);
+    if (!session) {
+        return res.json({ version: 0 });
+    }
+    const userId = session.userProfile?.data?.id || await getSpotifyUserId(session, req.sessionId);
+    const version = userId ? (settingsVersion.get(userId) || 0) : 0;
+    res.json({ version });
+});
+
 // Start server
 if (require.main === module) {
     app.listen(PORT, () => {
@@ -4705,4 +4609,3 @@ if (require.main === module) {
 }
 
 module.exports = app;
-rts = app;

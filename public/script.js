@@ -50,6 +50,10 @@ class SpotifyLyricsPlayer {
         this.maxRetries = 3;
         this.backoffDelay = 5000; // 增加退避延遲到5秒
         
+        // Spotify timestamp sync for accurate timing
+        this.spotifyProgress = 0;
+        this.spotifyTimestamp = 0;
+        
         // 速率限制狀態
         this.isRateLimited = false;
         this.retryAfterUntil = 0;
@@ -246,8 +250,24 @@ class SpotifyLyricsPlayer {
         setTimeout(() => {
             if (this.sessionId) {
                 this.syncWithCloudOnLoad();
+                // Connect SSE for real-time cross-device sync
+                this.connectSSEForSync();
             }
         }, 2000); // 延遲2秒以確保其他初始化完成
+    }
+
+    // Connect SSE for real-time cross-device settings sync
+    connectSSEForSync() {
+        if (!window.spotifyManager) return;
+        
+        window.spotifyManager.onSettingsChanged = (version) => {
+            this.log(`📡 SSE: 設定已變更 (v${version})，立即同步...`);
+            // Immediately re-fetch current track to get updated settings
+            this.checkCurrentTrackWithRateLimit();
+        };
+        
+        window.spotifyManager.connectSSE();
+        this.log('📡 SSE 連接已啟動');
     }
 
     // 在加載時從雲端同步數據以確保跨瀏覽器一致性
@@ -3791,6 +3811,10 @@ async initializeStorage() {
         }
 
         // 🚀 延遲補償：如果伺服器提供了數據採樣時的時間戳
+        // Store RAW values BEFORE compensation for accurate cross-device timing
+        const rawSpotifyProgress = data.progress;
+        const rawSpotifyTimestamp = data.timestamp;
+        
         if (data.timestamp && data.isPlaying) {
             const latency = Date.now() - data.timestamp;
             if (latency > 0 && latency < 5000) { 
@@ -3816,6 +3840,13 @@ async initializeStorage() {
             progress: finalProgress,
             lastUpdated: Date.now()
         };
+        
+        // Store raw Spotify timestamp for accurate cross-device timing
+        // Use RAW values (before latency compensation) to avoid double-counting
+        if (rawSpotifyTimestamp && rawSpotifyProgress !== undefined) {
+            this.spotifyProgress = rawSpotifyProgress;
+            this.spotifyTimestamp = rawSpotifyTimestamp;
+        }
         
         this.log(`🎵 歌曲數據已更新: ${data.name} (進度: ${Math.round(finalProgress)}ms)`);
         
@@ -4203,7 +4234,7 @@ async initializeStorage() {
             // 节拍效果已移除
 
             let elapsedTime;
-            if (this.currentTrack.isPlaying) {
+             if (this.currentTrack.isPlaying) {
                 // 使用更精確的計算：(現在時間 - 數據更新時間) + Spotify 報告的進度
                 const timeDiff = Date.now() - this.currentTrack.lastUpdated;
                 elapsedTime = timeDiff + this.currentTrack.progress;

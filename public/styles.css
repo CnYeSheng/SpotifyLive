@@ -477,6 +477,9 @@ body {
 .track-info {
     text-align: center;
     /* margin-bottom: 32px; */
+    overflow: hidden;
+    max-width: 100%;
+    width: 100%;
 }
 
 .track-info h2 {
@@ -488,6 +491,7 @@ body {
     letter-spacing: -0.02em;
     word-wrap: break-word;
     overflow-wrap: break-word;
+    hyphens: auto;
     max-width: 100%;
     background: linear-gradient(135deg, var(--text-primary), var(--text-secondary));
     -webkit-background-clip: text;
@@ -502,6 +506,7 @@ body {
     font-weight: 500;
     word-wrap: break-word;
     overflow-wrap: break-word;
+    hyphens: auto;
     max-width: 100%;
 }
 
@@ -1300,6 +1305,7 @@ body {
     scroll-margin: 50vh;
     word-wrap: break-word;
     overflow-wrap: break-word;
+    overflow: hidden;
     max-width: 100%;
 }
 
@@ -1887,6 +1893,9 @@ body {
     .track-info h2 {
         font-size: 2rem;
         line-height: 1.2;
+        overflow: hidden;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
     }
     
     .album-art {
@@ -2450,7 +2459,9 @@ body {
         font-size: 1.8rem;
         max-width: 100%;
         word-wrap: break-word;
-        text-align: center; /* 置中歌曲標題 */
+        overflow-wrap: break-word;
+        overflow: hidden;
+        text-align: center;
     }
     
     .track-info p {
@@ -3209,6 +3220,9 @@ body {
     .track-info h2 {
         font-size: 1.4rem;
         line-height: 1.3;
+        overflow: hidden;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
     }
     
     .track-info p {

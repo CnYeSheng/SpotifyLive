@@ -14,6 +14,9 @@ class SpotifyPlayerManager {
         this.lastProgress = 0;
         this.lastUpdate = Date.now();
         this.isRefreshing = false;
+        this.settingsVersion = 0;
+        this.sseSource = null;
+        this.sseReconnectTimer = null;
         
         // Broadcast Channels for cross-tab sync
         this.controlChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('spotify_control') : null;
@@ -50,6 +53,50 @@ class SpotifyPlayerManager {
                 this.onControlMessage && this.onControlMessage(d);
             };
         }
+    }
+
+    connectSSE() {
+        if (this.sseSource) {
+            this.sseSource.close();
+        }
+        clearTimeout(this.sseReconnectTimer);
+
+        try {
+            this.sseSource = new EventSource(`${this.API_BASE}/events?sessionId=${this.sessionId || ''}`);
+            
+            this.sseSource.onmessage = (ev) => {
+                try {
+                    const data = JSON.parse(ev.data);
+                    if (data.type === 'connected') {
+                        this.settingsVersion = data.version || 0;
+                        console.log(`📡 SSE connected, version: ${this.settingsVersion}`);
+                    }
+                    if (data.type === 'settings-changed') {
+                        console.log(`📡 SSE: settings changed (v${data.version})`);
+                        this.settingsVersion = data.version;
+                        // Broadcast to other tabs/pages via BroadcastChannel
+                        this.broadcast('settings-sync', { version: data.version });
+                        this.onSettingsChanged && this.onSettingsChanged(data.version);
+                    }
+                } catch (e) {}
+            };
+
+            this.sseSource.onerror = () => {
+                console.log('📡 SSE disconnected, reconnecting in 5s...');
+                this.sseSource.close();
+                this.sseReconnectTimer = setTimeout(() => this.connectSSE(), 5000);
+            };
+        } catch (e) {
+            console.warn('⚠️ SSE not supported or failed:', e.message);
+        }
+    }
+
+    disconnectSSE() {
+        if (this.sseSource) {
+            this.sseSource.close();
+            this.sseSource = null;
+        }
+        clearTimeout(this.sseReconnectTimer);
     }
 
     async fetchSessionId(force = false) {
@@ -148,10 +195,21 @@ class SpotifyPlayerManager {
         this.trackDuration = data.duration;
         this.lastProgress = data.progress;
         this.lastUpdate = Date.now();
+        // Store Spotify's raw timestamp for accurate cross-device projection
+        if (data.timestamp && data.progress !== undefined) {
+            this.spotifyProgress = data.progress;
+            this.spotifyTimestamp = data.timestamp;
+        }
     }
 
     getProjectedProgress() {
         if (!this.isPlaying) return this.lastProgress;
+        // Use Spotify's absolute timestamp for accurate cross-device timing
+        if (this.spotifyTimestamp > 0) {
+            const drift = Date.now() - this.spotifyTimestamp;
+            return Math.min(this.trackDuration, this.spotifyProgress + drift);
+        }
+        // Fallback to local estimation
         const now = Date.now();
         const dt = now - this.lastUpdate;
         return Math.min(this.trackDuration, this.lastProgress + dt);
