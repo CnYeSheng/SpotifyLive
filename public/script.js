@@ -32,6 +32,7 @@ class SpotifyLyricsPlayer {
         this.updateInterval = null;
         this.lyricsUpdateTimeout = null;
         this.animationFrameId = null;
+        this.progressClockTimer = null;
         this.sessionId = null;
         this.nextTrackPreviewTimeout = null;
         this.currentLyricsTrackId = null;
@@ -4243,6 +4244,10 @@ async initializeStorage() {
             cancelAnimationFrame(this.animationFrameId);
             this.animationFrameId = null;
         }
+        if (this.progressClockTimer) {
+            clearInterval(this.progressClockTimer);
+            this.progressClockTimer = null;
+        }
 
         const update = () => {
             if (!this.currentTrack) {
@@ -4252,15 +4257,11 @@ async initializeStorage() {
 
             // 节拍效果已移除
 
-            let elapsedTime;
+             let elapsedTime;
              if (this.currentTrack.isPlaying) {
-                if (this.spotifyTimestamp > 0 && this.spotifyProgress !== undefined) {
-                    elapsedTime = this.spotifyProgress + (Date.now() - this.spotifyTimestamp);
-                } else {
-                    // 使用更精確的計算：(現在時間 - 數據更新時間) + Spotify 報告的進度
-                    const timeDiff = Date.now() - this.currentTrack.lastUpdated;
-                    elapsedTime = timeDiff + this.currentTrack.progress;
-                }
+                // 使用更精確的計算：(現在時間 - 數據更新時間) + Spotify 報告的進度
+                const timeDiff = Date.now() - this.currentTrack.lastUpdated;
+                elapsedTime = timeDiff + this.currentTrack.progress;
                 
                 // 守衛：如果計算出的時間遠大於歌曲長度，鎖定在長度值
                 if (elapsedTime > this.currentTrack.duration) {
@@ -4299,6 +4300,20 @@ async initializeStorage() {
         };
 
         update();
+
+        if (this.currentTrack.isPlaying) {
+            this.progressClockTimer = setInterval(() => {
+                if (!this.currentTrack || !this.currentTrack.isPlaying) return;
+
+                const syncedElapsed = this.spotifyTimestamp > 0 && this.spotifyProgress !== undefined
+                    ? this.spotifyProgress + (Date.now() - this.spotifyTimestamp)
+                    : (Date.now() - this.currentTrack.lastUpdated) + this.currentTrack.progress;
+                const elapsedTime = Math.min(this.currentTrack.duration || syncedElapsed, syncedElapsed);
+
+                this.currentTime.textContent = this.formatTime(elapsedTime);
+                this.updateLyricsHighlight(elapsedTime + this.lyricsTimeOffset);
+            }, 1000);
+        }
     }
 
 async loadLyrics() {
