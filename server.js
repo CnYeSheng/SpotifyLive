@@ -770,7 +770,10 @@ app.get('/api/current-track', async (req, res) => {
             } : null,
             // Control state - Use saved settings or defaults
             lyricsOffset: savedSettings.offset || 0,
-            manualLyrics: savedSettings.manualLyrics || null
+            manualLyrics: savedSettings.manualLyrics || null,
+            lyricsVersion: savedSettings.lyricsContent
+                ? (savedSettings.updated_at || savedSettings.updatedAt || savedSettings.lastModified || 0)
+                : 0
         };
         
         // 調試：記錄 context 資訊
@@ -1050,6 +1053,7 @@ app.post('/api/kv/user-lyrics', async (req, res) => {
             },
             trackInfo: trackInfo // Store original trackInfo for reference
         });
+        await invalidateUserCache(userId);
 
         res.json({ success: true });
     } catch (error) {

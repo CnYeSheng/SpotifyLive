@@ -118,6 +118,28 @@ class KVStorageManager {
     // 用戶自定義歌詞管理
     // =================
 
+    getAuthHeaders(extra = {}) {
+        const headers = { ...extra };
+        try {
+            const s = JSON.parse(localStorage.getItem('spotify_session_data') || '{}');
+            const profile = JSON.parse(localStorage.getItem('spotify_user_profile') || '{}');
+            const sid = s.sessionId || localStorage.getItem('spotify_session_id');
+            if (sid) headers['X-Session-Id'] = sid;
+            if (profile.userId) headers['X-Spotify-User-Id'] = profile.userId;
+        } catch (error) {
+            console.warn('⚠️ 無法建立同步認證 headers:', error);
+        }
+        return headers;
+    }
+
+    getDataTimestamp(data) {
+        if (!data) return 0;
+        const value = data.lastModified || data.updatedAt || data.updated_at || data.lastUsed || data.timestamp || data.savedAt || 0;
+        if (typeof value === 'number') return value;
+        const parsed = Date.parse(value);
+        return Number.isNaN(parsed) ? 0 : parsed;
+    }
+
     // 保存用戶自定義歌詞 (雙存儲策略：KV + localStorage)
     async saveUserCustomLyrics(trackInfo, lyrics, lyricsType, source) {
         if (!trackInfo || !trackInfo.id || !trackInfo.name || !trackInfo.artist) {
@@ -136,26 +158,7 @@ class KVStorageManager {
         // 1. 先嘗試保存到 KV (如果可用)
         if (this.kvAvailable) {
             try {
-                const s = JSON.parse(localStorage.getItem('spotify_session_data') || '{}');
-                const profile = JSON.parse(localStorage.getItem('spotify_user_profile') || '{}');
-                const headers = { 'Content-Type': 'application/json' };
-                if (s && s.sessionId) {
-                    // 确保sessionId只包含ISO-8859-1字符
-                    const cleanSessionId = encodeURIComponent(s.sessionId);
-                    headers['X-Session-Id'] = cleanSessionId;
-                } else {
-                    const sid = localStorage.getItem('spotify_session_id');
-                    if (sid) {
-                        // 确保sessionId只包含ISO-8859-1字符
-                        const cleanSid = encodeURIComponent(sid);
-                        headers['X-Session-Id'] = cleanSid;
-                    }
-                }
-                if (profile && profile.userId) {
-                    // 确保userId只包含ISO-8859-1字符
-                    const cleanUserId = encodeURIComponent(profile.userId);
-                    headers['X-Spotify-User-Id'] = cleanUserId;
-                }
+                const headers = this.getAuthHeaders({ 'Content-Type': 'application/json' });
                 const response = await fetch(`${this.apiBase}/api/kv/user-lyrics`, {
                     method: 'POST',
                     headers,
@@ -215,7 +218,7 @@ class KVStorageManager {
                 // ✨ 修復：使用 POST 請求，將數據放在請求體中，避免 URL 過長
                 const response = await fetch(`${this.apiBase}/api/kv/user-lyrics/get`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: this.getAuthHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({
                         id: trackInfo.id,
                         artist: trackInfo.artist,
@@ -230,11 +233,14 @@ class KVStorageManager {
                         console.log('🎯 KV: 找到用戶自定義歌詞');
                         
                         // 3. 比較兩個數據源，使用更新的版本
-                        if (!localData || kvData.lastUsed > localData.lastUsed) {
+                        const kvTime = this.getDataTimestamp(kvData);
+                        const localTime = this.getDataTimestamp(localData);
+                        kvData.lastUsed = kvTime || Date.now();
+                        if (!localData || kvTime >= localTime) {
                             console.log('🔄 KV 數據較新，同步到 localStorage');
                             this.saveToLocalStorage('user_custom_lyrics', trackInfo, kvData);
                             return kvData;
-                        } else if (localData.lastUsed > kvData.lastUsed) {
+                        } else if (localTime > kvTime) {
                             console.log('🔄 localStorage 數據較新，同步到 KV');
                             // 背景同步到 KV (不阻塞用戶)
                             this.syncToKVBackground('user_custom_lyrics', trackInfo, localData);
@@ -897,6 +903,28 @@ class LyricsStorageManager {
         this.initStorage();
     }
 
+    getAuthHeaders(extra = {}) {
+        const headers = { ...extra };
+        try {
+            const s = JSON.parse(localStorage.getItem('spotify_session_data') || '{}');
+            const profile = JSON.parse(localStorage.getItem('spotify_user_profile') || '{}');
+            const sid = s.sessionId || localStorage.getItem('spotify_session_id');
+            if (sid) headers['X-Session-Id'] = sid;
+            if (profile.userId) headers['X-Spotify-User-Id'] = profile.userId;
+        } catch (error) {
+            console.warn('⚠️ 無法建立歌詞同步 headers:', error);
+        }
+        return headers;
+    }
+
+    getDataTimestamp(data) {
+        if (!data) return 0;
+        const value = data.lastModified || data.updatedAt || data.updated_at || data.lastUsed || data.timestamp || data.savedAt || 0;
+        if (typeof value === 'number') return value;
+        const parsed = Date.parse(value);
+        return Number.isNaN(parsed) ? 0 : parsed;
+    }
+
     // ==================
     // 问题1：歌词过期失效
     // ==================
@@ -905,29 +933,26 @@ class LyricsStorageManager {
 
     async saveUserLyrics(trackInfo, lyrics, lyricsType, source) {
         const trackKey = this.generateTrackKey(trackInfo);
+        const lyricsData = {
+            trackKey,
+            trackInfo: {
+                id: trackInfo.id,
+                name: trackInfo.name,
+                artist: trackInfo.artist
+            },
+            lyrics,
+            lyricsType,
+            source,
+            timestamp: Date.now(),
+            lastModified: Date.now(),
+            version: 2
+        };
         
         try {
-            const lyricsData = {
-                trackKey,
-                trackInfo: {
-                    id: trackInfo.id,
-                    name: trackInfo.name,
-                    artist: trackInfo.artist
-                },
-                lyrics,
-                lyricsType,
-                source,
-                timestamp: Date.now(),
-                // ✨ 关键：添加更新时间
-                lastModified: Date.now(),
-                // ✨ 添加版本号以支持未来升级
-                version: 2
-            };
-
             // 📤 上传到 Upstash Redis
             const response = await fetch(`${this.apiBase}/api/kv/user-lyrics`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: this.getAuthHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify(lyricsData)
             });
 
@@ -952,46 +977,55 @@ class LyricsStorageManager {
 
     async getUserLyrics(trackInfo) {
         const trackKey = this.generateTrackKey(trackInfo);
+        let localData = null;
 
-        // 1️⃣ 首先查 localStorage (本地/快取) - 優先權最高且響應最快
         try {
-            const localData = this.getFromLocalStorageBackup(trackKey);
+            localData = this.getFromLocalStorageBackup(trackKey);
             if (localData) {
-                console.log(`✅ [Local/Cache] 找到本地歌詞: ${trackInfo.artist} - ${trackInfo.name}`);
-                
-                // 背景異步刷新雲端數據，確保同步 (不阻塞 UI)
-                this._syncWithCloudBackground(trackKey, trackInfo, localData);
-                
-                return localData;
+                console.log(`✅ [Local/Cache] 找到本地歌詞備份: ${trackInfo.artist} - ${trackInfo.name}`);
             }
         } catch (error) {
             console.warn('⚠️ 本地讀取失敗:', error);
         }
 
-        // 2️⃣ 若本地無數據，再查 Redis (雲端)
+        // 同帳號一致性優先：先查雲端，再用時間戳決定是否接受本地備份。
         try {
-            // ✨ 修復：只傳遞必要的信息，避免 URL 過長
-            const response = await fetch(`${this.apiBase}/api/kv/user-lyrics/${trackKey}`, {
-                method: 'GET',
-                headers: { 'Content-Type': 'application/json' }
+            const response = await fetch(`${this.apiBase}/api/kv/user-lyrics/get`, {
+                method: 'POST',
+                headers: this.getAuthHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({
+                    id: trackInfo.id,
+                    artist: trackInfo.artist,
+                    name: trackInfo.name
+                })
             });
 
             if (response.ok) {
                 const data = await response.json();
                 if (data.data) {
-                    console.log(`✅ [Cloud] 從 Redis 獲取歌詞: ${trackInfo.artist} - ${trackInfo.name}`);
+                    const cloudData = data.data;
+                    const cloudTime = this.getDataTimestamp(cloudData);
+                    const localTime = this.getDataTimestamp(localData);
+
+                    if (!localData || cloudTime >= localTime) {
+                        console.log(`✅ [Cloud] 使用同帳號雲端歌詞: ${trackInfo.artist} - ${trackInfo.name}`);
+                        cloudData.lastModified = cloudTime || Date.now();
+                        this.saveToLocalStorageBackup(trackKey, cloudData);
+                        return cloudData;
+                    }
                     
-                    // 同步回本地以便下次快速讀取
-                    this.saveToLocalStorageBackup(trackKey, data.data);
-                    
-                    // 更新最後使用時間
-                    this.refreshLyricsExpiry(trackKey);
-                    
-                    return data.data;
+                    console.log(`🔄 [Sync] 本地歌詞較新，推送到雲端後使用本地版本`);
+                    this.saveUserLyrics(trackInfo, localData.lyrics, localData.lyricsType, localData.source);
+                    return localData;
                 }
             }
         } catch (error) {
-            console.warn('⚠️ Redis 讀取失敗:', error.message);
+            console.warn('⚠️ 雲端歌詞讀取失敗:', error.message);
+        }
+
+        if (localData) {
+            console.log(`✅ [Local/Cache] 雲端不可用，使用本地備份歌詞: ${trackInfo.artist} - ${trackInfo.name}`);
+            return localData;
         }
 
         console.log(`❌ 所有儲存源均未找到歌詞: ${trackInfo.artist} - ${trackInfo.name}`);
@@ -1006,7 +1040,7 @@ class LyricsStorageManager {
             // ✨ 修復：使用 POST 請求避免 URL 過長
             const response = await fetch(`${this.apiBase}/api/kv/user-lyrics/get`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: this.getAuthHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
                     id: trackInfo.id,
                     artist: trackInfo.artist,
@@ -1018,15 +1052,17 @@ class LyricsStorageManager {
                 const cloudResult = await response.json();
                 if (cloudResult.data) {
                     const cloudData = cloudResult.data;
+                    const cloudTime = this.getDataTimestamp(cloudData);
+                    const localTime = this.getDataTimestamp(localData);
                     
                     // 比較時間戳，如果雲端更晚更新，則更新本地
-                    if (cloudData.lastModified > (localData.lastModified || localData.timestamp || 0)) {
+                    if (cloudTime > localTime) {
                         console.log(`🔄 [Sync] 偵測到雲端有更新版本，正在同步到本地...`);
                         this.saveToLocalStorageBackup(trackKey, cloudData);
                         // 注意：這裡不主動刷新當前 UI，待下次加載生效，或由開發者決定是否觸發重新渲染
                     } 
                     // 如果本地更晚更新，則推送到雲端
-                    else if ((localData.lastModified || localData.timestamp || 0) > cloudData.lastModified) {
+                    else if (localTime > cloudTime) {
                         console.log(`🔄 [Sync] 本地版本較新，正在推送到雲端...`);
                         this.saveUserLyrics(trackInfo, localData.lyrics, localData.lyricsType, localData.source);
                     }
@@ -1079,7 +1115,7 @@ class LyricsStorageManager {
             // 📤 上传时间偏移到 Upstash
             const response = await fetch(`${this.apiBase}/api/kv/save-time-offset`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: this.getAuthHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify(offsetData)
             });
 
@@ -1107,7 +1143,9 @@ class LyricsStorageManager {
 
         try {
             // 1️⃣ 查 Redis
-            const response = await fetch(`${this.apiBase}/api/kv/get-time-offset/${trackKey}`);
+            const response = await fetch(`${this.apiBase}/api/kv/get-time-offset/${trackKey}`, {
+                headers: this.getAuthHeaders()
+            });
             
             if (response.ok) {
                 const data = await response.json();

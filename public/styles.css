@@ -1265,12 +1265,17 @@ body {
 
 /* 移动设备 (767px 及以下) */
 @media (max-width: 767px) {
+    body.mobile-lyrics-active {
+        height: 100dvh;
+        min-height: 100dvh;
+        overflow: hidden;
+    }
+
     .lyrics-content {
         font-size: 26px;
-        height: auto !important; /* 手機版自動高度，顯示全部歌詞 */
-        max-height: none !important; /* 移除最大高度限制 */
-        overflow-y: auto !important; /* 允許垂直滾動 */
-        -webkit-overflow-scrolling: touch; /* iOS 平滑滾動 */
+        height: clamp(320px, calc(100dvh - 220px), 620px) !important;
+        max-height: clamp(320px, calc(100dvh - 220px), 620px) !important;
+        overflow: hidden !important;
         text-align: center !important; /* 歌詞置中 */
         display: block !important;
     }
@@ -2431,12 +2436,24 @@ body {
         overflow-x: hidden;
         padding-bottom: 80px; /* 為底部導航留空間 */
     }
+
+    body.mobile-lyrics-active .container {
+        height: 100dvh;
+        min-height: 100dvh;
+        overflow: hidden;
+    }
     
     .player-section {
         grid-template-columns: 1fr;
         gap: 24px;
         max-width: 100%;
         overflow-x: hidden;
+    }
+
+    body.mobile-lyrics-active .player-section {
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
     }
     
     .mobile-nav {
@@ -2448,6 +2465,15 @@ body {
         padding: 24px;
         max-width: 100%;
         overflow-x: hidden;
+    }
+
+    .lyrics-container {
+        height: calc(100dvh - 156px);
+        max-height: calc(100dvh - 156px);
+        min-height: 0;
+        display: flex !important;
+        flex-direction: column;
+        overflow: hidden !important;
     }
     
     .auth-card,
@@ -2472,10 +2498,11 @@ body {
         text-align: center; /* 手機版歌詞置中 */
         font-size: 22px !important; /* 手機版歌詞放大 */
         line-height: 1.6; /* 增加行高改善閱讀體驗 */
-        height: auto !important; /* 手機版自動高度，顯示全部歌詞 */
-        max-height: none !important; /* 移除最大高度限制 */
-        overflow-y: auto !important; /* 允許垂直滾動 */
-        -webkit-overflow-scrolling: touch; /* iOS 平滑滾動 */
+        flex: 1 1 auto;
+        min-height: 0;
+        height: auto !important;
+        max-height: none !important;
+        overflow: hidden !important;
     }
     
     .lyrics-line {

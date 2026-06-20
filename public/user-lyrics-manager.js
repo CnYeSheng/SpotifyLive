@@ -266,33 +266,15 @@ function initUserLyricsManager() {
         }
 
         try {
-            // 使用 KV 存儲系統保存
-            const response = await fetch('/api/kv/user-lyrics', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Session-Id': this.sessionId
-                },
-                body: JSON.stringify({
-                    trackInfo: {
-                        id: this.currentTrack.id,
-                        name: this.currentTrack.name,
-                        artist: this.currentTrack.artist,
-                        album: this.currentTrack.album,
-                        image: this.currentTrack.image
-                    },
-                    lyrics: this.lyrics,
-                    lyricsType: this.lyricsType,
-                    source: {
-                        source: 'manual_save',
-                        title: `${this.currentTrack.artist} - ${this.currentTrack.name}`,
-                        artist: this.currentTrack.artist,
-                        savedAt: Date.now()
-                    }
-                })
-            });
+            const source = {
+                source: 'manual_save',
+                title: `${this.currentTrack.artist} - ${this.currentTrack.name}`,
+                artist: this.currentTrack.artist,
+                savedAt: Date.now()
+            };
+            const saved = await this.saveUserCustomLyrics(this.currentTrack, this.lyrics, this.lyricsType, source);
 
-            if (response.ok) {
+            if (saved) {
                 // 同時保存到本地 localStorage
                 const customLyrics = JSON.parse(localStorage.getItem('user_custom_lyrics') || '{}');
                 const trackKey = this.generateTrackCacheKey(this.currentTrack);
@@ -307,12 +289,7 @@ function initUserLyricsManager() {
                     },
                     lyrics: this.lyrics,
                     lyricsType: this.lyricsType,
-                    source: {
-                        source: 'manual_save',
-                        title: `${this.currentTrack.artist} - ${this.currentTrack.name}`,
-                        artist: this.currentTrack.artist,
-                        savedAt: Date.now()
-                    },
+                    source,
                     lastUsed: Date.now()
                 };
 
@@ -320,7 +297,7 @@ function initUserLyricsManager() {
 
                 this.showSuccessMessage('✅ 當前歌詞已保存為自定義歌詞');
             } else {
-                throw new Error(`保存失敗: ${response.status}`);
+                throw new Error('保存失敗');
             }
         } catch (error) {
             console.error('保存當前歌詞失敗:', error);

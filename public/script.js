@@ -904,7 +904,7 @@ class SpotifyLyricsPlayer {
 
         // 歌詞時間控制
         document.getElementById('mobile-lyrics-fast')?.addEventListener('click', () => {
-            this.adjustLyricsOffset(-500);
+            this.adjustLyricsOffset(-100);
             this.hideMobileLyricsPanel();
         });
 
@@ -914,7 +914,7 @@ class SpotifyLyricsPlayer {
         });
 
         document.getElementById('mobile-lyrics-slow')?.addEventListener('click', () => {
-            this.adjustLyricsOffset(500);
+            this.adjustLyricsOffset(100);
             this.hideMobileLyricsPanel();
         });
 
@@ -3810,6 +3810,25 @@ async initializeStorage() {
             this.safeLyricsLoad();
         }
 
+        const previousLyricsVersion = this.currentTrack?.lyricsVersion || 0;
+        const incomingLyricsVersion = data.lyricsVersion || 0;
+        const customLyricsChanged = !isNewTrack &&
+            data.id === this.currentTrack?.id &&
+            incomingLyricsVersion &&
+            previousLyricsVersion &&
+            incomingLyricsVersion !== previousLyricsVersion;
+
+        if (customLyricsChanged) {
+            this.log(`🔄 偵測到同帳號自定義歌詞更新: ${previousLyricsVersion} -> ${incomingLyricsVersion}`);
+            this.lyrics = [];
+            this.currentLyricsTrackId = null;
+            this.currentLyricIndex = 0;
+            this._lastScrolledIndex = -1;
+            this.isLyricsOverridden = false;
+            this.isLoadingLyrics = false;
+            this.lastLyricsRequest = null;
+        }
+
         // 🚀 延遲補償：如果伺服器提供了數據採樣時的時間戳
         // Store RAW values BEFORE compensation for accurate cross-device timing
         const rawSpotifyProgress = data.progress;
@@ -3995,7 +4014,7 @@ async initializeStorage() {
             const isIdMatching = this.currentLyricsTrackId === this.currentTrack.id;
             
             // ✨ 增強：如果只是 ID 變了但名字歌手沒變，且已經有歌詞了，就不需要重新載入
-            const needsLyricsReload = !this.isLyricsOverridden && (!hasLyrics || (!isIdMatching && !isSameSongNameAndArtist));
+            const needsLyricsReload = customLyricsChanged || (!this.isLyricsOverridden && (!hasLyrics || (!isIdMatching && !isSameSongNameAndArtist)));
             
             if (needsLyricsReload) {
                 this.log('🎵 需要重新載入歌詞');
@@ -4235,9 +4254,13 @@ async initializeStorage() {
 
             let elapsedTime;
              if (this.currentTrack.isPlaying) {
-                // 使用更精確的計算：(現在時間 - 數據更新時間) + Spotify 報告的進度
-                const timeDiff = Date.now() - this.currentTrack.lastUpdated;
-                elapsedTime = timeDiff + this.currentTrack.progress;
+                if (this.spotifyTimestamp > 0 && this.spotifyProgress !== undefined) {
+                    elapsedTime = this.spotifyProgress + (Date.now() - this.spotifyTimestamp);
+                } else {
+                    // 使用更精確的計算：(現在時間 - 數據更新時間) + Spotify 報告的進度
+                    const timeDiff = Date.now() - this.currentTrack.lastUpdated;
+                    elapsedTime = timeDiff + this.currentTrack.progress;
+                }
                 
                 // 守衛：如果計算出的時間遠大於歌曲長度，鎖定在長度值
                 if (elapsedTime > this.currentTrack.duration) {
@@ -5016,6 +5039,7 @@ showOffsetMessage() {
         if (!this.isMobile) return;
         
         this.currentMobilePage = page;
+        document.body.classList.toggle('mobile-lyrics-active', page === 'lyrics');
         const musicCard = document.querySelector('.music-card');
         const lyricsContainer = document.querySelector('.lyrics-container');
         const infoBtn = document.getElementById('mobile-info-btn');
@@ -5121,6 +5145,7 @@ showOffsetMessage() {
             this.switchMobilePage(this.currentMobilePage);
             this.bindMobilePageDots();
         } else {
+            document.body.classList.remove('mobile-lyrics-active');
             // 桌面模式：隱藏手機導航並顯示所有內容
             mobileNav.style.display = 'none';
             mobilePageIndicator.style.display = 'none';
@@ -7115,33 +7140,17 @@ showOffsetMessage() {
         }
 
         try {
-            // 使用 KV 存儲系統保存
-            const response = await fetch('/api/kv/user-lyrics', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Session-Id': this.sessionId
-                },
-                body: JSON.stringify({
-                    trackInfo: {
-                        id: this.currentTrack.id,
-                        name: this.currentTrack.name,
-                        artist: this.currentTrack.artist,
-                        album: this.currentTrack.album,
-                        image: this.currentTrack.image
-                    },
-                    lyrics: this.lyrics,
-                    lyricsType: this.lyricsType,
-                    source: {
-                        source: 'manual_save',
-                        title: `${this.currentTrack.artist} - ${this.currentTrack.name}`,
-                        artist: this.currentTrack.artist,
-                        savedAt: Date.now()
-                    }
-                })
-            });
+            const source = {
+                source: 'manual_save',
+                title: `${this.currentTrack.artist} - ${this.currentTrack.name}`,
+                artist: this.currentTrack.artist,
+                savedAt: Date.now()
+            };
+            const saved = typeof this.saveUserCustomLyrics === 'function'
+                ? await this.saveUserCustomLyrics(this.currentTrack, this.lyrics, this.lyricsType, source)
+                : await window.kvStorageManager?.saveUserCustomLyrics(this.currentTrack, this.lyrics, this.lyricsType, source);
 
-            if (response.ok) {
+            if (saved) {
                 // 同時保存到本地 localStorage
                 const customLyrics = JSON.parse(localStorage.getItem('user_custom_lyrics') || '{}');
                 const trackKey = this.generateTrackCacheKey(this.currentTrack);
@@ -7156,12 +7165,7 @@ showOffsetMessage() {
                     },
                     lyrics: this.lyrics,
                     lyricsType: this.lyricsType,
-                    source: {
-                        source: 'manual_save',
-                        title: `${this.currentTrack.artist} - ${this.currentTrack.name}`,
-                        artist: this.currentTrack.artist,
-                        savedAt: Date.now()
-                    },
+                    source,
                     lastUsed: Date.now()
                 };
 
@@ -7169,7 +7173,7 @@ showOffsetMessage() {
 
                 this.showSuccessMessage('✅ 當前歌詞已保存為自定義歌詞');
             } else {
-                throw new Error(`保存失敗: ${response.status}`);
+                throw new Error('保存失敗');
             }
         } catch (error) {
             console.error('保存當前歌詞失敗:', error);

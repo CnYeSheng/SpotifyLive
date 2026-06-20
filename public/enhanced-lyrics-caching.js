@@ -63,6 +63,25 @@ function initEnhancedLyricsCaching() {
     // 每次播放歌曲時自動緩存歌詞30天
     const originalLoadLyrics = SpotifyLyricsPlayer.prototype.loadLyrics;
     SpotifyLyricsPlayer.prototype.loadLyrics = async function() {
+        if (this.currentTrack && window.lyricsStorageManager) {
+            try {
+                const userLyrics = await window.lyricsStorageManager.getUserLyrics(this.currentTrack);
+                if (userLyrics && Array.isArray(userLyrics.lyrics) && userLyrics.lyrics.length > 0) {
+                    const savedOffset = await window.lyricsStorageManager.getLyricsTimeOffset(this.currentTrack);
+                    this.lyrics = userLyrics.lyrics;
+                    this.lyricsType = userLyrics.lyricsType || 'synced';
+                    this.lyricsTimeOffset = savedOffset || 0;
+                    this.currentLyricsTrackId = this.currentTrack.id;
+                    this.displayLyrics();
+                    this.updateStatus('lyrics', true);
+                    this.log(`☁️ 使用同帳號雲端歌詞: ${this.currentTrack.name} (偏移 ${this.lyricsTimeOffset}ms)`);
+                    return;
+                }
+            } catch (error) {
+                this.log(`⚠️ 同帳號歌詞檢查失敗，改用快取/API: ${error.message}`);
+            }
+        }
+
         // 先檢查增強緩存
         const cachedLyrics = this.getEnhancedCachedLyrics(this.currentTrack);
         if (cachedLyrics) {
