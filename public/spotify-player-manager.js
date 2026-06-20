@@ -78,6 +78,16 @@ class SpotifyPlayerManager {
                         this.broadcast('settings-sync', { version: data.version });
                         this.onSettingsChanged && this.onSettingsChanged(data.version);
                     }
+                    if (data.type === 'sync-event') {
+                        const event = data.event;
+                        if (event && event.senderSessionId !== this.sessionId) {
+                            console.log(`📡 SSE: received sync event:`, event);
+                            // Broadcast to other tabs/pages via BroadcastChannel
+                            this.broadcast(event.type, event);
+                            // Notify locally registered listener
+                            this.onSyncEvent && this.onSyncEvent(event);
+                        }
+                    }
                 } catch (e) {}
             };
 

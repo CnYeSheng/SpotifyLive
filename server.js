@@ -251,6 +251,12 @@ async function trackSongChange(sessionId, track, userId, progressMs = 0, accessT
             tracker.lastProgress = progressMs;
             tracker.isInitialRecorded = false; 
             
+            // 廣播切換歌曲事件給其他裝置
+            broadcastSyncEvent(userId, {
+                type: 'force-refresh-sync',
+                senderSessionId: sessionId
+            });
+            
             // 儲存 context（歌單）資訊
             if (track.context) {
                 const contextType = track.context.type;
@@ -893,6 +899,22 @@ async function invalidateUserCache(userId) {
     }
 }
 
+// 廣播即時同步事件給該使用者的所有其他裝置
+function broadcastSyncEvent(userId, event) {
+    if (!userId) return;
+    const connections = sseConnections.get(userId);
+    if (connections && connections.size > 0) {
+        const payload = `data: ${JSON.stringify({ type: 'sync-event', event })}\n\n`;
+        for (const conn of connections) {
+            try {
+                conn.write(payload);
+            } catch (e) {
+                connections.delete(conn);
+            }
+        }
+    }
+}
+
 // Control endpoints
 app.post('/api/control/offset', async (req, res) => {
     const session = await getUserSession(req);
@@ -922,6 +944,13 @@ app.post('/api/control/offset', async (req, res) => {
         await enhancedStorage.saveSongSettings(userId, trackId, { offset: newOffset });
         // 清除所有相關會話的快取
         await invalidateUserCache(userId);
+        // 廣播即時同步事件
+        broadcastSyncEvent(userId, {
+            type: 'control-sync',
+            lyricsOffset: newOffset,
+            trackId: trackId,
+            senderSessionId: req.body.sessionId || req.query.sessionId || req.headers['x-session-id'] || req.sessionId
+        });
     }
     
     await saveUserSession(req.sessionId, session);
@@ -958,6 +987,13 @@ app.post('/api/control/manual-lyrics', async (req, res) => {
         await enhancedStorage.saveSongSettings(userId, trackId, { manualLyrics: manualLyricsData });
         // 清除所有相關會話的快取
         await invalidateUserCache(userId);
+        // 廣播即時同步事件
+        broadcastSyncEvent(userId, {
+            type: 'control-sync',
+            manualLyrics: manualLyricsData,
+            trackId: trackId,
+            senderSessionId: req.body.sessionId || req.query.sessionId || req.headers['x-session-id'] || req.sessionId
+        });
     }
     
     await saveUserSession(req.sessionId, session);
@@ -983,6 +1019,14 @@ app.post('/api/control/reset', async (req, res) => {
         }
         // 清除所有相關會話的快取
         await invalidateUserCache(userId);
+        // 廣播即時同步事件
+        broadcastSyncEvent(userId, {
+            type: 'control-sync',
+            lyricsOffset: 0,
+            manualLyrics: null,
+            trackId: trackId,
+            senderSessionId: req.body.sessionId || req.query.sessionId || req.headers['x-session-id'] || req.sessionId
+        });
     }
 
     await saveUserSession(req.sessionId, session);
@@ -1054,6 +1098,16 @@ app.post('/api/kv/user-lyrics', async (req, res) => {
             trackInfo: trackInfo // Store original trackInfo for reference
         });
         await invalidateUserCache(userId);
+
+        // 廣播即時同步事件
+        broadcastSyncEvent(userId, {
+            type: 'raw-lyrics-sync',
+            lyrics: lyrics,
+            lyricsType: lyricsType,
+            source: source,
+            trackId: trackInfo.id,
+            senderSessionId: req.body.sessionId || req.query.sessionId || req.headers['x-session-id'] || req.sessionId
+        });
 
         res.json({ success: true });
     } catch (error) {
@@ -1225,6 +1279,14 @@ app.post('/api/kv/save-time-offset', async (req, res) => {
             trackInfo: trackInfo
         });
         await invalidateUserCache(userId);
+
+        // 廣播即時同步事件
+        broadcastSyncEvent(userId, {
+            type: 'control-sync',
+            lyricsOffset: timeOffset,
+            trackId: trackInfo.id,
+            senderSessionId: req.body.sessionId || req.query.sessionId || req.headers['x-session-id'] || req.sessionId
+        });
 
         res.json({ success: true });
     } catch (error) {
@@ -2695,6 +2757,8 @@ app.post('/api/playback/play-pause', async (req, res) => {
         return res.status(401).json({ error: 'Not authenticated' });
     }
     
+    const senderSessionId = req.body.sessionId || req.query.sessionId || req.headers['x-session-id'] || req.sessionId;
+    
     try {
         // Get current playback state first
         const statusResponse = await axios.get('https://api.spotify.com/v1/me/player', {
@@ -2720,6 +2784,18 @@ app.post('/api/playback/play-pause', async (req, res) => {
             data: deviceId ? { device_ids: [deviceId] } : {}
         });
         
+        // 廣播即時同步事件
+        const userId = session.userProfile?.data?.id || await getSpotifyUserId(session, senderSessionId);
+        if (userId) {
+            broadcastSyncEvent(userId, {
+                type: 'playback-sync',
+                isPlaying: !isPlaying,
+                lastProgress: statusResponse.data?.progress_ms || session.currentTrackCache?.data?.progress || 0,
+                timestamp: Date.now(),
+                senderSessionId: senderSessionId
+            });
+        }
+        
         res.json({ success: true });
     } catch (error) {
         console.error('Error controlling playback:', error.response?.data || error.message);
@@ -2734,12 +2810,23 @@ app.post('/api/playback/seek', async (req, res) => {
     }
     
     const { position_ms } = req.body;
-    const sessionId = req.headers['x-session-id'] || req.query.sessionId;
+    const senderSessionId = req.body.sessionId || req.query.sessionId || req.headers['x-session-id'] || req.sessionId;
     
     try {
         await axios.put(`https://api.spotify.com/v1/me/player/seek?position_ms=${position_ms}`, {}, {
             headers: { 'Authorization': `Bearer ${session.accessToken}` }
         });
+        
+        const userId = session.userProfile?.data?.id || await getSpotifyUserId(session, senderSessionId);
+        if (userId) {
+            broadcastSyncEvent(userId, {
+                type: 'seek-sync',
+                position_ms: parseInt(position_ms),
+                timestamp: Date.now(),
+                senderSessionId: senderSessionId
+            });
+        }
+        
         res.json({ success: true });
     } catch (error) {
         console.error('Error seeking:', error.response?.data || error.message);
@@ -2753,10 +2840,21 @@ app.post('/api/playback/previous', async (req, res) => {
         return res.status(401).json({ error: 'Not authenticated' });
     }
     
+    const senderSessionId = req.body.sessionId || req.query.sessionId || req.headers['x-session-id'] || req.sessionId;
+    
     try {
         await axios.post('https://api.spotify.com/v1/me/player/previous', {}, {
             headers: { 'Authorization': `Bearer ${session.accessToken}` }
         });
+        
+        const userId = session.userProfile?.data?.id || await getSpotifyUserId(session, senderSessionId);
+        if (userId) {
+            broadcastSyncEvent(userId, {
+                type: 'force-refresh-sync',
+                senderSessionId: senderSessionId
+            });
+        }
+        
         res.json({ success: true });
     } catch (error) {
         console.error('Error skipping to previous track:', error.response?.data || error.message);
@@ -2770,10 +2868,21 @@ app.post('/api/playback/next', async (req, res) => {
         return res.status(401).json({ error: 'Not authenticated' });
     }
     
+    const senderSessionId = req.body.sessionId || req.query.sessionId || req.headers['x-session-id'] || req.sessionId;
+    
     try {
         await axios.post('https://api.spotify.com/v1/me/player/next', {}, {
             headers: { 'Authorization': `Bearer ${session.accessToken}` }
         });
+        
+        const userId = session.userProfile?.data?.id || await getSpotifyUserId(session, senderSessionId);
+        if (userId) {
+            broadcastSyncEvent(userId, {
+                type: 'force-refresh-sync',
+                senderSessionId: senderSessionId
+            });
+        }
+        
         res.json({ success: true });
     } catch (error) {
         console.error('Error skipping to next track:', error.response?.data || error.message);

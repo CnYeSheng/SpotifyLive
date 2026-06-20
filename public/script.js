@@ -263,12 +263,93 @@ class SpotifyLyricsPlayer {
         
         window.spotifyManager.onSettingsChanged = (version) => {
             this.log(`📡 SSE: 設定已變更 (v${version})，立即同步...`);
-            // Immediately re-fetch current track to get updated settings
-            this.checkCurrentTrackWithRateLimit();
+            this.checkCurrentTrack(); // Bypass rate limit
+        };
+
+        window.spotifyManager.onSyncEvent = (event) => {
+            this.log(`📡 SSE: 收到即時同步事件:`, event);
+            this.applySyncEvent(event);
         };
         
         window.spotifyManager.connectSSE();
         this.log('📡 SSE 連接已啟動');
+    }
+
+    getCurrentProgress() {
+        if (!this.currentTrack) return 0;
+        if (this.currentTrack.isPlaying && this.currentTrack.lastUpdated) {
+            const elapsed = (Date.now() - this.currentTrack.lastUpdated) + this.currentTrack.progress;
+            return Math.min(this.currentTrack.duration, elapsed);
+        }
+        return this.currentTrack.progress || 0;
+    }
+
+    applySyncEvent(d) {
+        if (!d) return;
+        
+        if (d.type === 'control-sync') {
+            if (d.lyricsOffset !== undefined) {
+                this.log(`🔄 應用控制偏移: ${d.lyricsOffset}ms`);
+                this.lyricsTimeOffset = d.lyricsOffset;
+                if (this.currentTrack && this.lyrics.length > 0) {
+                    this.updateLyricsHighlight(this.getCurrentProgress() + this.lyricsTimeOffset);
+                }
+            }
+            if (d.manualLyrics !== undefined) {
+                this.log(`🔄 應用手動歌詞更新`);
+                this.checkCurrentTrack(); // 繞過限制，立即載入
+            }
+        }
+        if (d.type === 'seek-sync' && d.position_ms !== undefined) {
+            this.log(`🔄 應用跳轉請求: ${d.position_ms}ms`);
+            if (this.currentTrack) {
+                this.currentTrack.progress = d.position_ms;
+                this.currentTrack.lastUpdated = Date.now();
+                this.lastCheckTime = d.timestamp || Date.now();
+                this.updateLyricsHighlight(d.position_ms + this.lyricsTimeOffset);
+                this.updateProgress();
+            }
+        }
+        if (d.type === 'playback-sync' && d.isPlaying !== undefined) {
+            this.log(`🔄 應用播放狀態更新: ${d.isPlaying ? '播放' : '暫停'}`);
+            if (this.currentTrack) {
+                this.currentTrack.isPlaying = d.isPlaying;
+                if (d.lastProgress !== undefined) this.currentTrack.progress = d.lastProgress;
+                this.currentTrack.lastUpdated = Date.now();
+                this.lastCheckTime = d.timestamp || Date.now();
+                this.updateProgress();
+            }
+        }
+        if (d.type === 'lyrics-sync' && d.lyrics) {
+            this.log(`🔄 應用歌詞數據同步: ${d.lyrics.length} 行`);
+            if (this.currentTrack && d.trackId === this.currentTrack.id) {
+                this.lyrics = d.lyrics;
+                this.lyricsType = d.lyricsType || 'plain';
+                this.currentLyricIndex = 0;
+                this.isLyricsOverridden = true;
+                this.displayLyrics();
+                this.updateLyricsHighlight(this.getCurrentProgress() + this.lyricsTimeOffset);
+            }
+        }
+        if (d.type === 'raw-lyrics-sync' && d.lyrics) {
+            this.log(`🔄 應用原始歌詞數據同步`);
+            if (this.currentTrack && d.trackId === this.currentTrack.id) {
+                const parsed = this.parseLrcFormat(d.lyrics);
+                if (parsed && parsed.lyrics) {
+                    this.lyrics = parsed.lyrics;
+                    this.lyricsType = d.lyricsType || (parsed.isLrc ? 'synced' : 'plain');
+                    this.currentLyricIndex = 0;
+                    this.isLyricsOverridden = true;
+                    this.overriddenLyricsSource = d.source || 'manual';
+                    this.displayLyrics();
+                    this.updateLyricsHighlight(this.getCurrentProgress() + this.lyricsTimeOffset);
+                }
+            }
+        }
+        if (d.type === 'force-refresh-sync') {
+            this.log(`🔄 應用強制刷新請求`);
+            this.checkCurrentTrack();
+        }
     }
 
     // 在加載時從雲端同步數據以確保跨瀏覽器一致性
