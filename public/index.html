@@ -235,7 +235,7 @@
                             </div>
                         </div>
                         
-                        <button id="lyrics-fast-btn" class="lyrics-control-btn" title="歌詞慢0.1秒">
+                        <button id="lyrics-fast-btn" class="lyrics-control-btn" title="歌詞快0.1秒">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/>
                             </svg>
@@ -245,9 +245,9 @@
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
                             </svg>
-                            重置
+                            <span id="lyrics-offset-display">0.0s</span>
                         </button>
-                        <button id="lyrics-slow-btn" class="lyrics-control-btn" title="歌詞快0.1秒">
+                        <button id="lyrics-slow-btn" class="lyrics-control-btn" title="歌詞慢0.1秒">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/>
                             </svg>
@@ -684,7 +684,7 @@
                 // --- 新增：同步到服务器 Session ---
                 if (this.sessionId) {
                     fetch('/api/kv/save-time-offset', {
-                        method: 'POST',
+                        method: 'POST', 
                         headers: { 
                             'Content-Type': 'application/json',
                             'X-Session-Id': this.sessionId
@@ -704,7 +704,7 @@
                 }
                 
                 this.updateLyricsHighlight();
-                this.showLyricsOffsetMessage(offset);
+                this.showOffsetMessage();
             };
             
             const originalResetLyricsOffset = window.player.resetLyricsOffset;
@@ -732,28 +732,7 @@
                 }
                 
                 this.updateLyricsHighlight();
-                this.showLyricsOffsetMessage(0, true);
-            };
-            
-            // 實現顯示偏移訊息的函數
-            window.player.showLyricsOffsetMessage = function(offset, isReset = false) {
-                let msg = isReset ? '⏰ 歌詞偏移已重置' : `⏰ 歌詞已調整: ${offset > 0 ? '+' : ''}${offset}ms (當前: ${this.lyricsTimeOffset}ms)`;
-                
-                let msgEl = document.getElementById('lyrics-offset-msg');
-                if (!msgEl) {
-                    msgEl = document.createElement('div');
-                    msgEl.id = 'lyrics-offset-msg';
-                    msgEl.style.cssText = 'position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 8px 16px; border-radius: 20px; z-index: 9999; font-size: 14px; pointer-events: none; transition: opacity 0.3s;';
-                    document.body.appendChild(msgEl);
-                }
-                
-                msgEl.textContent = msg;
-                msgEl.style.opacity = '1';
-                
-                if (this._offsetMsgTimeout) clearTimeout(this._offsetMsgTimeout);
-                this._offsetMsgTimeout = setTimeout(() => {
-                    msgEl.style.opacity = '0';
-                }, 2000);
+                this.showOffsetMessage();
             };
         }
         
@@ -873,6 +852,7 @@
                         if (typeof track.lyricsOffset !== 'undefined' && track.lyricsOffset !== this.lyricsTimeOffset) {
                             this.log(`🔄 從同步伺服器接收到新的時間偏移: ${track.lyricsOffset}ms`);
                             this.lyricsTimeOffset = track.lyricsOffset;
+                            this.updateOffsetDisplay();
                             this.updateLyricsHighlight();
                         }
 

@@ -432,56 +432,74 @@ function initUserLyricsManager() {
         modal.style.cssText = `
             display: none;
             position: fixed;
-            z-index: 1000;
+            z-index: 2000;
             left: 0;
             top: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(0,0,0,0.8);
-            backdrop-filter: blur(5px);
+            background-color: rgba(0,0,0,0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            animation: modalFadeIn 0.2s ease-out;
         `;
         
         modal.innerHTML = `
             <div class="modal-content" style="
-                background: var(--bg-color, #1a1a1a);
+                background: #282828;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 16px;
                 margin: 5% auto;
-                padding: 20px;
-                border-radius: 12px;
+                padding: 28px;
                 width: 90%;
-                max-width: 800px;
-                max-height: 80vh;
+                max-width: 720px;
+                max-height: 85vh;
                 overflow-y: auto;
-                color: var(--text-color, white);
+                color: #fff;
+                box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
+                animation: modalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
             ">
-                <div class="modal-header" style="
+                <div style="
                     display: flex;
                     justify-content: space-between;
                     align-items: center;
-                    margin-bottom: 20px;
-                    border-bottom: 1px solid var(--border-color, #333);
-                    padding-bottom: 10px;
+                    margin-bottom: 24px;
+                    padding-bottom: 16px;
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
                 ">
-                    <h2>用戶自定義歌詞管理</h2>
-                    <span class="close" id="close-user-lyrics-manager" style="
-                        font-size: 28px;
-                        font-weight: bold;
+                    <h2 style="margin: 0; font-size: 1.25rem; font-weight: 700;">自定義歌詞管理</h2>
+                    <button id="close-user-lyrics-manager" style="
+                        background: rgba(255, 255, 255, 0.08);
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                        color: #b3b3b3;
+                        width: 32px;
+                        height: 32px;
+                        border-radius: 50%;
                         cursor: pointer;
-                        color: var(--text-color, #ccc);
-                    ">&times;</span>
+                        font-size: 18px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        transition: all 0.2s;
+                    ">&times;</button>
                 </div>
-                <div id="user-lyrics-manager-content">
-                    <!-- 內容將由 JS 填充 -->
-                </div>
+                <div id="user-lyrics-manager-content"></div>
             </div>
         `;
         
         document.body.appendChild(modal);
         
-        // 綁定關閉事件
         const closeBtn = modal.querySelector('#close-user-lyrics-manager');
         if (closeBtn) {
             closeBtn.addEventListener('click', () => {
                 modal.style.display = 'none';
+            });
+            closeBtn.addEventListener('mouseenter', () => {
+                closeBtn.style.background = 'rgba(255, 255, 255, 0.15)';
+                closeBtn.style.color = '#fff';
+            });
+            closeBtn.addEventListener('mouseleave', () => {
+                closeBtn.style.background = 'rgba(255, 255, 255, 0.08)';
+                closeBtn.style.color = '#b3b3b3';
             });
         }
         
@@ -558,55 +576,60 @@ function initUserLyricsManager() {
             let html = '';
 
             // 自定義歌詞部分
-            html += '<h3 style="color: var(--accent-color, #1db954); margin-bottom: 15px;">🎵 自定義歌詞</h3>';
+            html += '<h3 style="color: var(--primary-color, #1db954); margin: 0 0 16px 0; font-size: 14px; font-weight: 600; letter-spacing: 0.02em;">自定義歌詞</h3>';
 
             const customEntries = Object.values(allCustomLyrics);
             if (customEntries.length > 0) {
                 customEntries
                     .sort((a, b) => (b.lastUsed || b.updated_at || Date.now()) - (a.lastUsed || a.updated_at || Date.now()))
                     .forEach(entry => {
-                        // 確保 trackInfo 存在
                         const trackInfo = entry.trackInfo || {};
                         const trackKey = entry.trackKey || this.generateTrackCacheKey(trackInfo);
                         const lyricsCount = entry.lyrics ? entry.lyrics.length : 0;
                         const lastUsed = new Date(entry.lastUsed || entry.updated_at || Date.now()).toLocaleDateString();
 
                         html += `
-                            <div class="user-lyrics-item" style="
-                                background: var(--card-bg, #2a2a2a);
-                                padding: 15px;
-                                margin-bottom: 10px;
-                                border-radius: 8px;
-                                border-left: 4px solid var(--accent-color, #1db954);
+                            <div style="
+                                background: rgba(255, 255, 255, 0.04);
+                                border: 1px solid rgba(255, 255, 255, 0.06);
+                                padding: 14px 16px;
+                                margin-bottom: 8px;
+                                border-radius: 10px;
+                                transition: all 0.2s;
                             ">
-                                <div style="display: flex; justify-content: space-between; align-items: center;">
-                                    <div>
-                                        <strong>${this.escapeHtml(trackInfo.artist || '')} - ${this.escapeHtml(trackInfo.name || '')}</strong>
-                                        <br>
-                                        <small style="color: #888;">
-                                            ${entry.lyricsType === 'synced' ? '同步歌詞' : '普通歌詞'} •
-                                            ${lyricsCount} 行 •
-                                            最後使用: ${lastUsed}
-                                        </small>
+                                <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+                                    <div style="flex: 1; min-width: 0;">
+                                        <div style="font-weight: 600; font-size: 14px; color: #fff; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                            ${this.escapeHtml(trackInfo.artist || '未知')} — ${this.escapeHtml(trackInfo.name || '未知')}
+                                        </div>
+                                        <div style="font-size: 12px; color: #b3b3b3; display: flex; gap: 8px; align-items: center;">
+                                            <span style="padding: 2px 6px; background: rgba(29, 185, 84, 0.15); color: #1db954; border-radius: 4px; font-size: 11px;">${entry.lyricsType === 'synced' ? '同步' : '普通'}</span>
+                                            <span>${lyricsCount} 行</span>
+                                            <span style="color: #727272;">${lastUsed}</span>
+                                        </div>
                                     </div>
-                                    <div style="display: flex; gap: 8px;">
+                                    <div style="display: flex; gap: 6px; flex-shrink: 0;">
                                         <button onclick="window.player.syncSingleLyrics('${trackKey}')" style="
-                                            background: #007bff;
-                                            color: white;
-                                            border: none;
-                                            padding: 6px 10px;
-                                            border-radius: 4px;
+                                            background: rgba(255, 255, 255, 0.08);
+                                            color: #fff;
+                                            border: 1px solid rgba(255, 255, 255, 0.1);
+                                            padding: 6px 12px;
+                                            border-radius: 6px;
                                             cursor: pointer;
                                             font-size: 12px;
+                                            font-weight: 500;
+                                            transition: all 0.2s;
                                         ">同步</button>
                                         <button onclick="window.player.deleteUserCustomLyrics('${trackKey}')" style="
-                                            background: #dc3545;
-                                            color: white;
-                                            border: none;
-                                            padding: 6px 10px;
-                                            border-radius: 4px;
+                                            background: rgba(220, 53, 69, 0.12);
+                                            color: #ff6b6b;
+                                            border: 1px solid rgba(220, 53, 69, 0.25);
+                                            padding: 6px 12px;
+                                            border-radius: 6px;
                                             cursor: pointer;
                                             font-size: 12px;
+                                            font-weight: 500;
+                                            transition: all 0.2s;
                                         ">刪除</button>
                                     </div>
                                 </div>
@@ -614,57 +637,59 @@ function initUserLyricsManager() {
                         `;
                     });
             } else {
-                html += '<p style="color: #888; text-align: center; padding: 20px;">暫無自定義歌詞</p>';
+                html += '<p style="color: #727272; text-align: center; padding: 24px; font-size: 13px;">暫無自定義歌詞</p>';
             }
 
             // 指定供應商部分
-            html += '<h3 style="color: var(--accent-color, #1db954); margin: 30px 0 15px 0;">🔒 指定供應商</h3>';
+            html += '<h3 style="color: #ffc107; margin: 24px 0 16px 0; font-size: 14px; font-weight: 600; letter-spacing: 0.02em;">指定供應商</h3>';
 
             const providerEntries = Object.values(allProviders);
             if (providerEntries.length > 0) {
                 providerEntries
                     .sort((a, b) => (b.lastUsed || Date.now()) - (a.lastUsed || Date.now()))
                     .forEach(entry => {
-                        // 確保 trackInfo 存在
                         const trackInfo = entry.trackInfo || {};
                         const trackKey = entry.trackKey || this.generateTrackCacheKey(trackInfo);
                         const lastUsed = new Date(entry.lastUsed || Date.now()).toLocaleDateString();
 
                         html += `
-                            <div class="user-provider-item" style="
-                                background: var(--card-bg, #2a2a2a);
-                                padding: 15px;
-                                margin-bottom: 10px;
-                                border-radius: 8px;
-                                border-left: 4px solid #ffc107;
+                            <div style="
+                                background: rgba(255, 255, 255, 0.04);
+                                border: 1px solid rgba(255, 255, 255, 0.06);
+                                padding: 14px 16px;
+                                margin-bottom: 8px;
+                                border-radius: 10px;
                             ">
-                                <div style="display: flex; justify-content: space-between; align-items: center;">
-                                    <div>
-                                        <strong>${this.escapeHtml(trackInfo.artist || '')} - ${this.escapeHtml(trackInfo.name || '')}</strong>
-                                        <br>
-                                        <small style="color: #888;">
-                                            供應商: ${this.escapeHtml(entry.provider || '未知')} •
-                                            最後使用: ${lastUsed}
-                                        </small>
+                                <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+                                    <div style="flex: 1; min-width: 0;">
+                                        <div style="font-weight: 600; font-size: 14px; color: #fff; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                            ${this.escapeHtml(trackInfo.artist || '未知')} — ${this.escapeHtml(trackInfo.name || '未知')}
+                                        </div>
+                                        <div style="font-size: 12px; color: #b3b3b3;">
+                                            <span style="padding: 2px 6px; background: rgba(255, 193, 7, 0.15); color: #ffc107; border-radius: 4px; font-size: 11px;">${this.escapeHtml(entry.provider || '未知')}</span>
+                                            <span style="margin-left: 8px; color: #727272;">${lastUsed}</span>
+                                        </div>
                                     </div>
-                                    <div style="display: flex; gap: 8px;">
+                                    <div style="display: flex; gap: 6px; flex-shrink: 0;">
                                         <button onclick="window.player.syncSingleProvider('${trackKey}')" style="
-                                            background: #007bff;
-                                            color: white;
-                                            border: none;
-                                            padding: 6px 10px;
-                                            border-radius: 4px;
+                                            background: rgba(255, 255, 255, 0.08);
+                                            color: #fff;
+                                            border: 1px solid rgba(255, 255, 255, 0.1);
+                                            padding: 6px 12px;
+                                            border-radius: 6px;
                                             cursor: pointer;
                                             font-size: 12px;
+                                            font-weight: 500;
                                         ">同步</button>
                                         <button onclick="window.player.deleteUserLyricsProvider('${trackKey}')" style="
-                                            background: #dc3545;
-                                            color: white;
-                                            border: none;
-                                            padding: 6px 10px;
-                                            border-radius: 4px;
+                                            background: rgba(220, 53, 69, 0.12);
+                                            color: #ff6b6b;
+                                            border: 1px solid rgba(220, 53, 69, 0.25);
+                                            padding: 6px 12px;
+                                            border-radius: 6px;
                                             cursor: pointer;
                                             font-size: 12px;
+                                            font-weight: 500;
                                         ">刪除</button>
                                     </div>
                                 </div>
@@ -672,69 +697,73 @@ function initUserLyricsManager() {
                         `;
                     });
             } else {
-                html += '<p style="color: #888; text-align: center; padding: 20px;">暫無指定供應商</p>';
+                html += '<p style="color: #727272; text-align: center; padding: 24px; font-size: 13px;">暫無指定供應商</p>';
             }
 
-            // 管理操作
+            // 操作按鈕
             html += `
-                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--border-color, #333);">
-                    <h3 style="color: var(--accent-color, #1db954); margin-bottom: 15px;">🛠️ 管理操作</h3>
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.06);">
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                         <button onclick="window.player.saveCurrentLyricsAsCustom()" style="
-                            background: var(--accent-color, #1db954);
+                            background: var(--primary-color, #1db954);
                             color: white;
                             border: none;
-                            padding: 10px 15px;
+                            padding: 8px 16px;
                             border-radius: 6px;
                             cursor: pointer;
+                            font-size: 13px;
+                            font-weight: 600;
                         ">保存當前歌詞</button>
                         <button onclick="window.player.clearUserSettingsForTrack()" style="
-                            background: #ffc107;
-                            color: #000;
-                            border: none;
-                            padding: 10px 15px;
+                            background: rgba(255, 193, 7, 0.15);
+                            color: #ffc107;
+                            border: 1px solid rgba(255, 193, 7, 0.25);
+                            padding: 8px 16px;
                             border-radius: 6px;
                             cursor: pointer;
-                        ">清除當前歌曲設置</button>
-                        <button onclick="window.player.clearAllUserLyricsSettings()" style="
-                            background: #dc3545;
-                            color: white;
-                            border: none;
-                            padding: 10px 15px;
-                            border-radius: 6px;
-                            cursor: pointer;
-                        ">清除所有設置</button>
-                    </div>
-                </div>
-
-                <!-- 同步操作 -->
-                <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border-color, #333);">
-                    <h3 style="color: var(--accent-color, #1db954); margin-bottom: 15px;">🔄 同步操作</h3>
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                            font-size: 13px;
+                            font-weight: 500;
+                        ">清除當前歌曲</button>
                         <button onclick="window.player.syncAndMergeAllData()" style="
-                            background: #28a745;
-                            color: white;
-                            border: none;
-                            padding: 10px 15px;
+                            background: rgba(255, 255, 255, 0.08);
+                            color: #fff;
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                            padding: 8px 16px;
                             border-radius: 6px;
                             cursor: pointer;
-                        ">同步所有設置</button>
+                            font-size: 13px;
+                            font-weight: 500;
+                        ">同步所有</button>
                         <button onclick="window.player.exportAllUserLyrics()" style="
-                            background: #17a2b8;
-                            color: white;
-                            border: none;
-                            padding: 10px 15px;
+                            background: rgba(255, 255, 255, 0.08);
+                            color: #fff;
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                            padding: 8px 16px;
                             border-radius: 6px;
                             cursor: pointer;
-                        ">匯出所有設置</button>
+                            font-size: 13px;
+                            font-weight: 500;
+                        ">匯出</button>
                         <button onclick="window.player.importUserLyrics()" style="
-                            background: #6f42c1;
-                            color: white;
-                            border: none;
-                            padding: 10px 15px;
+                            background: rgba(255, 255, 255, 0.08);
+                            color: #fff;
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                            padding: 8px 16px;
                             border-radius: 6px;
                             cursor: pointer;
-                        ">匯入設置</button>
+                            font-size: 13px;
+                            font-weight: 500;
+                        ">匯入</button>
+                        <button onclick="window.player.clearAllUserLyricsSettings()" style="
+                            background: rgba(220, 53, 69, 0.12);
+                            color: #ff6b6b;
+                            border: 1px solid rgba(220, 53, 69, 0.25);
+                            padding: 8px 16px;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            font-size: 13px;
+                            font-weight: 500;
+                        ">清除全部</button>
                     </div>
                 </div>
             `;

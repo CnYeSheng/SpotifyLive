@@ -1,4 +1,4 @@
-﻿// public/script.js
+// public/script.js
 class SpotifyLyricsPlayer {
     constructor() {
         // 日誌輔助函數 - 必須放在最前面
@@ -165,6 +165,9 @@ class SpotifyLyricsPlayer {
         this.checkAuthStatus();
         this.startAutoLoginTimer();
         
+        // 初始化偏移顯示
+        this.updateOffsetDisplay();
+        
         // 初始化手機布局
         this.updateMobileLayout();
         
@@ -194,6 +197,7 @@ class SpotifyLyricsPlayer {
                     if (d.lyricsOffset !== undefined) {
                         this.log(`🔄 接收控制偏移: ${d.lyricsOffset}ms`);
                         this.lyricsTimeOffset = d.lyricsOffset;
+                        this.updateOffsetDisplay();
                         // 重新渲染歌詞以立即應用偏移
                         if (this.currentTrack && this.lyrics.length > 0) {
                             this.updateLyricsHighlight(this.currentTrack.progress);
@@ -291,6 +295,7 @@ class SpotifyLyricsPlayer {
             if (d.lyricsOffset !== undefined) {
                 this.log(`🔄 應用控制偏移: ${d.lyricsOffset}ms`);
                 this.lyricsTimeOffset = d.lyricsOffset;
+                this.updateOffsetDisplay();
                 if (this.currentTrack && this.lyrics.length > 0) {
                     this.updateLyricsHighlight(this.getCurrentProgress() + this.lyricsTimeOffset);
                 }
@@ -3878,6 +3883,7 @@ async initializeStorage() {
             if (Math.abs(data.lyricsOffset - this.lyricsTimeOffset) > 100) {
                 this.log(`🔄 偵測到來自伺服器的偏移變更: ${data.lyricsOffset}ms`);
                 this.lyricsTimeOffset = data.lyricsOffset;
+                this.updateOffsetDisplay();
                 // 重新高亮歌詞以立即應用偏移
                 this.updateLyricsHighlight(finalProgress + this.lyricsTimeOffset);
             }
@@ -4392,7 +4398,6 @@ async initializeStorage() {
                 const elapsedTime = Math.min(this.currentTrack.duration || syncedElapsed, syncedElapsed);
 
                 this.currentTime.textContent = this.formatTime(elapsedTime);
-                this.updateLyricsHighlight(elapsedTime + this.lyricsTimeOffset);
             }, 1000);
         }
     }
@@ -4426,6 +4431,7 @@ async loadLyrics() {
                 // 載入時間偏移
                 const savedOffset = await window.lyricsStorageManager.getLyricsTimeOffset(this.currentTrack);
                 this.lyricsTimeOffset = savedOffset || 0;
+                this.updateOffsetDisplay();
                 
                 this.displayLyrics();
                 this.updateStatus('lyrics', true);
@@ -4606,6 +4612,7 @@ async loadLyrics() {
                         const savedOffset = await window.lyricsStorageManager
                             .getLyricsTimeOffset(this.currentTrack);
                         this.lyricsTimeOffset = savedOffset || 0;
+                        this.updateOffsetDisplay();
                         if (this.lyricsTimeOffset !== 0) {
                             console.log(`✅ 已载入保存的時間偏移: ${this.lyricsTimeOffset}ms`);
                         }
@@ -5121,11 +5128,23 @@ resetLyricsOffset() {
     }
 }
 
+// 更新偏移顯示
+updateOffsetDisplay() {
+    const offsetDisplay = document.getElementById('lyrics-offset-display');
+    if (offsetDisplay) {
+        const sign = this.lyricsTimeOffset > 0 ? '+' : '';
+        offsetDisplay.textContent = `${sign}${(this.lyricsTimeOffset/1000).toFixed(1)}s`;
+        offsetDisplay.style.color = this.lyricsTimeOffset !== 0 ? 'var(--primary-color)' : '';
+    }
+}
+
 // 显示偏移调整提示
 showOffsetMessage() {
+    this.updateOffsetDisplay();
+
     const message = this.lyricsTimeOffset === 0 
-        ? '⏰ 歌词时间已重置' 
-        : `⏰ 歌词${this.lyricsTimeOffset > 0 ? '提前' : '延后'} ${Math.abs(this.lyricsTimeOffset/1000).toFixed(1)} 秒`;
+        ? '⏰ 歌詞時間已重置' 
+        : `⏰ 歌詞${this.lyricsTimeOffset > 0 ? '延後' : '提前'} ${Math.abs(this.lyricsTimeOffset/1000).toFixed(1)} 秒`;
     
     this.showSuccessMessage(message);
 }
