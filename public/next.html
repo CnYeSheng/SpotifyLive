@@ -48,14 +48,14 @@
         }
 
         .lyrics-line {
-            padding: 20px 0;
+            padding: 16px 0;
             font-size: 48px;
             line-height: 1.4;
-            color: var(--text-tertiary);
-            transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            color: rgba(255, 255, 255, 0.5);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             font-weight: 500;
             letter-spacing: -0.02em;
-            display: none; /* Only target line */
+            display: none;
             word-wrap: break-word;
             overflow-wrap: break-word;
             max-width: 100%;
@@ -63,7 +63,7 @@
 
         .lyrics-line.target {
             display: block;
-            color: var(--text-tertiary);
+            color: rgba(255, 255, 255, 0.5);
             font-weight: 500;
         }
         

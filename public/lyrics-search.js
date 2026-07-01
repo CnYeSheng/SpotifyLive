@@ -502,7 +502,7 @@ SpotifyLyricsPlayer.prototype.overrideLyrics = function(lyrics, lyricsType, sour
     this.isLyricsOverridden = true;
     this.overriddenLyricsSource = source;
 
-    // 廣播歌詞數據給其他分頁
+    // 廣播歌詞數據給其他分頁（同裝置）
     if (this.controlChannel) {
         this.controlChannel.postMessage({
             type: 'lyrics-sync',
@@ -512,11 +512,22 @@ SpotifyLyricsPlayer.prototype.overrideLyrics = function(lyrics, lyricsType, sour
         });
     }
     
+    // 同步到伺服器（跨裝置）
+    if (this.sessionId && this.currentTrack) {
+        this.saveUserCustomLyrics(this.currentTrack, lyrics, lyricsType, {
+            ...source,
+            appliedAt: Date.now(),
+            appliedBy: 'manual_override'
+        }).catch(err => {
+            this.log(`⚠️ 歌詞同步到伺服器失敗: ${err.message}`);
+        });
+    }
+    
     // 重新顯示歌詞
     this.displayLyrics();
     this.updateStatus('lyrics', true);
     
-    // 🚀 關鍵修正：立即更新高亮位置，防止上傳後不滾動/不亮
+    // 立即更新高亮位置
     if (this.currentTrack) {
         this.updateLyricsHighlight(this.currentTrack.progress);
     }

@@ -4056,8 +4056,7 @@ async initializeStorage() {
                     this.displayLyrics(); // 這會清空當前列表
                     this.showLyricsPlaceholder('🎵 正在載入新歌詞...');
                     
-                    // 🚨 重要修復：重置播放狀態，防止舊歌曲進度影響新歌曲
-                    this.lyricsTimeOffset = 0;
+                    // 重置播放狀態
                     this.currentLyricIndex = 0;
                     this._lastScrolledIndex = -1;
                     this._lastHighlightTime = 0;
