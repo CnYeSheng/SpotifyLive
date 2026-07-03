@@ -1,14 +1,20 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Song Info</title>
     <style>
+        * { box-sizing: border-box; }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+        }
+
+        html, body { margin: 0; padding: 0; }
+
         body {
-            margin: 0;
-            padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background-color: transparent;
             color: #000;
             overflow: hidden;
@@ -19,19 +25,22 @@
             width: 100vw;
             text-align: center;
         }
-        
+
         #container {
             width: 90%;
             display: flex;
             flex-direction: column;
-            gap: 10px;
-            /* Remove text-shadow as requested */
-            text-shadow: none !important;
+            gap: 8px;
+            text-shadow: none !important; /* keep transparent for chroma-key use */
             overflow: hidden;
+            opacity: 0;
+            transform: translateY(8px);
+            transition: opacity 0.45s cubic-bezier(0.16,1,0.3,1), transform 0.45s cubic-bezier(0.16,1,0.3,1);
         }
-        
+        #container.visible { opacity: 1; transform: translateY(0); }
+
         #track-name {
-            font-size: 42px;
+            font-size: clamp(26px, 5vw, 42px);
             font-weight: 800;
             color: #000;
             margin: 0;
@@ -41,25 +50,20 @@
             overflow-wrap: break-word;
             max-width: 100%;
         }
-        
+
         #artist-name {
-            font-size: 28px;
+            font-size: clamp(18px, 3.2vw, 28px);
             font-weight: 600;
             color: #000;
             margin: 0;
         }
-        
+
         #album-name {
-            font-size: 18px;
+            font-size: clamp(13px, 2vw, 18px);
             font-weight: 400;
             color: #000;
             margin: 0;
             opacity: 0.7;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
         }
     </style>
 </head>
@@ -72,19 +76,50 @@
 
     <script src="spotify-player-manager.js"></script>
     <script>
+        let lastTrackId = null;
+
+        // Consistent with the other overlay pages: react instantly to
+        // cross-device changes instead of waiting for the next poll.
+        spotifyManager.onControlMessage = (d) => {
+            if (d.type === 'settings-sync' || d.type === 'track-sync') update();
+        };
+        spotifyManager.onSessionUpdate = (newId) => {
+            const newUrl = new URL(window.location);
+            newUrl.searchParams.set('sessionId', newId);
+            window.history.pushState({}, '', newUrl);
+            update();
+        };
+        if (spotifyManager.sessionId && typeof spotifyManager.connectSSE === 'function') {
+            spotifyManager.connectSSE();
+        }
+
+        function setText(name, artist, album) {
+            document.getElementById('track-name').textContent = name;
+            document.getElementById('artist-name').textContent = artist || '';
+            document.getElementById('album-name').textContent = album || '';
+        }
+
         async function update() {
             try {
                 const trackData = await spotifyManager.fetchCurrentTrack();
                 if (!trackData) return;
-                
+                const container = document.getElementById('container');
+
                 if (trackData.isPlaying || trackData.name) {
-                    document.getElementById('track-name').textContent = trackData.name;
-                    document.getElementById('artist-name').textContent = trackData.artist;
-                    document.getElementById('album-name').textContent = trackData.album;
+                    if (trackData.id !== lastTrackId) {
+                        lastTrackId = trackData.id;
+                        container.classList.remove('visible');
+                        setTimeout(() => {
+                            setText(trackData.name, trackData.artist, trackData.album);
+                            container.classList.add('visible');
+                        }, 180);
+                    } else {
+                        container.classList.add('visible');
+                    }
                 } else {
-                    document.getElementById('track-name').textContent = "Not Playing";
-                    document.getElementById('artist-name').textContent = "";
-                    document.getElementById('album-name').textContent = "";
+                    lastTrackId = null;
+                    setText('Not Playing', '', '');
+                    container.classList.add('visible');
                 }
             } catch (e) {
                 console.error(e);

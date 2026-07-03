@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -16,143 +16,203 @@
         }
 
         :root {
-            --background-primary: #121212;
-            --text-primary: #FFFFFF;
-            --text-secondary: rgba(255, 255, 255, 0.4);
-            --spotify-green: #1ed760;
-            --card-bg: rgba(255, 255, 255, 0.05);
+            --bg: #0b0b0c;
+            --text: #ffffff;
+            --text-dim: rgba(255, 255, 255, 0.38);
+            --accent: #1ed760;
+            --accent-dim: rgba(30, 215, 96, 0.35);
+        }
+
+        * { box-sizing: border-box; }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            background: var(--bg);
         }
 
         body {
-            margin: 0;
-            padding: 0;
-            font-family: 'Spotify Mix', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--background-primary);
-            color: var(--text-primary);
+            font-family: 'Spotify Mix', 'Inter', -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--text);
             min-height: 100vh;
             display: flex;
             flex-direction: column;
             align-items: center;
         }
 
-        /* Header / Track Info */
+        /* Ambient backdrop from album art */
+        .ambient {
+            position: fixed;
+            inset: -10%;
+            z-index: -1;
+            background-size: cover;
+            background-position: center;
+            filter: blur(90px) saturate(1.5) brightness(0.35);
+            opacity: 0;
+            transition: opacity 1s ease, background-image 0.6s ease;
+        }
+        .ambient.show { opacity: 1; }
+
+        .scroll-progress {
+            position: fixed;
+            top: 0; left: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent), #17c454);
+            z-index: 1000;
+            width: 0%;
+            transition: width 0.15s linear;
+        }
+
         .header {
             width: 100%;
-            padding: 40px 20px;
-            max-width: 800px;
+            padding: 32px 24px;
+            max-width: 820px;
             display: flex;
             align-items: center;
-            gap: 24px;
+            gap: 20px;
             box-sizing: border-box;
-            background: linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, transparent 100%);
+            background: linear-gradient(to bottom, rgba(11,11,12,0.85) 0%, rgba(11,11,12,0.55) 70%, transparent 100%);
             position: sticky;
             top: 0;
             z-index: 100;
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            opacity: 0;
+            transform: translateY(-8px);
+            transition: opacity 0.4s ease, transform 0.4s ease;
         }
+        .header.visible { opacity: 1; transform: translateY(0); }
 
         .album-art {
-            width: 100px;
-            height: 100px;
-            border-radius: 8px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            width: 96px;
+            height: 96px;
+            border-radius: 10px;
+            object-fit: cover;
+            background: #222;
+            box-shadow: 0 10px 28px rgba(0,0,0,0.55);
+            flex-shrink: 0;
         }
 
-        .track-info {
-            flex: 1;
-            min-width: 0;
-        }
+        .track-info { flex: 1; min-width: 0; }
 
         .track-title {
-            font-size: 2rem;
+            font-size: 1.9rem;
             font-weight: 800;
-            margin: 0 0 8px 0;
+            margin: 0 0 6px 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            letter-spacing: -0.01em;
+        }
+
+        .track-artist {
+            font-size: 1.05rem;
+            color: var(--text-dim);
+            margin: 0;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
         }
 
-        .track-artist {
-            font-size: 1.1rem;
-            color: var(--text-secondary);
-            margin: 0;
-        }
-
-        /* Lyrics Container */
         .lyrics-container {
             width: 100%;
-            max-width: 800px;
-            padding: 40px 20px 200px 20px;
+            max-width: 820px;
+            padding: 24px 24px 240px 24px;
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
-            gap: 32px;
+            gap: 28px;
         }
 
         .lyrics-line {
-            font-size: 2rem;
-            font-weight: 600;
-            line-height: 1.4;
-            color: rgba(255, 255, 255, 0.35);
+            font-size: clamp(1.5rem, 3.4vw, 2.1rem);
+            font-weight: 700;
+            line-height: 1.45;
+            color: rgba(255, 255, 255, 0.32);
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: color 0.35s ease, transform 0.35s cubic-bezier(0.16,1,0.3,1);
             transform-origin: left center;
-            padding: 8px 0;
+            padding: 6px 0;
+            border-radius: 6px;
         }
 
-        .lyrics-line:hover {
-            color: var(--text-primary);
-        }
+        .lyrics-line:hover { color: rgba(255,255,255,0.75); }
 
         .lyrics-line.active {
-            color: var(--text-primary);
-            transform: scale(1.05);
+            color: var(--text);
+            transform: scale(1.04);
         }
 
-        /* Karaoke Effect */
-        .lyric-word {
-            display: inline-block;
-            margin-right: 0.2em;
-            transition: all 0.2s ease;
-        }
+        .lyric-word { display: inline-block; margin-right: 0.22em; transition: color 0.15s ease; }
+        .active .lyric-word.played { color: var(--accent); }
 
-        .active .lyric-word.played {
-            color: var(--spotify-green);
-        }
-
-        /* Status / Loading */
-        #status {
-            font-size: 1.5rem;
-            opacity: 0.5;
-            margin-top: 100px;
+        #status, .status-inline {
+            font-size: 1.3rem;
+            color: var(--text-dim);
+            margin-top: 120px;
             text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
         }
+        .status-inline { margin-top: 60px; }
 
-        /* Scroll Progress Indicator */
-        .scroll-progress {
-            position: fixed;
-            top: 0;
-            left: 0;
-            height: 4px;
-            background: var(--spotify-green);
-            z-index: 1000;
-            width: 0%;
-            transition: width 0.1s linear;
+        .spinner {
+            width: 26px; height: 26px;
+            border: 3px solid rgba(255,255,255,0.15);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
         }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .status-link {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 700;
+        }
+        .status-link:hover { text-decoration: underline; }
+
+        /* Back-to-live pill, shown when user scrolls away from the active line */
+        .resync-pill {
+            position: fixed;
+            bottom: 28px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: var(--accent);
+            color: #04150a;
+            font-weight: 700;
+            font-size: 0.85rem;
+            padding: 10px 20px;
+            border-radius: 999px;
+            box-shadow: 0 10px 26px rgba(0,0,0,0.5);
+            border: none;
+            cursor: pointer;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.25s cubic-bezier(0.16,1,0.3,1);
+            z-index: 200;
+        }
+        .resync-pill.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
 
         @media (max-width: 600px) {
-            .track-title { font-size: 1.5rem; }
-            .lyrics-line { font-size: 1.8rem; }
-            .album-art { width: 60px; height: 60px; }
-            .header { padding: 20px; }
+            .track-title { font-size: 1.4rem; }
+            .album-art { width: 64px; height: 64px; }
+            .header { padding: 18px; gap: 14px; }
+            .lyrics-container { padding: 20px 18px 200px; }
         }
     </style>
 </head>
 <body>
+    <div class="ambient" id="ambient"></div>
     <div class="scroll-progress" id="scroll-progress"></div>
-    
-    <div class="header" id="header" style="display: none;">
+
+    <div class="header" id="header">
         <img id="track-art" src="" alt="" class="album-art">
         <div class="track-info">
             <h1 id="track-title" class="track-title">Loading...</h1>
@@ -160,8 +220,10 @@
         </div>
     </div>
 
-    <div id="status">Waiting for music...</div>
+    <div id="status"><span class="spinner"></span>正在等待播放中的歌曲...</div>
     <div id="lyrics-container" class="lyrics-container"></div>
+
+    <button class="resync-pill" id="resync-pill">回到目前播放位置 ↓</button>
 
     <script src="spotify-player-manager.js"></script>
     <script>
@@ -171,6 +233,7 @@
         let lyricsOffset = 0;
         let manualLyricsId = null;
         let autoScroll = true;
+        let lastActiveIndex = -1;
 
         // Unified control message handler
         spotifyManager.onControlMessage = (d) => {
@@ -178,17 +241,28 @@
                 if (d.lyricsOffset !== undefined) lyricsOffset = d.lyricsOffset;
                 if (d.manualLyrics !== undefined) update();
             }
-            
-            // Handle direct lyrics sync (from uploads/manual overrides)
             if (d.type === 'lyrics-sync' && d.lyrics) {
-                console.log(`🔄 接收即時歌詞同步: ${d.lyrics.length} 行`);
                 if (currentTrackId && d.trackId === currentTrackId) {
                     lyricsData = d.lyrics;
                     isSynced = d.lyricsType === 'synced';
                     renderLyricsList(lyricsData);
                 }
             }
+            if (d.type === 'settings-sync') update();
         };
+
+        // Keep the session URL in sync across devices/tabs (was missing before)
+        spotifyManager.onSessionUpdate = (newId) => {
+            const newUrl = new URL(window.location);
+            newUrl.searchParams.set('sessionId', newId);
+            window.history.pushState({}, '', newUrl);
+            update();
+        };
+
+        // Real-time cross-device sync via SSE, matching the other overlay pages
+        if (spotifyManager.sessionId && typeof spotifyManager.connectSSE === 'function') {
+            spotifyManager.connectSSE();
+        }
 
         async function fetchLyrics(artist, title) {
             try {
@@ -217,43 +291,52 @@
         function renderLyricsList(lyrics) {
             const container = document.getElementById('lyrics-container');
             container.innerHTML = '';
-            
+            lastActiveIndex = -1;
+
             lyrics.forEach((line, index) => {
                 const div = document.createElement('div');
                 div.className = 'lyrics-line';
                 div.setAttribute('data-index', index);
                 div.innerText = line.text;
-                
-                // Add click to seek (optional, but nice)
+
                 div.onclick = () => {
                     if (line.time !== undefined) {
                         spotifyManager.sendControl('/playback/seek', { position_ms: line.time });
-                        autoScroll = true; // Resume autoscroll on click
+                        autoScroll = true;
+                        hideResyncPill();
                     }
                 };
-                
+
                 container.appendChild(div);
             });
         }
+
+        function showResyncPill() { document.getElementById('resync-pill').classList.add('show'); }
+        function hideResyncPill() { document.getElementById('resync-pill').classList.remove('show'); }
+
+        document.getElementById('resync-pill').addEventListener('click', () => {
+            autoScroll = true;
+            hideResyncPill();
+            const lines = document.getElementsByClassName('lyrics-line');
+            if (lastActiveIndex >= 0 && lines[lastActiveIndex]) {
+                lines[lastActiveIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        });
 
         function updateLyricsUI(currentTime) {
             if (!lyricsData || lyricsData.length === 0) return;
 
             let activeIndex = -1;
-            
+
             if (isSynced) {
-                // 同步歌詞模式
                 for (let i = 0; i < lyricsData.length; i++) {
                     if (lyricsData[i].time <= currentTime) activeIndex = i;
                     else break;
                 }
-            } else {
-                // 普通歌詞模式 (基於播放進度估算)
-                if (spotifyManager.trackDuration > 0) {
-                    const progress = currentTime / spotifyManager.trackDuration;
-                    activeIndex = Math.floor(progress * lyricsData.length);
-                    activeIndex = Math.max(0, Math.min(activeIndex, lyricsData.length - 1));
-                }
+            } else if (spotifyManager.trackDuration > 0) {
+                const progress = currentTime / spotifyManager.trackDuration;
+                activeIndex = Math.floor(progress * lyricsData.length);
+                activeIndex = Math.max(0, Math.min(activeIndex, lyricsData.length - 1));
             }
 
             const lines = document.getElementsByClassName('lyrics-line');
@@ -270,39 +353,57 @@
                         lines[i].classList.remove('active');
                     }
                 }
+                lastActiveIndex = activeIndex;
             }
-            
-            // Update scroll progress bar
+
             if (spotifyManager.trackDuration > 0) {
                 const progress = (currentTime / spotifyManager.trackDuration) * 100;
                 const scrollProgress = document.getElementById('scroll-progress');
-                if (scrollProgress) scrollProgress.style.width = `${Math.min(100, progress)}%`;
+                if (scrollProgress) scrollProgress.style.width = `${Math.min(100, Math.max(0, progress))}%`;
             }
         }
 
         async function update() {
-            const trackData = await spotifyManager.fetchCurrentTrack();
-            
+            let trackData;
+            try {
+                trackData = await spotifyManager.fetchCurrentTrack();
+            } catch (e) {
+                trackData = null;
+            }
+
             if (trackData && trackData.error === 'unauthorized') {
-                document.getElementById('status').innerHTML = 'Session expired. Please <a href="/api/force-relogin" style="color:var(--spotify-green)">Login Again</a>';
+                document.getElementById('status').innerHTML =
+                    `連線階段已過期，請 <a href="/api/force-relogin" class="status-link">重新登入</a>`;
+                document.getElementById('status').style.display = 'flex';
+                document.getElementById('header').classList.remove('visible');
                 return;
             }
-            
+
             if (trackData && (trackData.isPlaying || trackData.name)) {
                 document.getElementById('status').style.display = 'none';
-                document.getElementById('header').style.display = 'flex';
-                
+                document.getElementById('header').classList.add('visible');
+
                 document.getElementById('track-title').innerText = trackData.name;
                 document.getElementById('track-artist').innerText = trackData.artist;
-                document.getElementById('track-art').src = trackData.image;
-                
+                if (trackData.image) {
+                    document.getElementById('track-art').src = trackData.image;
+                    const ambient = document.getElementById('ambient');
+                    ambient.style.backgroundImage = `url("${trackData.image}")`;
+                    ambient.classList.add('show');
+                }
+
                 lyricsOffset = trackData.lyricsOffset || 0;
                 const serverManualLyrics = trackData.manualLyrics;
 
                 if (trackData.id !== currentTrackId || (serverManualLyrics && serverManualLyrics.id !== manualLyricsId)) {
                     currentTrackId = trackData.id;
                     manualLyricsId = serverManualLyrics?.id || null;
-                    
+                    autoScroll = true;
+                    hideResyncPill();
+
+                    document.getElementById('lyrics-container').innerHTML =
+                        `<div class="status-inline"><span class="spinner"></span>載入歌詞中...</div>`;
+
                     let lrc;
                     if (serverManualLyrics) {
                         lrc = await fetchManualLyrics(serverManualLyrics.source, serverManualLyrics.id);
@@ -315,24 +416,34 @@
                         isSynced = lrc.type === 'synced';
                         renderLyricsList(lyricsData);
                     } else {
-                        document.getElementById('lyrics-container').innerHTML = '<div id="status">No lyrics found</div>';
+                        lyricsData = [];
+                        document.getElementById('lyrics-container').innerHTML =
+                            '<div class="status-inline">找不到這首歌的歌詞</div>';
                     }
                 }
             } else {
-                document.getElementById('status').innerText = 'Paused / No Music';
-                document.getElementById('status').style.display = 'block';
-                document.getElementById('header').style.display = 'none';
+                document.getElementById('status').innerText = '目前沒有播放中的音樂';
+                document.getElementById('status').style.display = 'flex';
+                document.getElementById('header').classList.remove('visible');
                 document.getElementById('lyrics-container').innerHTML = '';
+                currentTrackId = null;
             }
         }
 
-        // Disable autoscroll on user scroll
+        // Disable autoscroll on user scroll, re-enable after inactivity, and show a "jump back" pill
         window.addEventListener('wheel', () => {
             autoScroll = false;
-            // Re-enable after 5 seconds of inactivity
+            if (lastActiveIndex >= 0) showResyncPill();
             clearTimeout(window.scrollTimeout);
-            window.scrollTimeout = setTimeout(() => { autoScroll = true; }, 5000);
-        });
+            window.scrollTimeout = setTimeout(() => { autoScroll = true; hideResyncPill(); }, 5000);
+        }, { passive: true });
+
+        window.addEventListener('touchmove', () => {
+            autoScroll = false;
+            if (lastActiveIndex >= 0) showResyncPill();
+            clearTimeout(window.scrollTimeout);
+            window.scrollTimeout = setTimeout(() => { autoScroll = true; hideResyncPill(); }, 5000);
+        }, { passive: true });
 
         function loop() {
             if (spotifyManager.isPlaying) {

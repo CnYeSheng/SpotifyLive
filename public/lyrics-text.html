@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -16,18 +16,22 @@
         }
 
         :root {
-            --background-primary: #000000;
-            --text-primary: #FFFFFF;
-            --text-tertiary: rgba(255, 255, 255, 0.6);
-            --spotify-green: #1ed760;
+            --text: #ffffff;
+            --text-dim: rgba(255, 255, 255, 0.55);
+            --accent: #1ed760;
         }
 
+        * { box-sizing: border-box; }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+        }
+
+        html, body { margin: 0; padding: 0; background: transparent; }
+
         body {
-            margin: 0;
-            padding: 0;
-            font-family: 'Spotify Mix', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--background-primary);
-            color: var(--text-primary);
+            font-family: 'Spotify Mix', 'Inter', -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--text);
             overflow: hidden;
             display: flex;
             align-items: center;
@@ -35,7 +39,7 @@
             height: 100vh;
             width: 100vw;
         }
-        
+
         .lyrics-content {
             width: 100%;
             text-align: center;
@@ -48,31 +52,35 @@
         }
 
         .lyrics-line {
-            padding: 16px 0;
-            font-size: 48px;
+            padding: 14px 0;
+            font-size: clamp(30px, 6vw, 48px);
             line-height: 1.4;
             color: rgba(255, 255, 255, 0.5);
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1), transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
             font-weight: 700;
             letter-spacing: -0.02em;
             display: none;
+            opacity: 0;
+            transform: translateY(6px);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
             max-width: 100vw;
             width: 100%;
-            text-align: center;
             box-sizing: border-box;
             padding-left: 20px;
             padding-right: 20px;
+            text-shadow: 0 2px 20px rgba(0,0,0,0.55);
         }
 
         .lyrics-line.current {
             display: block;
+            opacity: 1;
+            transform: translateY(0);
             color: #fff;
         }
-        
-        /* Word-by-word karaoke effect */
+
+        /* Word-by-word karaoke fill effect */
         .lyrics-line .lyric-word {
             display: inline-block;
             border-radius: 4px;
@@ -89,7 +97,7 @@
         }
 
         .lyrics-line.current .lyric-word {
-            opacity: 0.6;
+            opacity: 0.55;
             transform: scale(1);
         }
 
@@ -98,9 +106,9 @@
             transform: scale(1.05);
             font-weight: 700;
             z-index: 2;
-            
-            background-image: linear-gradient(90deg, 
-                var(--spotify-green) var(--word-progress, 0%), 
+
+            background-image: linear-gradient(90deg,
+                var(--accent) var(--word-progress, 0%),
                 rgba(255, 255, 255, 0.6) var(--word-progress, 0%)
             );
             background-size: 100% 100%;
@@ -109,28 +117,48 @@
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             color: transparent;
-            
-            text-shadow: 0 0 10px rgba(30, 215, 96, 0.3);
+
+            text-shadow: 0 0 12px rgba(30, 215, 96, 0.35);
         }
 
         .lyrics-line.current .lyric-word.finished {
             background: none;
-            color: var(--spotify-green);
-            -webkit-text-fill-color: var(--spotify-green);
+            color: var(--accent);
+            -webkit-text-fill-color: var(--accent);
             opacity: 1;
             transform: scale(1);
         }
 
         #status {
-            font-size: 1.5em;
-            opacity: 0.7;
+            font-size: 1.4em;
+            opacity: 0.65;
             color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
+
+        .spinner {
+            width: 20px; height: 20px;
+            border: 2.5px solid rgba(255,255,255,0.2);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            flex-shrink: 0;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .status-link {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 700;
+        }
+        .status-link:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
     <div id="lyrics-content" class="lyrics-content">
-        <div id="status">Waiting for music...</div>
+        <div id="status"><span class="spinner"></span>等待播放中...</div>
     </div>
 
     <script src="spotify-player-manager.js"></script>
@@ -154,22 +182,18 @@
                     document.getElementById('lyrics-content').innerHTML = '';
                 }
             }
-            // Cross-device settings sync: re-fetch when settings change
-            if (d.type === 'settings-sync') {
-                update();
-            }
+            if (d.type === 'settings-sync') update();
         };
 
-        // Connect SSE for real-time cross-device sync
-        if (spotifyManager.sessionId) {
+        if (spotifyManager.sessionId && typeof spotifyManager.connectSSE === 'function') {
             spotifyManager.connectSSE();
         }
 
-        // Update URL and local session when broadcasted
         spotifyManager.onSessionUpdate = (newId) => {
             const newUrl = new URL(window.location);
             newUrl.searchParams.set('sessionId', newId);
             window.history.pushState({}, '', newUrl);
+            update();
         };
 
         async function fetchLyrics(artist, title) {
@@ -217,18 +241,22 @@
             return data;
         }
 
+        function setStatus(text) {
+            document.getElementById('lyrics-content').innerHTML = `<div id="status">${text}</div>`;
+        }
+
         function renderLyrics(currentTime) {
             const container = document.getElementById('lyrics-content');
             const status = document.getElementById('status');
-            
+
             if (!lyricsData || lyricsData.length === 0) {
-                if(status) {
-                    status.innerText = "No lyrics found";
-                    status.style.display = 'block';
+                if (status) {
+                    status.innerText = '找不到歌詞';
+                    status.style.display = 'flex';
                 }
                 return;
             }
-            if(status) status.style.display = 'none';
+            if (status) status.style.display = 'none';
 
             let activeIndex = -1;
             if (isSynced) {
@@ -236,12 +264,10 @@
                     if (lyricsData[i].time <= currentTime) activeIndex = i;
                     else break;
                 }
-            } else {
-                if (spotifyManager.trackDuration > 0) {
-                    const progress = currentTime / spotifyManager.trackDuration;
-                    activeIndex = Math.floor(progress * lyricsData.length);
-                    activeIndex = Math.max(0, Math.min(activeIndex, lyricsData.length - 1));
-                }
+            } else if (spotifyManager.trackDuration > 0) {
+                const progress = currentTime / spotifyManager.trackDuration;
+                activeIndex = Math.floor(progress * lyricsData.length);
+                activeIndex = Math.max(0, Math.min(activeIndex, lyricsData.length - 1));
             }
 
             const existingLines = document.getElementsByClassName('lyrics-line');
@@ -251,7 +277,7 @@
                     const div = document.createElement('div');
                     div.className = 'lyrics-line';
                     div.setAttribute('data-index', index);
-                    
+
                     if (line.words && line.words.length > 0) {
                         line.words.forEach((w) => {
                             const span = document.createElement('span');
@@ -281,7 +307,7 @@
                     words.forEach(word => {
                         const wordTime = parseInt(word.getAttribute('data-time'));
                         const duration = parseInt(word.getAttribute('data-duration')) || 0;
-                        
+
                         if (currentTime >= wordTime) {
                             word.classList.add('active');
                             if (duration > 0) {
@@ -306,37 +332,41 @@
         }
 
         async function update() {
-            const trackData = await spotifyManager.fetchCurrentTrack();
-            
+            let trackData;
+            try {
+                trackData = await spotifyManager.fetchCurrentTrack();
+            } catch (e) {
+                trackData = null;
+            }
+
             if (trackData && trackData.error === 'unauthorized') {
                 document.getElementById('lyrics-content').innerHTML = `
-                    <div id="status" style="color: #ff6b6b; font-size: 1.2em;">
-                        Session expired.<br>
-                        <span style="font-size: 0.8em; opacity: 0.8;">Attempting to reconnect...</span><br>
-                        <a href="/api/force-relogin" target="_blank" style="
+                    <div id="status" style="color: #ff6b6b; font-size: 1.2em; flex-direction: column;">
+                        連線階段已過期<br>
+                        <span style="font-size: 0.7em; opacity: 0.8;">正在嘗試重新連線...</span>
+                        <a href="/api/force-relogin" target="_blank" class="status-link" style="
                             display: inline-block;
-                            margin-top: 15px;
+                            margin-top: 8px;
                             padding: 8px 20px;
-                            background: #1ed760;
-                            color: white;
-                            text-decoration: none;
+                            background: var(--accent);
+                            color: #04150a;
                             border-radius: 20px;
                             font-size: 0.7em;
-                            font-weight: bold;
+                            font-weight: 700;
                             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                        ">Login Again</a>
+                        ">重新登入</a>
                     </div>
                 `;
                 setTimeout(() => spotifyManager.fetchSessionId(true), 2000);
                 return;
             }
-            
+
             if (trackData && (trackData.isPlaying || trackData.name)) {
                 lyricsOffset = trackData.lyricsOffset || 0;
                 const serverManualLyrics = trackData.manualLyrics;
 
                 let shouldFetchLyrics = false;
-                let fetchMode = 'auto'; 
+                let fetchMode = 'auto';
 
                 if (trackData.id !== currentTrackId) {
                     currentTrackId = trackData.id;
@@ -359,8 +389,8 @@
 
                 if (shouldFetchLyrics) {
                     lyricsData = [];
-                    document.getElementById('lyrics-content').innerHTML = '<div id="status">Loading lyrics...</div>';
-                    
+                    setStatus('<span class="spinner"></span>載入歌詞中...');
+
                     let lrc;
                     if (fetchMode === 'manual' && serverManualLyrics) {
                         lrc = await fetchManualLyrics(serverManualLyrics.source, serverManualLyrics.id);
@@ -373,14 +403,17 @@
                         isSynced = lrc.type === 'synced';
                         document.getElementById('lyrics-content').innerHTML = '';
                     } else {
-                        document.getElementById('lyrics-content').innerHTML = '<div id="status">No lyrics available</div>';
+                        lyricsData = [];
+                        setStatus('尚無歌詞');
                     }
                 }
             } else {
-                document.getElementById('lyrics-content').innerHTML = '<div id="status">Paused / No Music</div>';
+                lyricsData = [];
+                currentTrackId = null;
+                setStatus('已暫停播放');
             }
         }
-        
+
         function loop() {
             if (spotifyManager.isPlaying) {
                 renderLyrics(spotifyManager.getProjectedProgress() + lyricsOffset);
