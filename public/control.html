@@ -1142,27 +1142,65 @@
             if (e.key === 'Enter') { clearTimeout(searchDebounceTimer); searchLyrics(); }
         }
 
+        // 將「歌手 - 歌名」或「歌手 歌名」字串解析成 artist/title
+        // (邏輯與主頁面 lyrics-search.js 的解析方式一致，避免兩邊解析結果不同)
+        function parseArtistTitle(query) {
+            let artist = '', title = '';
+            if (query.includes(' - ')) {
+                const parts = query.split(' - ');
+                artist = parts[0].trim();
+                title = parts.slice(1).join(' - ').trim();
+            } else if (query.includes('-')) {
+                const parts = query.split('-');
+                artist = parts[0].trim();
+                title = parts.slice(1).join('-').trim();
+            } else {
+                const parts = query.trim().split(/\s+/);
+                if (parts.length >= 2) {
+                    artist = parts[0].trim();
+                    title = parts.slice(1).join(' ').trim();
+                } else {
+                    title = query.trim();
+                }
+            }
+            if (!title) title = query.trim();
+            return { artist, title };
+        }
+
         async function searchLyrics() {
             const query = document.getElementById('search-query').value;
             if (!query) return;
             const container = document.getElementById('search-results');
             container.innerHTML = `<div class="empty-state"><span class="spinner"></span>搜尋中...</div>`;
             try {
-                const res = await fetch(`${spotifyManager.API_BASE}/search-lyrics/${encodeURIComponent(query)}`);
+                const { artist, title } = parseArtistTitle(query);
+                // 🔧 修正：原本呼叫的 /search-lyrics/:query 端點不存在於後端，
+                // 這裡改成主頁面實際在用、真的存在的多供應商搜尋端點
+                const res = await fetch(
+                    `${spotifyManager.API_BASE}/lyrics-search-multi/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`
+                );
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
-                if (data.success && data.results?.length > 0) {
+                const results = (data.results || []).filter(r => r.success !== false && r.lyrics?.length > 0);
+
+                if (data.success && results.length > 0) {
                     container.innerHTML = '';
-                    data.results.forEach(r => {
+                    results.forEach(r => {
+                        const isWbw = r.lyrics.some(line => line.words && line.words.length > 0);
+                        const isSynced = r.type === 'synced' || (r.lyrics[0] && r.lyrics[0].time !== undefined);
+                        const typeLabel = isWbw ? '逐字歌詞' : (isSynced ? '同步歌詞' : '純文本');
+                        const providerName = r.provider || r.source || 'Unknown';
+
                         const div = document.createElement('div');
                         div.className = 'result-item';
                         div.innerHTML = `
                             <div class="result-info">
-                                <div class="result-title">${escapeHtml(r.title)}</div>
-                                <div class="result-meta"><span class="source-tag">${escapeHtml(r.source)}</span><span>${escapeHtml(r.artist)}</span></div>
+                                <div class="result-title">${escapeHtml(r.title || title)}</div>
+                                <div class="result-meta"><span class="source-tag">${escapeHtml(providerName)}</span><span>${escapeHtml(r.artist || artist)} · ${escapeHtml(typeLabel)}</span></div>
                             </div>
                             <button class="btn btn-primary btn-sm">選擇</button>
                         `;
-                        div.querySelector('button').addEventListener('click', () => selectLyrics(r.id, r.source, r.title, r.artist, div));
+                        div.querySelector('button').addEventListener('click', () => selectLyrics(r, div));
                         container.appendChild(div);
                     });
                 } else {
@@ -1179,13 +1217,26 @@
             return div.innerHTML;
         }
 
-        async function selectLyrics(id, source, title, artist, el) {
-            const data = await spotifyManager.sendControl('/control/manual-lyrics', { id, source, title, artist });
+        async function selectLyrics(result, el) {
+            const providerName = result.provider || result.source || 'manual';
+            const syncId = `${result.title || ''}-${result.artist || ''}`;
+            // 🔧 修正：把完整歌詞內容一起送出去，而不是只送一個容易對不上的 id，
+            // 這樣其他裝置（主頁面、疊加層頁面）才能直接顯示，不需要再反查一次
+            const data = await spotifyManager.sendControl('/control/manual-lyrics', {
+                id: syncId,
+                source: providerName,
+                title: result.title,
+                artist: result.artist,
+                lyrics: result.lyrics,
+                lyricsType: result.type || 'plain'
+            });
             if (data && data.success) {
-                spotifyManager.broadcast('control-sync', { manualLyrics: { id, source, title, artist } });
+                spotifyManager.broadcast('control-sync', {
+                    manualLyrics: { id: syncId, source: providerName, title: result.title, artist: result.artist, lyrics: result.lyrics, lyricsType: result.type || 'plain' }
+                });
                 document.querySelectorAll('.result-item.selected').forEach(n => n.classList.remove('selected'));
                 if (el) el.classList.add('selected');
-                showToast(`已選用來自 ${source} 的歌詞`);
+                showToast(`已選用來自 ${providerName} 的歌詞`);
                 update();
             } else {
                 showToast('選擇歌詞失敗', 'error');

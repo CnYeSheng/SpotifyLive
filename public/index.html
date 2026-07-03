@@ -629,8 +629,8 @@
     <script src="opencc.js"></script>
     
     <!-- 新增功能模塊 -->
-    <script src="js/modules/theme-manager.js"></script>
-    <script src="js/modules/mobile-optimizer.js"></script>
+    <!-- theme-manager.js 與 mobile-optimizer.js 已依需求移除：
+         styles.css 已有自己的 :root 變數與 fallback 值，不受影響 -->
     
     <script src="enhanced-session-manager.js"></script>
     <script src="script.js"></script>
@@ -703,7 +703,8 @@
                     this.saveLyricsTimeAdjustment(this.currentTrack, this.lyricsTimeOffset);
                 }
                 
-                this.updateLyricsHighlight();
+                // 🔧 修正：帶入目前進度+偏移量，讓調整立即生效（無論播放中或暫停）
+                this.updateLyricsHighlight(this.getCurrentProgress() + this.lyricsTimeOffset);
                 this.showOffsetMessage();
             };
             
@@ -731,7 +732,8 @@
                     this.saveTimeAdjustmentsToStorage();
                 }
                 
-                this.updateLyricsHighlight();
+                // 🔧 修正：帶入目前進度+偏移量（此時為0），讓重置立即生效
+                this.updateLyricsHighlight(this.getCurrentProgress() + this.lyricsTimeOffset);
                 this.showOffsetMessage();
             };
         }
@@ -755,6 +757,10 @@
                                     source: source.source || 'manual',
                                     title: source.title,
                                     artist: source.artist,
+                                    // 🔧 修正：把實際歌詞內容一併送出，其他裝置才能直接顯示，
+                                    // 不需要再用這個臨時拼湊出來的 id 去反查（那個反查常常對不上而失敗）
+                                    lyrics: lyrics,
+                                    lyricsType: lyricsType,
                                     sessionId: this.sessionId 
                                 })
                             }).catch(e => console.error('同步手动歌词失敗:', e));
@@ -853,7 +859,8 @@
                             this.log(`🔄 從同步伺服器接收到新的時間偏移: ${track.lyricsOffset}ms`);
                             this.lyricsTimeOffset = track.lyricsOffset;
                             this.updateOffsetDisplay();
-                            this.updateLyricsHighlight();
+                            // 🔧 修正：帶入目前進度+偏移量，讓其他裝置同步過來的偏移立即生效
+                            this.updateLyricsHighlight(this.getCurrentProgress() + this.lyricsTimeOffset);
                         }
 
                         // 同步手动指定的歌词
@@ -897,6 +904,16 @@
             // 辅助函数：主页面根据服务器指令获取并切换歌词
             window.player.fetchManualLyricsFromServer = async function(manualData) {
                 try {
+                    // 🔧 修正：如果同步過來的資料已經帶有完整歌詞內容，直接使用，
+                    // 不需要再用 id 去反查（反查常常因為 id 對不上真正的供應商 ID 而失敗）
+                    if (manualData && manualData.lyrics && Array.isArray(manualData.lyrics) && manualData.lyrics.length > 0) {
+                        this.overrideLyrics(manualData.lyrics, manualData.lyricsType || 'plain', {
+                            ...manualData,
+                            appliedAt: Date.now()
+                        });
+                        return;
+                    }
+
                     // 防禦性檢查：避免無效 ID 導致的請求循環
                     if (!manualData || !manualData.id || manualData.id === 'undefined' || manualData.id === 'null') {
                         this.log('⚠️ 同步手動歌詞：無效的 ID，跳過獲取');

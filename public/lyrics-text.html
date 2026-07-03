@@ -392,7 +392,10 @@
                     setStatus('<span class="spinner"></span>載入歌詞中...');
 
                     let lrc;
-                    if (fetchMode === 'manual' && serverManualLyrics) {
+                    if (fetchMode === 'manual' && serverManualLyrics && Array.isArray(serverManualLyrics.lyrics) && serverManualLyrics.lyrics.length > 0) {
+                        // 🔧 修正：伺服器已經帶有完整歌詞內容，直接使用
+                        lrc = { success: true, lyrics: serverManualLyrics.lyrics, type: serverManualLyrics.lyricsType || 'plain' };
+                    } else if (fetchMode === 'manual' && serverManualLyrics) {
                         lrc = await fetchManualLyrics(serverManualLyrics.source, serverManualLyrics.id);
                     } else {
                         lrc = await fetchLyrics(trackData.artist, trackData.name);

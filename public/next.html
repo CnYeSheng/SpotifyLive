@@ -264,9 +264,15 @@
                 if (shouldFetchLyrics) {
                     lyricsData = [];
                     setStatus('<span class="spinner"></span>載入中...');
-                    let lrc = fetchMode === 'manual'
-                        ? await fetchManualLyrics(serverManualLyrics.source, serverManualLyrics.id)
-                        : await fetchLyrics(trackData.artist, trackData.name);
+                    let lrc;
+                    if (fetchMode === 'manual' && serverManualLyrics && Array.isArray(serverManualLyrics.lyrics) && serverManualLyrics.lyrics.length > 0) {
+                        // 🔧 修正：伺服器已經帶有完整歌詞內容，直接使用
+                        lrc = { success: true, lyrics: serverManualLyrics.lyrics, type: serverManualLyrics.lyricsType || 'plain' };
+                    } else if (fetchMode === 'manual') {
+                        lrc = await fetchManualLyrics(serverManualLyrics.source, serverManualLyrics.id);
+                    } else {
+                        lrc = await fetchLyrics(trackData.artist, trackData.name);
+                    }
                     if (lrc && lrc.success) {
                         lyricsData = lrc.lyrics;
                         isSynced = lrc.type === 'synced';

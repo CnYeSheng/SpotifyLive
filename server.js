@@ -970,11 +970,19 @@ app.post('/api/control/manual-lyrics', async (req, res) => {
         return res.status(400).json({ error: 'No active track found to apply manual lyrics' });
     }
 
-    const { id, source, title, artist } = req.body;
+    const { id, source, title, artist, lyrics, lyricsType } = req.body;
     
     let manualLyricsData = null;
     if (id && source) {
         manualLyricsData = { id, source, title, artist };
+        // 🔧 修正：如果客戶端已經把完整歌詞內容一併送過來，直接存起來。
+        // 這樣其他裝置輪詢 /api/current-track 時可以直接拿到內容顯示，
+        // 不需要再用 id 去 /api/get-lyrics/:source/:id 反查——這個反查
+        // 只支援 wmcc.jp.eu.org 和 Lrclib 兩種來源，對其他供應商一定會失敗。
+        if (Array.isArray(lyrics) && lyrics.length > 0) {
+            manualLyricsData.lyrics = lyrics;
+            manualLyricsData.lyricsType = lyricsType || 'plain';
+        }
     }
     
     session.manualLyrics = manualLyricsData;
@@ -3410,6 +3418,7 @@ app.get('/api/get-lyrics/:source/:id', async (req, res) => {
         console.log(`🎤 獲取歌詞: ${source} - ${id}`);
         
         let lyricsUrl;
+        const multiProviders = ['Musixmatch', 'NetEase', 'QQMusic', 'Kugou', 'Genius'];
         if (source === 'wmcc.jp.eu.org') {
             // 如果ID是title-artist格式，需要解析
             const parts = decodeURIComponent(id).split('-');
@@ -3422,6 +3431,13 @@ app.get('/api/get-lyrics/:source/:id', async (req, res) => {
             }
         } else if (source === 'Lrclib') {
             lyricsUrl = `https://lrclib.net/api/get/${encodeURIComponent(id)}`;
+        } else if (multiProviders.includes(source)) {
+            // 🔧 修正：支援 /api/lyrics-search-multi 回傳的供應商名稱，
+            // id 是「title-artist」拼出來的字串，這裡解析回去後用該供應商重新查詢
+            const parts = decodeURIComponent(id).split('-');
+            const title = parts.length >= 2 ? parts.slice(0, -1).join('-') : decodeURIComponent(id);
+            const artist = parts.length >= 2 ? parts[parts.length - 1] : '';
+            lyricsUrl = `${LYRICS_API_URL}/api/lyrics/${encodeURIComponent(title)}/${encodeURIComponent(artist)}?p=${source}`;
         } else {
             throw new Error('不支援的歌詞來源');
         }
