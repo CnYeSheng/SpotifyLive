@@ -721,7 +721,8 @@
                             'Content-Type': 'application/json',
                             'X-Session-Id': this.sessionId
                         },
-                        body: JSON.stringify({ sessionId: this.sessionId })
+                        // 🔧 修正：帶上 trackId，避免伺服器端快取被清空時找不到目前歌曲而回傳 400
+                        body: JSON.stringify({ sessionId: this.sessionId, trackId: this.currentTrack?.id })
                     }).catch(e => console.error('同步重置失敗:', e));
                 }
                 // -------------------------------
@@ -761,7 +762,9 @@
                                     // 不需要再用這個臨時拼湊出來的 id 去反查（那個反查常常對不上而失敗）
                                     lyrics: lyrics,
                                     lyricsType: lyricsType,
-                                    sessionId: this.sessionId 
+                                    sessionId: this.sessionId,
+                                    // 🔧 修正：帶上 trackId，避免伺服器端快取被清空時找不到目前歌曲而回傳 400
+                                    trackId: this.currentTrack?.id
                                 })
                             }).catch(e => console.error('同步手动歌词失敗:', e));
                         }

@@ -920,14 +920,16 @@ app.post('/api/control/offset', async (req, res) => {
     const session = await getUserSession(req);
     if (!session) return res.status(401).json({ error: 'Not authenticated' });
     
-    // We need the current track ID to save settings for it.
-    // Try to get it from cache first, otherwise we might need to fetch it (or frontend sends it)
-    let trackId = null;
-    if (session.currentTrackCache && session.currentTrackCache.data) {
+    // 🔧 修正：優先使用前端直接送來的 trackId。
+    // 原本完全依賴 session.currentTrackCache，但這個快取會被同一支 API
+    // 自己呼叫的 invalidateUserCache() 清空——連續快速調整偏移量時，
+    // 第一次呼叫成功後快取就被清掉，第二次呼叫馬上就會因為找不到
+    // trackId 而回傳 400，這就是「調整歌詞時間偶爾會出現 400」的原因。
+    let trackId = req.body.trackId || null;
+    if (!trackId && session.currentTrackCache && session.currentTrackCache.data) {
         trackId = session.currentTrackCache.data.id;
     }
 
-    // Ideally frontend should send trackId to avoid ambiguity, but for now we use cached
     if (!trackId) {
         return res.status(400).json({ error: 'No active track found to apply offset' });
     }
@@ -961,8 +963,9 @@ app.post('/api/control/manual-lyrics', async (req, res) => {
     const session = await getUserSession(req);
     if (!session) return res.status(401).json({ error: 'Not authenticated' });
     
-    let trackId = null;
-    if (session.currentTrackCache && session.currentTrackCache.data) {
+    // 🔧 修正：同 /api/control/offset，優先使用前端送來的 trackId
+    let trackId = req.body.trackId || null;
+    if (!trackId && session.currentTrackCache && session.currentTrackCache.data) {
         trackId = session.currentTrackCache.data.id;
     }
 
@@ -1012,8 +1015,9 @@ app.post('/api/control/reset', async (req, res) => {
     const session = await getUserSession(req);
     if (!session) return res.status(401).json({ error: 'Not authenticated' });
     
-    let trackId = null;
-    if (session.currentTrackCache && session.currentTrackCache.data) {
+    // 🔧 修正：同上，優先使用前端送來的 trackId
+    let trackId = req.body.trackId || null;
+    if (!trackId && session.currentTrackCache && session.currentTrackCache.data) {
         trackId = session.currentTrackCache.data.id;
     }
 

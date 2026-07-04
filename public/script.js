@@ -281,20 +281,52 @@ class SpotifyLyricsPlayer {
 
     // Connect SSE for real-time cross-device settings sync
     connectSSEForSync() {
-        if (!window.spotifyManager) return;
-        
-        window.spotifyManager.onSettingsChanged = (version) => {
-            this.log(`📡 SSE: 設定已變更 (v${version})，立即同步...`);
-            this.checkCurrentTrack(); // Bypass rate limit
-        };
+        if (!this.sessionId) return;
 
-        window.spotifyManager.onSyncEvent = (event) => {
-            this.log(`📡 SSE: 收到即時同步事件:`, event);
-            this.applySyncEvent(event);
-        };
-        
-        window.spotifyManager.connectSSE();
-        this.log('📡 SSE 連接已啟動');
+        // 🔧 修正：原本這裡完全依賴 window.spotifyManager，但 index.html
+        // 根本沒有載入定義它的 spotify-player-manager.js（只有 control.html、
+        // lyrics.html 等疊加頁面才有載入），所以 window.spotifyManager 在主頁面
+        // 永遠是 undefined，這個函式一開始就 return 了——主頁面從來沒有真正
+        // 建立過 SSE 連線！這就是「control 改了、index 沒更新」的根本原因，
+        // 之前只能靠輪詢自然抓到變更，速度慢很多。這裡改成主頁面自己直接
+        // 建立 EventSource 連線，不再依賴那個不存在的物件。
+        if (this._sseSource) {
+            try { this._sseSource.close(); } catch (e) { /* 忽略 */ }
+        }
+
+        try {
+            const url = `/api/events?sessionId=${encodeURIComponent(this.sessionId)}`;
+            const source = new EventSource(url);
+            this._sseSource = source;
+
+            source.onopen = () => {
+                this.log('📡 SSE 連線已建立');
+            };
+
+            source.onmessage = (ev) => {
+                try {
+                    const data = JSON.parse(ev.data);
+                    if (data.type === 'settings-changed') {
+                        this.log(`📡 SSE: 設定已變更 (v${data.version})，立即同步...`);
+                        this.checkCurrentTrack(); // Bypass rate limit
+                    } else if (data.type === 'sync-event') {
+                        this.log(`📡 SSE: 收到即時同步事件:`, data.event);
+                        this.applySyncEvent(data.event);
+                    }
+                } catch (e) {
+                    this.log(`❌ SSE 訊息解析失敗: ${e.message}`);
+                }
+            };
+
+            source.onerror = () => {
+                // 瀏覽器原生 EventSource 會自動重連，這裡只記錄不需要手動處理
+                this.log('⚠️ SSE 連線中斷，瀏覽器將自動重連...');
+            };
+
+            this.log('📡 SSE 連接已啟動');
+        } catch (e) {
+            this.log(`❌ 無法建立 SSE 連線: ${e.message}`);
+        }
     }
 
     getCurrentProgress() {

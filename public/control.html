@@ -1206,19 +1206,20 @@
         }
 
         async function setOffset(offset) {
-            const data = await spotifyManager.sendControl('/control/offset', { offset });
+            // 🔧 修正：帶上 trackId，避免伺服器端快取被清空時找不到目前歌曲而回傳 400
+            const data = await spotifyManager.sendControl('/control/offset', { offset, trackId: currentTrackId });
             if (data && data.success) {
                 currentOffset = offset;
                 spotifyManager.broadcast('control-sync', { lyricsOffset: currentOffset });
                 updateOffsetUI();
                 showToast(`歌詞偏移已設為 ${currentOffset}ms`);
             } else {
-                showToast('設定偏移失敗', 'error');
+                showToast(data && data.error === 'No active track found to apply offset' ? '目前沒有偵測到播放中的歌曲' : '設定偏移失敗', 'error');
             }
         }
 
         async function resetAll() {
-            const data = await spotifyManager.sendControl('/control/reset');
+            const data = await spotifyManager.sendControl('/control/reset', { trackId: currentTrackId });
             if (data && data.success) {
                 spotifyManager.broadcast('control-sync', { lyricsOffset: 0, manualLyrics: null });
                 showToast('已重設所有設定');
@@ -1345,15 +1346,17 @@
         async function selectLyrics(result, el) {
             const providerName = result.provider || result.source || 'manual';
             const syncId = `${result.title || ''}-${result.artist || ''}`;
-            // 🔧 修正：把完整歌詞內容一起送出去，而不是只送一個容易對不上的 id，
-            // 這樣其他裝置（主頁面、疊加層頁面）才能直接顯示，不需要再反查一次
+            // 🔧 修正：把完整歌詞內容跟 trackId 一起送出去。
+            // trackId 是為了避免伺服器端快取被清空時找不到目前歌曲而回傳 400；
+            // 歌詞內容則是讓其他裝置（主頁面、疊加層頁面）能直接顯示，不需要再反查一次
             const data = await spotifyManager.sendControl('/control/manual-lyrics', {
                 id: syncId,
                 source: providerName,
                 title: result.title,
                 artist: result.artist,
                 lyrics: result.lyrics,
-                lyricsType: result.type || 'plain'
+                lyricsType: result.type || 'plain',
+                trackId: currentTrackId
             });
             if (data && data.success) {
                 spotifyManager.broadcast('control-sync', {
@@ -1364,7 +1367,7 @@
                 showToast(`已選用來自 ${providerName} 的歌詞`);
                 update();
             } else {
-                showToast('選擇歌詞失敗', 'error');
+                showToast(data && data.error === 'No active track found to apply manual lyrics' ? '目前沒有偵測到播放中的歌曲' : '選擇歌詞失敗', 'error');
             }
         }
 
