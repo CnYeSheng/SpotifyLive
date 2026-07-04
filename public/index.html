@@ -861,12 +861,20 @@
                             this.updateOffsetDisplay();
                             // 🔧 修正：帶入目前進度+偏移量，讓其他裝置同步過來的偏移立即生效
                             this.updateLyricsHighlight(this.getCurrentProgress() + this.lyricsTimeOffset);
+                            // 🔧 新增：讓這台裝置的使用者知道是被其他裝置調整的
+                            // (SSE 已經即時處理過的話這裡數值會相同、不會重複顯示；這裡主要是 SSE 斷線時的備援)
+                            if (typeof this.formatOffsetToastMessage === 'function') {
+                                this.showRemoteControlToast(this.formatOffsetToastMessage(track.lyricsOffset));
+                            }
                         }
 
                         // 同步手动指定的歌词
                         if (track.manualLyrics && (!this.overriddenLyricsSource || this.overriddenLyricsSource.id !== track.manualLyrics.id)) {
                             this.log(`🔄 從同步伺服器接收到手動指定的歌詞: ${track.manualLyrics.source}`);
                             this.fetchManualLyricsFromServer(track.manualLyrics);
+                            if (typeof this.formatManualLyricsToastMessage === 'function') {
+                                this.showRemoteControlToast(this.formatManualLyricsToastMessage(track.manualLyrics));
+                            }
                         } else if (!track.manualLyrics && this.isLyricsOverridden && this.overriddenLyricsSource && this.overriddenLyricsSource.source !== 'auto_applied') {
                             // 如果服务器重置了手动歌词，主页面也应恢复自动模式
                             this.log(`🔄 同步伺服器已重置手動歌詞，恢復自動獲取`);
@@ -876,6 +884,9 @@
                                 this.checkCurrentTrackWithRateLimit();
                             } else {
                                 this.checkCurrentTrack();
+                            }
+                            if (typeof this.formatManualLyricsToastMessage === 'function') {
+                                this.showRemoteControlToast(this.formatManualLyricsToastMessage(null));
                             }
                         }
                     }

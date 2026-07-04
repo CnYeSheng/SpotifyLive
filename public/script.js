@@ -194,47 +194,64 @@ class SpotifyLyricsPlayer {
             this.controlChannel.onmessage = (ev) => {
                 const d = ev.data || {};
                 if (d.type === 'control-sync') {
-                    if (d.lyricsOffset !== undefined) {
-                        this.log(`🔄 接收控制偏移: ${d.lyricsOffset}ms`);
+                    const isReset = d.lyricsOffset !== undefined && d.manualLyrics !== undefined;
+
+                    if (isReset) {
+                        this.log(`🔄 接收重置設定（來自其他分頁）`);
                         this.lyricsTimeOffset = d.lyricsOffset;
                         this.updateOffsetDisplay();
-                        // 重新渲染歌詞以立即應用偏移
                         if (this.currentTrack && this.lyrics.length > 0) {
-                            // 🔧 修正：使用即時進度 + 偏移量，而非只傳入靜態 progress 快照
                             this.updateLyricsHighlight(this.getCurrentProgress() + this.lyricsTimeOffset);
                         }
-                    }
-                    if (d.manualLyrics !== undefined) {
-                        this.log(`🔄 接收手動歌詞更新`);
-                        this.checkCurrentTrackWithRateLimit(); // 強制重新檢查以加載新歌詞
-                    }
-                    if (d.type === 'seek-sync' && d.position_ms !== undefined) {
-                        this.log(`🔄 接收跳轉請求: ${d.position_ms}ms`);
-                        if (this.currentTrack) {
-                            this.currentTrack.progress = d.position_ms;
-                            this.lastCheckTime = d.timestamp || Date.now();
-                            // 立即重新渲染歌詞
-                            this.updateLyricsHighlight(d.position_ms);
+                        this.checkCurrentTrackWithRateLimit();
+                        this.showRemoteControlToast('其他分頁已重置所有歌詞設定');
+                    } else {
+                        if (d.lyricsOffset !== undefined) {
+                            this.log(`🔄 接收控制偏移: ${d.lyricsOffset}ms`);
+                            this.lyricsTimeOffset = d.lyricsOffset;
+                            this.updateOffsetDisplay();
+                            // 🔧 修正：使用即時進度 + 偏移量，而非只傳入靜態 progress 快照
+                            if (this.currentTrack && this.lyrics.length > 0) {
+                                this.updateLyricsHighlight(this.getCurrentProgress() + this.lyricsTimeOffset);
+                            }
+                            this.showRemoteControlToast(this.formatOffsetToastMessage(d.lyricsOffset));
+                        }
+                        if (d.manualLyrics !== undefined) {
+                            this.log(`🔄 接收手動歌詞更新`);
+                            this.checkCurrentTrackWithRateLimit(); // 強制重新檢查以加載新歌詞
+                            this.showRemoteControlToast(this.formatManualLyricsToastMessage(d.manualLyrics));
                         }
                     }
-                    if (d.type === 'playback-sync' && d.isPlaying !== undefined) {
-                        this.log(`🔄 接收播放狀態更新: ${d.isPlaying ? '播放' : '暫停'}`);
-                        if (this.currentTrack) {
-                            this.currentTrack.isPlaying = d.isPlaying;
-                            if (d.lastProgress !== undefined) this.currentTrack.progress = d.lastProgress;
-                            this.lastCheckTime = d.timestamp || Date.now();
-                        }
+                } else if (d.type === 'seek-sync' && d.position_ms !== undefined) {
+                    // 🔧 修正：原本這幾個分支被誤放在 control-sync 判斷式裡面，
+                    // d.type 不可能同時是 'control-sync' 又是 'seek-sync'，導致這裡永遠執行不到
+                    this.log(`🔄 接收跳轉請求: ${d.position_ms}ms`);
+                    if (this.currentTrack) {
+                        this.currentTrack.progress = d.position_ms;
+                        this.currentTrack.lastUpdated = Date.now();
+                        this.lastCheckTime = d.timestamp || Date.now();
+                        this.updateLyricsHighlight(d.position_ms + this.lyricsTimeOffset);
+                        this.updateProgress();
                     }
-                    if (d.type === 'lyrics-sync' && d.lyrics) {
-                        this.log(`🔄 接收歌詞數據同步: ${d.lyrics.length} 行`);
-                        if (this.currentTrack && d.trackId === this.currentTrack.id) {
-                            this.lyrics = d.lyrics;
-                            this.lyricsType = d.lyricsType || 'plain';
-                            this.currentLyricIndex = 0;
-                            this.isLyricsOverridden = true;
-                            // 立即更新顯示
-                            this.displayLyrics();
-                        }
+                } else if (d.type === 'playback-sync' && d.isPlaying !== undefined) {
+                    this.log(`🔄 接收播放狀態更新: ${d.isPlaying ? '播放' : '暫停'}`);
+                    if (this.currentTrack) {
+                        this.currentTrack.isPlaying = d.isPlaying;
+                        if (d.lastProgress !== undefined) this.currentTrack.progress = d.lastProgress;
+                        this.currentTrack.lastUpdated = Date.now();
+                        this.lastCheckTime = d.timestamp || Date.now();
+                        this.updateProgress();
+                    }
+                } else if (d.type === 'lyrics-sync' && d.lyrics) {
+                    this.log(`🔄 接收歌詞數據同步: ${d.lyrics.length} 行`);
+                    if (this.currentTrack && d.trackId === this.currentTrack.id) {
+                        this.lyrics = d.lyrics;
+                        this.lyricsType = d.lyricsType || 'plain';
+                        this.currentLyricIndex = 0;
+                        this.isLyricsOverridden = true;
+                        // 立即更新顯示
+                        this.displayLyrics();
+                        this.updateLyricsHighlight(this.getCurrentProgress() + this.lyricsTimeOffset);
                     }
                 }
             };
@@ -293,17 +310,33 @@ class SpotifyLyricsPlayer {
         if (!d) return;
         
         if (d.type === 'control-sync') {
-            if (d.lyricsOffset !== undefined) {
-                this.log(`🔄 應用控制偏移: ${d.lyricsOffset}ms`);
+            const isFromOtherDevice = d.senderSessionId && this.sessionId && d.senderSessionId !== this.sessionId;
+            const isReset = d.lyricsOffset !== undefined && d.manualLyrics !== undefined;
+
+            if (isReset) {
+                this.log(`🔄 應用重置設定（來自其他裝置的控制指令）`);
                 this.lyricsTimeOffset = d.lyricsOffset;
                 this.updateOffsetDisplay();
                 if (this.currentTrack && this.lyrics.length > 0) {
                     this.updateLyricsHighlight(this.getCurrentProgress() + this.lyricsTimeOffset);
                 }
-            }
-            if (d.manualLyrics !== undefined) {
-                this.log(`🔄 應用手動歌詞更新`);
-                this.checkCurrentTrack(); // 繞過限制，立即載入
+                this.checkCurrentTrack();
+                if (isFromOtherDevice) this.showRemoteControlToast('其他裝置已重置所有歌詞設定');
+            } else {
+                if (d.lyricsOffset !== undefined) {
+                    this.log(`🔄 應用控制偏移: ${d.lyricsOffset}ms`);
+                    this.lyricsTimeOffset = d.lyricsOffset;
+                    this.updateOffsetDisplay();
+                    if (this.currentTrack && this.lyrics.length > 0) {
+                        this.updateLyricsHighlight(this.getCurrentProgress() + this.lyricsTimeOffset);
+                    }
+                    if (isFromOtherDevice) this.showRemoteControlToast(this.formatOffsetToastMessage(d.lyricsOffset));
+                }
+                if (d.manualLyrics !== undefined) {
+                    this.log(`🔄 應用手動歌詞更新`);
+                    this.checkCurrentTrack(); // 繞過限制，立即載入
+                    if (isFromOtherDevice) this.showRemoteControlToast(this.formatManualLyricsToastMessage(d.manualLyrics));
+                }
             }
         }
         if (d.type === 'seek-sync' && d.position_ms !== undefined) {
@@ -1560,6 +1593,26 @@ async initializeStorage() {
                 }
             }, 300);
         }, 3000);
+    }
+
+    // 🔧 新增：當這台裝置被「其他裝置」遙控時顯示提示，讓正在看畫面的人知道發生了什麼事
+    // (與本機自己操作時的 showOffsetMessage/showSuccessMessage 區隔開，加上手機圖示前綴)
+    showRemoteControlToast(message) {
+        this.showSuccessMessage(`📱 ${message}`);
+    }
+
+    formatOffsetToastMessage(offset) {
+        return offset === 0
+            ? '其他裝置已將歌詞時間重置'
+            : `其他裝置已將歌詞${offset > 0 ? '延後' : '提前'} ${Math.abs(offset / 1000).toFixed(1)} 秒`;
+    }
+
+    formatManualLyricsToastMessage(manualLyrics) {
+        if (!manualLyrics) return '其他裝置已切換回自動歌詞';
+        const label = manualLyrics.title
+            ? `${manualLyrics.title}${manualLyrics.artist ? ' - ' + manualLyrics.artist : ''}`
+            : (manualLyrics.source || '手動歌詞');
+        return `其他裝置已切換歌詞來源：${label}`;
     }
 
     initializeElements() {

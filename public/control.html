@@ -736,6 +736,9 @@
                     <div class="track-title-row">
                         <div id="track-title" class="track-title">等待播放中...</div>
                         <div class="meta-actions">
+                            <button class="icon-btn" id="like-btn" title="收藏這首歌" onclick="toggleLike()">
+                                <svg id="like-icon" viewBox="0 0 24 24"><path d="M12 21s-6.7-4.35-9.3-8.2C1.1 10.5 1.6 7.3 4.2 5.6c2.2-1.4 4.9-.9 6.4 1 .5.6 1 1.4 1.4 2 .4-.6.9-1.4 1.4-2 1.5-1.9 4.2-2.4 6.4-1 2.6 1.7 3.1 4.9 1.5 7.2C18.7 16.65 12 21 12 21z" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                            </button>
                             <button class="icon-btn" id="copy-btn" title="複製「歌手 - 歌名」" onclick="copyTrackInfo()">
                                 <svg viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg>
                             </button>
@@ -790,6 +793,16 @@
                     </button>
                     <div class="vol-popover" id="vol-popover">
                         <input type="range" class="vol-slider" id="vol-slider" min="0" max="100" value="70" oninput="onVolumeInput(this.value)">
+                    </div>
+                </div>
+                <div class="vol-wrap">
+                    <button class="btn btn-ghost transport-icon" id="devices-btn" onclick="toggleDevicesPopover()" title="切換播放裝置">
+                        <svg viewBox="0 0 24 24"><path d="M4 6h16v10h-4v2h2v2H6v-2h2v-2H4V6zm2 2v6h12V8H6zm12 10.5V21h2v-2.5c0-.28-.22-.5-.5-.5h-1c-.28 0-.5.22-.5.5z"/></svg>
+                    </button>
+                    <div class="vol-popover" id="devices-popover" style="width: 220px;">
+                        <div id="devices-list" style="display:flex; flex-direction:column; gap:4px; max-height:200px; overflow-y:auto;">
+                            <div class="empty-state" style="padding:10px;">載入裝置中...</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -912,6 +925,107 @@
         }
 
         // ---------- Playback ----------
+        // ---------- Devices (switch playback device) ----------
+        async function loadDevices() {
+            const list = document.getElementById('devices-list');
+            list.innerHTML = '<div class="empty-state" style="padding:10px;"><span class="spinner"></span></div>';
+            try {
+                const res = await fetch(`${spotifyManager.API_BASE}/devices`, {
+                    headers: { 'X-Session-Id': spotifyManager.sessionId || '' }
+                });
+                const data = await res.json();
+                const devices = data.devices || [];
+                if (devices.length === 0) {
+                    list.innerHTML = '<div class="empty-state" style="padding:10px;">找不到可用裝置</div>';
+                    return;
+                }
+                list.innerHTML = '';
+                devices.forEach(d => {
+                    const btn = document.createElement('button');
+                    btn.className = 'btn btn-ghost';
+                    btn.style.cssText = 'justify-content:flex-start; width:100%; font-size:0.78rem; gap:8px;';
+                    if (d.is_active) btn.classList.add('on');
+                    btn.innerHTML = `<span style="flex:1; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(d.name)}</span><span style="color:var(--text-faint); font-size:0.66rem;">${escapeHtml(d.type || '')}</span>`;
+                    btn.onclick = () => selectDevice(d.id, d.name);
+                    list.appendChild(btn);
+                });
+            } catch (e) {
+                list.innerHTML = '<div class="empty-state" style="padding:10px;">載入裝置失敗</div>';
+            }
+        }
+
+        async function selectDevice(deviceId, deviceName) {
+            try {
+                const res = await fetch(`${spotifyManager.API_BASE}/player/transfer`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-Session-Id': spotifyManager.sessionId || '' },
+                    body: JSON.stringify({ device_ids: [deviceId], play: true })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(`已切換播放裝置：${deviceName}`);
+                    document.getElementById('devices-popover').classList.remove('open');
+                    setTimeout(update, 800);
+                } else {
+                    showToast('切換裝置失敗', 'error');
+                }
+            } catch (e) {
+                showToast('切換裝置失敗', 'error');
+            }
+        }
+
+        // ---------- Like / Unlike current track ----------
+        let currentTrackIsLiked = false;
+
+        function renderLikeIcon() {
+            const icon = document.getElementById('like-icon');
+            const path = icon.querySelector('path');
+            const btn = document.getElementById('like-btn');
+            if (currentTrackIsLiked) {
+                path.setAttribute('fill', 'var(--danger)');
+                path.setAttribute('stroke', 'var(--danger)');
+                btn.classList.add('on');
+            } else {
+                path.setAttribute('fill', 'none');
+                path.setAttribute('stroke', 'currentColor');
+                btn.classList.remove('on');
+            }
+        }
+
+        async function checkLikeStatus(trackId) {
+            if (!trackId) return;
+            try {
+                const res = await fetch(`${spotifyManager.API_BASE}/library/check/${trackId}`, {
+                    headers: { 'X-Session-Id': spotifyManager.sessionId || '' }
+                });
+                const data = await res.json();
+                currentTrackIsLiked = !!data.isLiked;
+                renderLikeIcon();
+            } catch (e) { /* 靜默失敗，保留上次狀態 */ }
+        }
+
+        async function toggleLike() {
+            if (!currentTrackId) return;
+            const endpoint = currentTrackIsLiked ? '/library/remove' : '/library/add';
+            try {
+                const res = await fetch(`${spotifyManager.API_BASE}${endpoint}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Session-Id': spotifyManager.sessionId || '' },
+                    body: JSON.stringify({ trackId: currentTrackId })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    currentTrackIsLiked = !currentTrackIsLiked;
+                    renderLikeIcon();
+                    showToast(currentTrackIsLiked ? '已加入收藏' : '已從收藏移除');
+                } else {
+                    showToast('操作失敗', 'error');
+                }
+            } catch (e) {
+                showToast('操作失敗', 'error');
+            }
+        }
+
         async function playbackControl(action) {
             const data = await spotifyManager.sendControl(`/playback/${action}`);
             if (data && (data.success || data.ok)) {
@@ -1042,11 +1156,22 @@
         }
 
         function toggleVolPopover() {
+            document.getElementById('devices-popover').classList.remove('open');
             document.getElementById('vol-popover').classList.toggle('open');
         }
+        function toggleDevicesPopover() {
+            document.getElementById('vol-popover').classList.remove('open');
+            const willOpen = !document.getElementById('devices-popover').classList.contains('open');
+            document.getElementById('devices-popover').classList.toggle('open');
+            if (willOpen) loadDevices();
+        }
+        // 🔧 修正：原本只抓第一個 .vol-wrap，加入裝置切換按鈕後需要涵蓋全部
         document.addEventListener('click', (e) => {
-            const wrap = document.querySelector('.vol-wrap');
-            if (wrap && !wrap.contains(e.target)) document.getElementById('vol-popover').classList.remove('open');
+            document.querySelectorAll('.vol-wrap').forEach(wrap => {
+                if (!wrap.contains(e.target)) {
+                    wrap.querySelectorAll('.vol-popover').forEach(p => p.classList.remove('open'));
+                }
+            });
         });
 
         const onVolumeInput = debounce(async (value) => {
@@ -1375,6 +1500,7 @@
                         setAmbient(data.image);
                     }
                     applyFollowForCurrentTrack();
+                    checkLikeStatus(data.id);
                 }
 
                 currentOffset = data.lyricsOffset || 0;
