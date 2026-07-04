@@ -3980,8 +3980,15 @@ async initializeStorage() {
             this.log(`🔄 偵測到來自伺服器的手動歌詞變更: ${data.manualLyrics.source}`);
             this.isLyricsOverridden = true;
             this.overriddenLyricsSource = data.manualLyrics;
-            // 重新加載歌詞
-            this.safeLyricsLoad();
+            // 🔧 修正：直接套用伺服器同步過來的完整歌詞內容（含逐字資料），
+            // 不要呼叫 safeLyricsLoad()——那個方法只會做「自動」歌詞搜尋，
+            // 完全不知道有手動選擇這回事，會把選好的逐字歌詞蓋掉，
+            // 改抓一個不相干、通常也不是逐字格式的自動結果回來。
+            if (typeof this.fetchManualLyricsFromServer === 'function') {
+                this.fetchManualLyricsFromServer(data.manualLyrics);
+            } else {
+                this.safeLyricsLoad();
+            }
         }
 
         const previousLyricsVersion = this.currentTrack?.lyricsVersion || 0;

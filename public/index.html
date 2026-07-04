@@ -856,29 +856,34 @@
             if (originalUpdateTrackInfo) {
                 window.player.updateTrackInfo = function(track) {
                     // --- 新增：从服务器同步状态 (来自 /control 的控制) ---
-                    if (track) {
+                    // 🔧 修正：processTrackData 呼叫 this.updateTrackInfo() 時從來不帶參數
+                    // （這是這個方法原本的設計——內部本來就是用 this.currentTrack），
+                    // 所以這裡如果依賴 track 參數，這整段同步邏輯永遠不會執行到。
+                    // 改成用 this.currentTrack，同時保留 track 參數以防萬一真的有傳入。
+                    const syncedTrack = track || this.currentTrack;
+                    if (syncedTrack) {
                         // 同步时间偏移
-                        if (typeof track.lyricsOffset !== 'undefined' && track.lyricsOffset !== this.lyricsTimeOffset) {
-                            this.log(`🔄 從同步伺服器接收到新的時間偏移: ${track.lyricsOffset}ms`);
-                            this.lyricsTimeOffset = track.lyricsOffset;
+                        if (typeof syncedTrack.lyricsOffset !== 'undefined' && syncedTrack.lyricsOffset !== this.lyricsTimeOffset) {
+                            this.log(`🔄 從同步伺服器接收到新的時間偏移: ${syncedTrack.lyricsOffset}ms`);
+                            this.lyricsTimeOffset = syncedTrack.lyricsOffset;
                             this.updateOffsetDisplay();
                             // 🔧 修正：帶入目前進度+偏移量，讓其他裝置同步過來的偏移立即生效
                             this.updateLyricsHighlight(this.getCurrentProgress() + this.lyricsTimeOffset);
                             // 🔧 新增：讓這台裝置的使用者知道是被其他裝置調整的
                             // (SSE 已經即時處理過的話這裡數值會相同、不會重複顯示；這裡主要是 SSE 斷線時的備援)
                             if (typeof this.formatOffsetToastMessage === 'function') {
-                                this.showRemoteControlToast(this.formatOffsetToastMessage(track.lyricsOffset));
+                                this.showRemoteControlToast(this.formatOffsetToastMessage(syncedTrack.lyricsOffset));
                             }
                         }
 
                         // 同步手动指定的歌词
-                        if (track.manualLyrics && (!this.overriddenLyricsSource || this.overriddenLyricsSource.id !== track.manualLyrics.id)) {
-                            this.log(`🔄 從同步伺服器接收到手動指定的歌詞: ${track.manualLyrics.source}`);
-                            this.fetchManualLyricsFromServer(track.manualLyrics);
+                        if (syncedTrack.manualLyrics && (!this.overriddenLyricsSource || this.overriddenLyricsSource.id !== syncedTrack.manualLyrics.id)) {
+                            this.log(`🔄 從同步伺服器接收到手動指定的歌詞: ${syncedTrack.manualLyrics.source}`);
+                            this.fetchManualLyricsFromServer(syncedTrack.manualLyrics);
                             if (typeof this.formatManualLyricsToastMessage === 'function') {
-                                this.showRemoteControlToast(this.formatManualLyricsToastMessage(track.manualLyrics));
+                                this.showRemoteControlToast(this.formatManualLyricsToastMessage(syncedTrack.manualLyrics));
                             }
-                        } else if (!track.manualLyrics && this.isLyricsOverridden && this.overriddenLyricsSource && this.overriddenLyricsSource.source !== 'auto_applied') {
+                        } else if (!syncedTrack.manualLyrics && this.isLyricsOverridden && this.overriddenLyricsSource && this.overriddenLyricsSource.source !== 'auto_applied') {
                             // 如果服务器重置了手动歌词，主页面也应恢复自动模式
                             this.log(`🔄 同步伺服器已重置手動歌詞，恢復自動獲取`);
                             this.isLyricsOverridden = false;
