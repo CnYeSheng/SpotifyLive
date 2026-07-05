@@ -623,10 +623,15 @@ app.get('/api/current-track', async (req, res) => {
         // We can optionally estimate progress:
         const cachedData = session.currentTrackCache.data;
         if (cachedData.isPlaying) {
-             const elapsed = Date.now() - session.currentTrackCache.timestamp;
+             const now = Date.now();
+             const elapsed = now - session.currentTrackCache.timestamp;
              const estimatedProgress = Math.min(cachedData.duration, cachedData.progress + elapsed);
-             // Return a copy with updated progress
-             return res.json({ ...cachedData, progress: estimatedProgress });
+             // 🔧 修正：progress 已經用 elapsed 補償過了，這裡一定要把 timestamp
+             // 也更新成現在，否則前端會再用這個（沒更新過的）舊 timestamp 做一次
+             // 自己的延遲補償，兩邊疊加就會讓 progress 算得比實際快。不同裝置輪詢
+             // 頻率不同、命中這段快取的比例也不同，疊加出來的誤差就不一樣，
+             // 结果就是「一個裝置快、一個裝置慢」。
+             return res.json({ ...cachedData, progress: estimatedProgress, timestamp: now });
         }
         return res.json(cachedData);
     }

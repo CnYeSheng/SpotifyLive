@@ -86,6 +86,7 @@ class SpotifyLyricsPlayer {
         
         // 歌詞時間偏移控制
         this.lyricsTimeOffset = 0; // 毫秒，正數代表歌詞提前顯示，負數代表歌詞延後顯示
+        this.lastLocalOffsetChangeTime = 0; // 🔧 用於避免輪詢用舊值蓋掉剛調整的偏移量，造成歌詞亂跳
         
         // 歌詞緩存控制
         this.lyricsCache = new Map(); // 內存中的歌詞緩存
@@ -199,6 +200,7 @@ class SpotifyLyricsPlayer {
                     if (isReset) {
                         this.log(`🔄 接收重置設定（來自其他分頁）`);
                         this.lyricsTimeOffset = d.lyricsOffset;
+                        this.lastLocalOffsetChangeTime = Date.now();
                         this.updateOffsetDisplay();
                         if (this.currentTrack && this.lyrics.length > 0) {
                             this.updateLyricsHighlight(this.getCurrentProgress() + this.lyricsTimeOffset);
@@ -209,6 +211,7 @@ class SpotifyLyricsPlayer {
                         if (d.lyricsOffset !== undefined) {
                             this.log(`🔄 接收控制偏移: ${d.lyricsOffset}ms`);
                             this.lyricsTimeOffset = d.lyricsOffset;
+                            this.lastLocalOffsetChangeTime = Date.now();
                             this.updateOffsetDisplay();
                             // 🔧 修正：使用即時進度 + 偏移量，而非只傳入靜態 progress 快照
                             if (this.currentTrack && this.lyrics.length > 0) {
@@ -348,6 +351,7 @@ class SpotifyLyricsPlayer {
             if (isReset) {
                 this.log(`🔄 應用重置設定（來自其他裝置的控制指令）`);
                 this.lyricsTimeOffset = d.lyricsOffset;
+                this.lastLocalOffsetChangeTime = Date.now();
                 this.updateOffsetDisplay();
                 if (this.currentTrack && this.lyrics.length > 0) {
                     this.updateLyricsHighlight(this.getCurrentProgress() + this.lyricsTimeOffset);
@@ -358,6 +362,7 @@ class SpotifyLyricsPlayer {
                 if (d.lyricsOffset !== undefined) {
                     this.log(`🔄 應用控制偏移: ${d.lyricsOffset}ms`);
                     this.lyricsTimeOffset = d.lyricsOffset;
+                    this.lastLocalOffsetChangeTime = Date.now();
                     this.updateOffsetDisplay();
                     if (this.currentTrack && this.lyrics.length > 0) {
                         this.updateLyricsHighlight(this.getCurrentProgress() + this.lyricsTimeOffset);
@@ -3964,7 +3969,12 @@ async initializeStorage() {
         let finalProgress = data.progress;
         
         // 🚀 關鍵：偵測來自伺服器的設定變更（用於跨裝置同步）
-        if (data.lyricsOffset !== undefined) {
+        // 🔧 修正：如果這台裝置自己剛剛才調整過偏移量，暫時忽略輪詢抓到的值。
+        // 原本沒有這個保護，本地調整後、伺服器端還沒來得及存好最新值前，
+        // 剛好輪詢到舊值就會被這裡誤判成「其他裝置改的」而蓋回去，
+        // 下次輪詢抓到新值又跳回來——歌詞高亮就會跟著忽前忽後地亂跳。
+        const recentlyAdjustedLocally = this.lastLocalOffsetChangeTime && (Date.now() - this.lastLocalOffsetChangeTime < 12000);
+        if (data.lyricsOffset !== undefined && !recentlyAdjustedLocally) {
             // 如果伺服器的偏移與本地不同，且當前沒有正在手動調整，則同步
             if (Math.abs(data.lyricsOffset - this.lyricsTimeOffset) > 100) {
                 this.log(`🔄 偵測到來自伺服器的偏移變更: ${data.lyricsOffset}ms`);

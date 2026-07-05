@@ -679,6 +679,8 @@
             const originalAdjustLyricsOffset = window.player.adjustLyricsOffset;
             window.player.adjustLyricsOffset = function(offset) {
                 this.lyricsTimeOffset += offset;
+                // 🔧 修正「歌詞亂跳」：記錄本地剛調整的時間，讓輪詢邏輯短時間內不要拿伺服器的舊值蓋回來
+                this.lastLocalOffsetChangeTime = Date.now();
                 this.log(`⏰ 歌詞時間調整: ${this.lyricsTimeOffset > 0 ? '+' : ''}${this.lyricsTimeOffset}ms`);
                 
                 // --- 新增：同步到服务器 Session ---
@@ -711,6 +713,8 @@
             const originalResetLyricsOffset = window.player.resetLyricsOffset;
             window.player.resetLyricsOffset = function() {
                 this.lyricsTimeOffset = 0;
+                // 🔧 修正「歌詞亂跳」：同上，記錄本地剛調整的時間
+                this.lastLocalOffsetChangeTime = Date.now();
                 this.log('⏰ 歌詞時間偏移已重置');
                 
                 // --- 新增：同步到服务器 Session ---

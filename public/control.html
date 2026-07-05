@@ -106,14 +106,17 @@
 
     .brand {
         font-size: 0.78rem;
-        font-weight: 700;
+        font-weight: 800;
         letter-spacing: 0.02em;
-        color: var(--text-dim);
+        background: linear-gradient(135deg, #fff, var(--accent) 140%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
         display: flex;
         align-items: center;
         gap: 7px;
     }
-    .brand svg { width: 16px; height: 16px; fill: var(--accent); }
+    .brand svg { width: 16px; height: 16px; fill: var(--accent); -webkit-text-fill-color: initial; }
 
     .status-pill {
         display: inline-flex;
@@ -529,6 +532,65 @@
         gap: 6px;
         align-items: center;
     }
+
+    /* ---------- Lyrics tabs (search / upload) ---------- */
+    .lyrics-tabs {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 14px;
+        padding: 4px;
+        background: rgba(0,0,0,0.25);
+        border-radius: 12px;
+        border: 1px solid var(--border);
+    }
+    .tab-btn {
+        flex: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 8px 10px;
+        border-radius: 9px;
+        border: none;
+        background: transparent;
+        color: var(--text-faint);
+        font-size: 0.78rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    .tab-btn svg { width: 14px; height: 14px; fill: currentColor; }
+    .tab-btn:hover { color: var(--text-dim); }
+    .tab-btn.active {
+        background: linear-gradient(135deg, rgba(29,185,84,0.22), rgba(29,185,84,0.08));
+        color: var(--accent);
+        box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset;
+    }
+
+    .upload-textarea {
+        width: 100%;
+        min-height: 140px;
+        resize: vertical;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 12px 14px;
+        color: var(--text);
+        font-size: 0.83rem;
+        font-family: var(--font-mono);
+        line-height: 1.6;
+        outline: none;
+        transition: all 0.2s ease;
+    }
+    .upload-textarea:focus { background: var(--surface-active); border-color: var(--border-strong); }
+    .upload-textarea::placeholder { color: var(--text-faint); font-family: var(--font-ui); }
+
+    .upload-actions-row {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+        align-items: stretch;
+    }
     .follow-toggle {
         flex-shrink: 0;
         padding: 10px 12px;
@@ -829,18 +891,44 @@
         <!-- Manual Search -->
         <div class="card">
             <h2>
-                手動搜尋歌詞
-                <button class="h2-action" onclick="searchLyrics()">重新搜尋</button>
+                歌詞管理
+                <button class="h2-action" id="refresh-search-action" onclick="searchLyrics()">重新搜尋</button>
             </h2>
-            <div class="search-head-row">
-                <input type="text" id="search-query" placeholder="歌手 - 歌名" onkeypress="handleEnter(event)" oninput="onSearchInput()">
-                <button class="btn follow-toggle btn-ghost on" id="follow-track-btn" onclick="toggleFollowTrack()" title="搜尋欄是否跟隨目前播放歌曲自動更新">
-                    <svg viewBox="0 0 24 24"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>
-                    <span id="follow-track-label">跟隨歌曲</span>
+            <div class="lyrics-tabs">
+                <button class="tab-btn active" id="tab-search-btn" onclick="switchLyricsTab('search')">
+                    <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                    搜尋歌詞
+                </button>
+                <button class="tab-btn" id="tab-upload-btn" onclick="switchLyricsTab('upload')">
+                    <svg viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
+                    手動上傳
                 </button>
             </div>
-            <div id="search-results" class="results-list"></div>
-            <div class="hint-text">開啟「跟隨歌曲」後，切換播放歌曲時會自動帶入歌手與歌名並重新搜尋歌詞。</div>
+
+            <div id="lyrics-tab-search">
+                <div class="search-head-row">
+                    <input type="text" id="search-query" placeholder="歌手 - 歌名" onkeypress="handleEnter(event)" oninput="onSearchInput()">
+                    <button class="btn follow-toggle btn-ghost on" id="follow-track-btn" onclick="toggleFollowTrack()" title="搜尋欄是否跟隨目前播放歌曲自動更新">
+                        <svg viewBox="0 0 24 24"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>
+                        <span id="follow-track-label">跟隨歌曲</span>
+                    </button>
+                </div>
+                <div id="search-results" class="results-list"></div>
+                <div class="hint-text">開啟「跟隨歌曲」後，切換播放歌曲時會自動帶入歌手與歌名並重新搜尋歌詞。</div>
+            </div>
+
+            <div id="lyrics-tab-upload" style="display:none;">
+                <textarea id="upload-lyrics-text" class="upload-textarea" placeholder="貼上歌詞內容...&#10;&#10;支援 LRC 同步格式：&#10;[00:12.34]第一行歌詞&#10;[00:18.67]第二行歌詞&#10;&#10;也可以直接貼上純文字歌詞（不需要時間標籤）"></textarea>
+                <div class="upload-actions-row">
+                    <input type="file" id="upload-lyrics-file" accept=".lrc,.txt" style="display:none;" onchange="onUploadFileSelected(event)">
+                    <button class="btn btn-ghost" onclick="document.getElementById('upload-lyrics-file').click()">
+                        <svg viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
+                        選擇檔案
+                    </button>
+                    <button class="btn btn-primary" style="flex:1;" onclick="applyUploadedLyrics()">套用並同步到所有裝置</button>
+                </div>
+                <div class="hint-text">套用後會直接同步到所有裝置（主頁面與其他疊加畫面），不需要再手動操作第二次。</div>
+            </div>
         </div>
 
         <!-- Manage Synced Lyrics -->
@@ -1291,6 +1379,108 @@
             }
             if (!title) title = query.trim();
             return { artist, title };
+        }
+
+        // ---------- 搜尋／上傳分頁切換 ----------
+        function switchLyricsTab(tab) {
+            const isSearch = tab === 'search';
+            document.getElementById('lyrics-tab-search').style.display = isSearch ? 'block' : 'none';
+            document.getElementById('lyrics-tab-upload').style.display = isSearch ? 'none' : 'block';
+            document.getElementById('tab-search-btn').classList.toggle('active', isSearch);
+            document.getElementById('tab-upload-btn').classList.toggle('active', !isSearch);
+            document.getElementById('refresh-search-action').style.display = isSearch ? 'inline' : 'none';
+        }
+
+        // ---------- 手動上傳歌詞 ----------
+        function onUploadFileSelected(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                document.getElementById('upload-lyrics-text').value = e.target.result;
+            };
+            reader.onerror = () => showToast('讀取檔案失敗', 'error');
+            reader.readAsText(file);
+        }
+
+        // 簡易 LRC / 純文字解析器：支援 [mm:ss.xx]文字 的同步格式，
+        // 沒有時間標籤的話就當作一般純文字歌詞（每行一句）
+        function parseLrcText(text) {
+            const lines = text.split(/\r?\n/);
+            const timeTagRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g;
+            const metaTagRegex = /^\[[a-zA-Z]+:.*\]$/;
+            const lyrics = [];
+            let hasTime = false;
+
+            for (const raw of lines) {
+                const line = raw.trim();
+                if (!line) continue;
+
+                const matches = [...line.matchAll(timeTagRegex)];
+                if (matches.length > 0) {
+                    hasTime = true;
+                    const cleanText = line.replace(timeTagRegex, '').trim();
+                    if (!cleanText) continue;
+                    matches.forEach(m => {
+                        const min = parseInt(m[1]);
+                        const sec = parseInt(m[2]);
+                        const ms = m[3] ? parseInt(m[3].padEnd(3, '0')) : 0;
+                        lyrics.push({ time: (min * 60 + sec) * 1000 + ms, text: cleanText });
+                    });
+                } else if (!metaTagRegex.test(line)) {
+                    // 不是 [ar:]/[ti:] 這類中繼資料標籤，當成純文字歌詞行
+                    lyrics.push({ text: line });
+                }
+            }
+
+            if (hasTime) {
+                lyrics.sort((a, b) => (a.time || 0) - (b.time || 0));
+            }
+            return { lyrics, type: hasTime ? 'synced' : 'plain' };
+        }
+
+        async function applyUploadedLyrics() {
+            const rawText = document.getElementById('upload-lyrics-text').value.trim();
+            if (!rawText) {
+                showToast('請先貼上或選擇歌詞內容', 'error');
+                return;
+            }
+            if (!currentTrackId) {
+                showToast('目前沒有偵測到播放中的歌曲', 'error');
+                return;
+            }
+
+            const { lyrics, type } = parseLrcText(rawText);
+            if (lyrics.length === 0) {
+                showToast('無法解析歌詞內容，請確認格式', 'error');
+                return;
+            }
+
+            const meta = lastKnownTrack;
+            const title = meta?.name || '手動上傳歌詞';
+            const artist = meta?.artist || '使用者上傳';
+            const syncId = `${title}-${artist}-uploaded`;
+
+            // 🔧 跟搜尋選歌詞用同一套機制：把完整內容直接送出去，
+            // 其他裝置（主頁面、疊加層頁面）收到後可以直接顯示，不需要再反查
+            const data = await spotifyManager.sendControl('/control/manual-lyrics', {
+                id: syncId,
+                source: 'uploaded',
+                title,
+                artist,
+                lyrics,
+                lyricsType: type,
+                trackId: currentTrackId
+            });
+
+            if (data && data.success) {
+                spotifyManager.broadcast('control-sync', {
+                    manualLyrics: { id: syncId, source: 'uploaded', title, artist, lyrics, lyricsType: type }
+                });
+                showToast(`已套用並同步 ${lyrics.length} 行歌詞到所有裝置`);
+            } else {
+                showToast(data && data.error === 'No active track found to apply manual lyrics' ? '目前沒有偵測到播放中的歌曲' : '套用失敗', 'error');
+            }
         }
 
         async function searchLyrics() {
