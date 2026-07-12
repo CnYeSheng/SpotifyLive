@@ -221,7 +221,12 @@ class SpotifyLyricsPlayer {
                         }
                         if (d.manualLyrics !== undefined) {
                             this.log(`🔄 接收手動歌詞更新`);
-                            this.checkCurrentTrackWithRateLimit(); // 強制重新檢查以加載新歌詞
+                            // 🔧 修正：直接套用內含的完整歌詞內容，不要繞去重新輪詢
+                            if (typeof this.fetchManualLyricsFromServer === 'function') {
+                                this.fetchManualLyricsFromServer(d.manualLyrics);
+                            } else {
+                                this.checkCurrentTrackWithRateLimit();
+                            }
                             this.showRemoteControlToast(this.formatManualLyricsToastMessage(d.manualLyrics));
                         }
                     }
@@ -371,8 +376,21 @@ class SpotifyLyricsPlayer {
                 }
                 if (d.manualLyrics !== undefined) {
                     this.log(`🔄 應用手動歌詞更新`);
-                    this.checkCurrentTrack(); // 繞過限制，立即載入
-                    if (isFromOtherDevice) this.showRemoteControlToast(this.formatManualLyricsToastMessage(d.manualLyrics));
+                    // 🔧 修正：SSE 推播裡如果已經帶著完整歌詞內容（含逐字 words 資料），
+                    // 直接套用即可，不要再繞去重新輪詢伺服器——輪詢會從資料庫重新讀一次，
+                    // 多一層往返可能造成資料不完整或延遲，這也是「逐字歌詞選了卻沒變成
+                    // 逐字歌詞」「要選兩次才會動」這類問題的根源之一。
+                    // 🔧 同時加上防重複判斷：同一個 id 已經套用過了就不要再套一次，
+                    // 避免收到重複/回音事件時反覆重新渲染。
+                    const alreadyApplied = this.overriddenLyricsSource && d.manualLyrics && this.overriddenLyricsSource.id === d.manualLyrics.id;
+                    if (!alreadyApplied) {
+                        if (typeof this.fetchManualLyricsFromServer === 'function') {
+                            this.fetchManualLyricsFromServer(d.manualLyrics);
+                        } else {
+                            this.checkCurrentTrack(); // 繞過限制，立即載入（備援路徑）
+                        }
+                    }
+                    if (isFromOtherDevice && !alreadyApplied) this.showRemoteControlToast(this.formatManualLyricsToastMessage(d.manualLyrics));
                 }
             }
         }

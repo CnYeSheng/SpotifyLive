@@ -131,8 +131,12 @@ function initUserLyricsManager() {
         // 調用原始方法
         originalOverrideLyrics.call(this, lyrics, lyricsType, source);
         
-        // 如果有當前歌曲信息，保存為用戶自定義歌詞
-        if (this.currentTrack && source && source.source !== 'auto_applied') {
+        // 🔧 修正無限迴圈：如果這份歌詞是「因為收到同步才套用」的
+        // (source.fromSync === true)，不要在這裡又再存一次——
+        // 下面 lyrics-search.js 那層的 overrideLyrics 已經因為同樣的
+        // 理由跳過存檔了，這裡如果沒有一併檢查，兩層疊加還是會造成
+        // 「套用 -> 存檔 -> 觸發版本變更 -> 被偵測到又重新套用」的無限循環。
+        if (this.currentTrack && source && source.source !== 'auto_applied' && !source.fromSync) {
             this.saveUserCustomLyrics(this.currentTrack, lyrics, lyricsType, {
                 ...source,
                 appliedAt: Date.now(),

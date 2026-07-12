@@ -750,8 +750,20 @@
                 window.player.overrideLyrics = function(lyrics, lyricsType, source) {
                     originalOverrideLyrics.call(this, lyrics, lyricsType, source);
                     
+                    // 🔧 修正無限迴圈（最關鍵的一層）：如果這份歌詞內容本來就是
+                    // 因為收到其他裝置/伺服器同步過來才套用的（source.fromSync === true），
+                    // 絕對不能再把它 POST 回 /api/control/manual-lyrics——那樣會讓伺服器
+                    // 又廣播一次給所有裝置（包含自己），自己收到後又套用一次、又送一次，
+                    // 瞬間變成停不下來的無限迴圈（就是一次調整卻瘋狂洗出幾十行同步紀錄的原因）。
+                    // 本地快取（saveLyrics）不會觸發網路請求，可以照樣做，讓這台裝置
+                    // 離線時也記得目前套用的歌詞。
+                    const skipServerSync = !!(source && source.fromSync);
+                    if (skipServerSync) {
+                        this.log('⏭️ 這份歌詞是同步收到的，跳過回傳伺服器（避免無限迴圈）');
+                    }
+
                     // --- 新增：同步到服务器 Session (手动套用/搜索/上传) ---
-                    if (this.sessionId && source && source.source !== 'auto_applied') {
+                    if (!skipServerSync && this.sessionId && source && source.source !== 'auto_applied') {
                         const syncId = source.id || (source.title && source.artist ? (source.title + '-' + source.artist) : null);
                         if (syncId && syncId !== 'undefined' && syncId !== 'null') {
                             fetch('/api/control/manual-lyrics', {
@@ -775,7 +787,7 @@
                     }
                     // -----------------------------------------------------
 
-                    // 自動保存用戶修改的歌詞
+                    // 自動保存用戶修改的歌詞（純本地快取，不會觸發網路請求，不受上面的迴圈保護影響）
                     if (this.currentTrack && source && source.source !== 'auto_applied') {
                         this.saveLyrics(this.currentTrack, lyrics, lyricsType, {
                             ...source,
@@ -932,7 +944,10 @@
                     if (manualData && manualData.lyrics && Array.isArray(manualData.lyrics) && manualData.lyrics.length > 0) {
                         this.overrideLyrics(manualData.lyrics, manualData.lyricsType || 'plain', {
                             ...manualData,
-                            appliedAt: Date.now()
+                            appliedAt: Date.now(),
+                            // 🔧 修正無限迴圈：標記這份內容是同步收到的，
+                            // overrideLyrics 各層看到這個標記就不會再往外廣播/回傳伺服器
+                            fromSync: true
                         });
                         return;
                     }
@@ -950,7 +965,8 @@
                             ...manualData,
                             id: manualData.id,
                             source: manualData.source,
-                            appliedAt: Date.now()
+                            appliedAt: Date.now(),
+                            fromSync: true
                         });
                     }
                 } catch (e) {

@@ -1483,11 +1483,22 @@
             }
         }
 
+        let searchRequestSeq = 0;
+
         async function searchLyrics() {
             const query = document.getElementById('search-query').value;
             if (!query) return;
             const container = document.getElementById('search-results');
             container.innerHTML = `<div class="empty-state"><span class="spinner"></span>搜尋中...</div>`;
+
+            // 🔧 修正「選歌詞要選兩次才會動」：如果使用者跟隨歌曲自動搜尋、
+            // 或連續打字觸發了好幾次搜尋，舊的搜尋結果可能比新的還晚回來，
+            // 把使用者正在看、正要點選的新清單整個蓋掉——這時候點的按鈕其實
+            // 已經屬於一份被替換掉的舊 DOM，點了自然沒反應，要等重新整理過
+            // 的清單出現、再點一次才會生效。這裡加上請求序號，只有「最新一次」
+            // 的搜尋結果才允許寫回畫面，較舊的回應直接捨棄。
+            const mySeq = ++searchRequestSeq;
+
             try {
                 const { artist, title } = parseArtistTitle(query);
                 // 🔧 修正：原本呼叫的 /search-lyrics/:query 端點不存在於後端，
@@ -1495,8 +1506,10 @@
                 const res = await fetch(
                     `${spotifyManager.API_BASE}/lyrics-search-multi/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`
                 );
+                if (mySeq !== searchRequestSeq) return; // 已經有更新的搜尋在跑，這次結果作廢
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
+                if (mySeq !== searchRequestSeq) return; // 同上，保險再檢查一次
                 const results = (data.results || []).filter(r => r.success !== false && r.lyrics?.length > 0);
 
                 if (data.success && results.length > 0) {
@@ -1516,13 +1529,14 @@
                             </div>
                             <button class="btn btn-primary btn-sm">選擇</button>
                         `;
-                        div.querySelector('button').addEventListener('click', () => selectLyrics(r, div));
+                        div.querySelector('button').addEventListener('click', (e) => selectLyrics(r, div, e.currentTarget));
                         container.appendChild(div);
                     });
                 } else {
                     container.innerHTML = '<div class="empty-state">找不到歌詞</div>';
                 }
             } catch (e) {
+                if (mySeq !== searchRequestSeq) return;
                 container.innerHTML = '<div class="empty-state">搜尋失敗，請稍後再試</div>';
             }
         }
@@ -1533,31 +1547,46 @@
             return div.innerHTML;
         }
 
-        async function selectLyrics(result, el) {
+        async function selectLyrics(result, el, btn) {
+            // 🔧 立即給視覺回饋並鎖住按鈕，避免使用者以為「沒反應」而重複點擊、
+            // 也避免同一份歌詞被連續送出兩次
+            if (btn) {
+                if (btn.dataset.applying === '1') return; // 正在處理中，忽略重複點擊
+                btn.dataset.applying = '1';
+                btn.disabled = true;
+                btn.textContent = '套用中...';
+            }
+
             const providerName = result.provider || result.source || 'manual';
             const syncId = `${result.title || ''}-${result.artist || ''}`;
-            // 🔧 修正：把完整歌詞內容跟 trackId 一起送出去。
-            // trackId 是為了避免伺服器端快取被清空時找不到目前歌曲而回傳 400；
-            // 歌詞內容則是讓其他裝置（主頁面、疊加層頁面）能直接顯示，不需要再反查一次
-            const data = await spotifyManager.sendControl('/control/manual-lyrics', {
-                id: syncId,
-                source: providerName,
-                title: result.title,
-                artist: result.artist,
-                lyrics: result.lyrics,
-                lyricsType: result.type || 'plain',
-                trackId: currentTrackId
-            });
-            if (data && data.success) {
-                spotifyManager.broadcast('control-sync', {
-                    manualLyrics: { id: syncId, source: providerName, title: result.title, artist: result.artist, lyrics: result.lyrics, lyricsType: result.type || 'plain' }
+            try {
+                // 🔧 修正：把完整歌詞內容跟 trackId 一起送出去。
+                // trackId 是為了避免伺服器端快取被清空時找不到目前歌曲而回傳 400；
+                // 歌詞內容則是讓其他裝置（主頁面、疊加層頁面）能直接顯示，不需要再反查一次
+                const data = await spotifyManager.sendControl('/control/manual-lyrics', {
+                    id: syncId,
+                    source: providerName,
+                    title: result.title,
+                    artist: result.artist,
+                    lyrics: result.lyrics,
+                    lyricsType: result.type || 'plain',
+                    trackId: currentTrackId
                 });
-                document.querySelectorAll('.result-item.selected').forEach(n => n.classList.remove('selected'));
-                if (el) el.classList.add('selected');
-                showToast(`已選用來自 ${providerName} 的歌詞`);
-                update();
-            } else {
-                showToast(data && data.error === 'No active track found to apply manual lyrics' ? '目前沒有偵測到播放中的歌曲' : '選擇歌詞失敗', 'error');
+                if (data && data.success) {
+                    spotifyManager.broadcast('control-sync', {
+                        manualLyrics: { id: syncId, source: providerName, title: result.title, artist: result.artist, lyrics: result.lyrics, lyricsType: result.type || 'plain' }
+                    });
+                    document.querySelectorAll('.result-item.selected').forEach(n => n.classList.remove('selected'));
+                    if (el) el.classList.add('selected');
+                    if (btn) btn.textContent = '✓ 已套用';
+                    showToast(`已選用來自 ${providerName} 的歌詞，已同步到所有裝置`);
+                } else {
+                    showToast(data && data.error === 'No active track found to apply manual lyrics' ? '目前沒有偵測到播放中的歌曲' : '選擇歌詞失敗', 'error');
+                    if (btn) { btn.disabled = false; btn.textContent = '選擇'; delete btn.dataset.applying; }
+                }
+            } catch (e) {
+                showToast('選擇歌詞失敗，請重試', 'error');
+                if (btn) { btn.disabled = false; btn.textContent = '選擇'; delete btn.dataset.applying; }
             }
         }
 

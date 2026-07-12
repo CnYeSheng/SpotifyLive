@@ -502,25 +502,33 @@ SpotifyLyricsPlayer.prototype.overrideLyrics = function(lyrics, lyricsType, sour
     this.isLyricsOverridden = true;
     this.overriddenLyricsSource = source;
 
-    // 廣播歌詞數據給其他分頁（同裝置）
-    if (this.controlChannel) {
-        this.controlChannel.postMessage({
-            type: 'lyrics-sync',
-            lyrics: this.lyrics,
-            lyricsType: this.lyricsType,
-            trackId: this.currentTrack?.id
-        });
-    }
-    
-    // 同步到伺服器（跨裝置）
-    if (this.sessionId && this.currentTrack) {
-        this.saveUserCustomLyrics(this.currentTrack, lyrics, lyricsType, {
-            ...source,
-            appliedAt: Date.now(),
-            appliedBy: 'manual_override'
-        }).catch(err => {
-            this.log(`⚠️ 歌詞同步到伺服器失敗: ${err.message}`);
-        });
+    // 🔧 修正無限迴圈：如果這次套用本來就是因為「收到其他裝置/伺服器同步過來的內容」
+    // (source.fromSync === true)，就不要再把它存回伺服器、也不要再廣播給同瀏覽器分頁。
+    // 不然就會變成：套用 -> 存檔 -> 觸發版本號變更 -> 被自己或其他裝置偵測到「有新變更」
+    // -> 又重新套用一次 -> 又存一次 -> 無限循環，瘋狂洗版。
+    if (!source || !source.fromSync) {
+        // 廣播歌詞數據給其他分頁（同裝置）
+        if (this.controlChannel) {
+            this.controlChannel.postMessage({
+                type: 'lyrics-sync',
+                lyrics: this.lyrics,
+                lyricsType: this.lyricsType,
+                trackId: this.currentTrack?.id
+            });
+        }
+        
+        // 同步到伺服器（跨裝置）
+        if (this.sessionId && this.currentTrack) {
+            this.saveUserCustomLyrics(this.currentTrack, lyrics, lyricsType, {
+                ...source,
+                appliedAt: Date.now(),
+                appliedBy: 'manual_override'
+            }).catch(err => {
+                this.log(`⚠️ 歌詞同步到伺服器失敗: ${err.message}`);
+            });
+        }
+    } else {
+        this.log(`⏭️ 這份歌詞是同步收到的，跳過再次存檔/廣播（避免無限迴圈）`);
     }
     
     // 重新顯示歌詞
