@@ -4222,3 +4222,129 @@ input:checked + .slider:before {
     /* Ensure z-index doesn't cause weird stacking contexts */
     z-index: 10;
 }
+
+/* ============================================
+   Enhanced Lyrics Display (inspired by folia-major)
+   Three-state model: waiting → active → passed
+   ============================================ */
+
+/* Interlude line styling */
+.lyrics-line.interlude {
+    text-align: center;
+    color: var(--text-tertiary);
+    opacity: 0.3;
+    font-size: 24px;
+    letter-spacing: 8px;
+    padding: 30px 0;
+    user-select: none;
+}
+
+/* Three-state line transitions */
+.lyrics-line.waiting {
+    color: var(--text-tertiary);
+    opacity: 0.4;
+    transform: scale(0.98);
+    filter: blur(0.5px);
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.lyrics-line.active {
+    color: var(--text-primary);
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+    transition: all 0.3s cubic-bezier(0.0, 0, 0.2, 1);
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 12px;
+    padding: 12px 16px;
+}
+
+.lyrics-line.passed {
+    color: rgba(255, 255, 255, 0.35);
+    opacity: 0.5;
+    transform: scale(0.98);
+    filter: blur(0.3px);
+    transition: all 0.5s cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* Enhanced word-level karaoke */
+.lyrics-line.active .lyric-word {
+    display: inline-block;
+    margin: 0 3px;
+    padding: 0 1px;
+    position: relative;
+    z-index: 1;
+    transition: all 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    white-space: pre-wrap;
+}
+
+.lyrics-line.active .lyric-word.waiting {
+    opacity: 0.5;
+    color: rgba(255, 255, 255, 0.5);
+    transform: scale(1);
+}
+
+.lyrics-line.active .lyric-word.active {
+    opacity: 1;
+    transform: scale(1.05);
+    font-weight: 700;
+    z-index: 2;
+    
+    /* Karaoke fill gradient */
+    background-image: linear-gradient(90deg, #1ed760 var(--word-progress, 0%), rgba(255, 255, 255, 0.7) var(--word-progress, 0%));
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    
+    text-shadow: 0 0 12px rgba(30, 215, 96, 0.4);
+}
+
+.lyrics-line.active .lyric-word.passed {
+    opacity: 0.9;
+    color: #1ed760;
+    -webkit-text-fill-color: #1ed760;
+    background: none;
+    transform: scale(1);
+}
+
+/* Glow effect for active line */
+.lyrics-line.active::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    background: radial-gradient(ellipse at center, rgba(30, 215, 96, 0.08) 0%, transparent 70%);
+    border-radius: 16px;
+    pointer-events: none;
+    z-index: -1;
+}
+
+/* Smooth scroll behavior for lyrics container */
+.lyrics-content {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Subtitle overlay for translation/next line */
+.lyrics-subtitle {
+    position: absolute;
+    bottom: 20px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    padding: 8px 16px;
+    font-size: 14px;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    pointer-events: none;
+    transition: all 0.3s ease;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.lyrics-subtitle.next-line {
+    opacity: 0.4;
+    font-size: 13px;
+    filter: blur(0.5px);
+}

@@ -4528,6 +4528,18 @@ async loadLyrics() {
         return;
     }
 
+    // 🔧 修正「套用歌詞感覺沒效果」：如果目前已經有手動指定的歌詞（不管是
+    // 透過搜尋選的、上傳的、還是從其他裝置同步過來的），就不要再跑自動載入
+    // 流程——loadLyrics() 常常會因為各種跟歌詞無關的原因被重新呼叫，一旦跑
+    // 下去就會去讀另一套獨立的儲存（window.lyricsStorageManager），把剛套用
+    // 好的手動歌詞整個蓋掉。統一以「目前是否手動覆蓋」這個狀態為準：
+    // 有覆蓋就不動，真的換了新歌或伺服器端明確要求恢復自動時才會重新載入
+    // （這兩種情況都會先把 isLyricsOverridden 設回 false）。
+    if (this.isLyricsOverridden) {
+        console.log('✋ 目前是手動覆蓋的歌詞，跳過自動載入以避免被蓋掉');
+        return;
+    }
+
     // 如果是 Podcast，显示特殊讯息而不载入歌词
     if (this.currentTrack.contentType === 'podcast') {
         this.showLyricsPlaceholder('🎙️ 正在播放 Podcast\n\n享受精彩的音频内容吧！');
@@ -4549,9 +4561,16 @@ async loadLyrics() {
                 this.currentLyricsTrackId = this.currentTrack.id;
                 
                 // 載入時間偏移
-                const savedOffset = await window.lyricsStorageManager.getLyricsTimeOffset(this.currentTrack);
-                this.lyricsTimeOffset = savedOffset || 0;
-                this.updateOffsetDisplay();
+                // 🔧 修正「調快調慢感覺沒效果」：這是另一套獨立的偏移儲存系統
+                // （跟按鈕直接寫入的 this.lyricsTimeOffset 不是同一條路徑），
+                // 如果剛好在使用者手動調整之後又被觸發，會用這裡讀回來的舊值
+                // 把剛調好的覆蓋掉。只有在「最近沒有手動調整過」時才套用。
+                const recentlyAdjustedLocally = this.lastLocalOffsetChangeTime && (Date.now() - this.lastLocalOffsetChangeTime < 12000);
+                if (!recentlyAdjustedLocally) {
+                    const savedOffset = await window.lyricsStorageManager.getLyricsTimeOffset(this.currentTrack);
+                    this.lyricsTimeOffset = savedOffset || 0;
+                    this.updateOffsetDisplay();
+                }
                 
                 this.displayLyrics();
                 this.updateStatus('lyrics', true);
@@ -4729,12 +4748,16 @@ async loadLyrics() {
                         }
                         
                         // ✨ 关键：载入保存的时间偏移
-                        const savedOffset = await window.lyricsStorageManager
-                            .getLyricsTimeOffset(this.currentTrack);
-                        this.lyricsTimeOffset = savedOffset || 0;
-                        this.updateOffsetDisplay();
-                        if (this.lyricsTimeOffset !== 0) {
-                            console.log(`✅ 已载入保存的時間偏移: ${this.lyricsTimeOffset}ms`);
+                        // 🔧 修正：同上，最近手動調整過就不要被這裡讀回來的舊值蓋掉
+                        const recentlyAdjustedLocally2 = this.lastLocalOffsetChangeTime && (Date.now() - this.lastLocalOffsetChangeTime < 12000);
+                        if (!recentlyAdjustedLocally2) {
+                            const savedOffset = await window.lyricsStorageManager
+                                .getLyricsTimeOffset(this.currentTrack);
+                            this.lyricsTimeOffset = savedOffset || 0;
+                            this.updateOffsetDisplay();
+                            if (this.lyricsTimeOffset !== 0) {
+                                console.log(`✅ 已载入保存的時間偏移: ${this.lyricsTimeOffset}ms`);
+                            }
                         }
                     }
                     
@@ -4907,7 +4930,9 @@ async loadLyrics() {
             }
 
             const timeAttr = this.lyricsType === 'synced' && line.time ? `data-time="${line.time}"` : '';
-            return `<div class="lyrics-line" data-index="${index}" ${timeAttr}>${lineContent}</div>`;
+            const interludeClass = line.isInterlude ? ' interlude' : '';
+            const endTimeAttr = line.endTime ? ` data-end-time="${line.endTime}"` : '';
+            return `<div class="lyrics-line${interludeClass}" data-index="${index}" ${timeAttr}${endTimeAttr}>${lineContent}</div>`;
         }).join('');
 
         this.lyricsContent.innerHTML = lyricsHTML;
@@ -4997,51 +5022,68 @@ async loadLyrics() {
             }
         }
 
-        // 移除所有高亮
+        // 移除所有状态类 (三态模型: waiting/active/passed)
         const lyricsLines = this.lyricsContent.querySelectorAll('.lyrics-line');
         lyricsLines.forEach(line => {
-            line.classList.remove('current', 'upcoming', 'past');
+            line.classList.remove('current', 'upcoming', 'past', 'waiting', 'active', 'passed', 'interlude');
         });
 
-        // 只添加當前行高亮，不添加upcoming和past類
+        // 应用三态模型 (inspired by folia-major)
         if (this.currentLyricIndex >= 0 && this.currentLyricIndex < this.lyrics.length) {
             const currentLine = this.lyricsContent.querySelector(`[data-index="${this.currentLyricIndex}"]`);
             if (currentLine) {
-                currentLine.classList.add('current');
+                // 检查是否为间奏行
+                const lineData = this.lyrics[this.currentLyricIndex];
+                if (lineData && lineData.isInterlude) {
+                    currentLine.classList.add('interlude', 'active');
+                } else {
+                    currentLine.classList.add('current', 'active');
+                }
                 
-                // 逐字歌詞高亮與填充邏輯
+                // 逐字歌词高亮与填充逻辑 (三态模型)
                 const words = currentLine.querySelectorAll('.lyric-word');
                 if (words.length > 0) {
-                    words.forEach(word => {
+                    words.forEach((word, wordIndex) => {
                         const wordTime = parseInt(word.dataset.time);
                         const duration = parseInt(word.dataset.duration) || 0;
+                        const wordEndTime = wordTime + duration;
                         
-                        if (currentTime >= wordTime) {
+                        // 三态判定: waiting / active / passed
+                        if (currentTime >= wordEndTime && duration > 0) {
+                            // 已播放完成
+                            word.classList.remove('waiting', 'active');
+                            word.classList.add('passed', 'finished');
+                            word.style.setProperty('--word-progress', '100%');
+                        } else if (currentTime >= wordTime) {
+                            // 当前激活
+                            word.classList.remove('waiting', 'passed', 'finished');
                             word.classList.add('active');
                             
-                            // 計算填充百分比
+                            // 计算填充百分比
                             if (duration > 0) {
                                 const elapsed = currentTime - wordTime;
                                 const percentage = Math.min(100, Math.max(0, (elapsed / duration) * 100));
                                 word.style.setProperty('--word-progress', `${percentage}%`);
-                                
-                                // 如果完全填充，添加 finished 類 (可選)
-                                if (percentage >= 100) {
-                                    word.classList.add('finished');
-                                } else {
-                                    word.classList.remove('finished');
-                                }
                             } else {
-                                // 如果沒有持續時間，直接設為 100%
                                 word.style.setProperty('--word-progress', '100%');
-                                word.classList.add('finished');
                             }
                         } else {
-                            word.classList.remove('active', 'finished');
+                            // 未播放
+                            word.classList.remove('active', 'passed', 'finished');
+                            word.classList.add('waiting');
                             word.style.setProperty('--word-progress', '0%');
                         }
                     });
                 }
+
+                // 应用三态到非当前行
+                lyricsLines.forEach((line, index) => {
+                    if (index < this.currentLyricIndex) {
+                        line.classList.add('passed');
+                    } else if (index > this.currentLyricIndex) {
+                        line.classList.add('waiting');
+                    }
+                });
                 
                 if (this.autoScroll && this.currentLyricIndex !== this._lastScrolledIndex) {
                     // 只有當歌詞行真正改變時才滾動，避免重複滾動導致跳動

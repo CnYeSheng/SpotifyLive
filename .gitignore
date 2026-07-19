@@ -68,3 +68,7 @@ Thumbs.db
 sessions.json
 lyrics-storage.json
 logs/
+folia-major/
+.mimocode/skills/css-layout-debug/SKILL.md
+.gitignore
+.mimocode/skills/ui-redesign/SKILL.md

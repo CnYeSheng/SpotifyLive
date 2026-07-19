@@ -931,16 +931,6 @@
             </div>
         </div>
 
-        <!-- Manage Synced Lyrics -->
-        <div class="card">
-            <h2>已同步歌詞管理</h2>
-            <div class="controls-grid" style="grid-template-columns: 1fr 1fr; gap: 8px;">
-                <button class="btn btn-primary" onclick="loadSyncedLyrics()">重新整理清單</button>
-                <button class="btn btn-primary" onclick="downloadLyricsBackup()">下載 JSON 備份</button>
-            </div>
-            <div id="synced-lyrics-list" class="results-list"></div>
-        </div>
-
         <div class="footer">
             <span class="kbd">Space</span> 播放/暫停　
             <span class="kbd">←</span><span class="kbd">→</span> 倒轉/快轉10秒　
@@ -1559,6 +1549,17 @@
 
             const providerName = result.provider || result.source || 'manual';
             const syncId = `${result.title || ''}-${result.artist || ''}`;
+
+            // 🔧 修正「點了就卡住、點其他的沒反應」：不管成功或失敗，
+            // 這裡都會把按鈕恢復成可以再次點擊的狀態，不會永久停在
+            // disabled/已套用——使用者隨時可以換選別的結果，或重新套用同一個。
+            const resetButton = (label) => {
+                if (!btn) return;
+                delete btn.dataset.applying;
+                btn.disabled = false;
+                btn.textContent = label;
+            };
+
             try {
                 // 🔧 修正：把完整歌詞內容跟 trackId 一起送出去。
                 // trackId 是為了避免伺服器端快取被清空時找不到目前歌曲而回傳 400；
@@ -1580,61 +1581,15 @@
                     if (el) el.classList.add('selected');
                     if (btn) btn.textContent = '✓ 已套用';
                     showToast(`已選用來自 ${providerName} 的歌詞，已同步到所有裝置`);
+                    // 短暫顯示「已套用」讓使用者確認成功，接著恢復可再點擊的狀態
+                    setTimeout(() => resetButton('選擇'), 1800);
                 } else {
                     showToast(data && data.error === 'No active track found to apply manual lyrics' ? '目前沒有偵測到播放中的歌曲' : '選擇歌詞失敗', 'error');
-                    if (btn) { btn.disabled = false; btn.textContent = '選擇'; delete btn.dataset.applying; }
+                    resetButton('選擇');
                 }
             } catch (e) {
                 showToast('選擇歌詞失敗，請重試', 'error');
-                if (btn) { btn.disabled = false; btn.textContent = '選擇'; delete btn.dataset.applying; }
-            }
-        }
-
-        // ---------- Synced lyrics management ----------
-        async function loadSyncedLyrics() {
-            const container = document.getElementById('synced-lyrics-list');
-            container.innerHTML = `<div class="empty-state"><span class="spinner"></span>載入中...</div>`;
-            try {
-                const res = await fetch(`${spotifyManager.API_BASE}/kv/export-all-lyrics`);
-                const data = await res.json();
-                if (data?.length > 0) {
-                    container.innerHTML = '';
-                    data.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)).forEach(item => {
-                        const manual = item.manualLyrics || {};
-                        const div = document.createElement('div');
-                        div.className = 'result-item';
-                        div.innerHTML = `
-                            <div class="result-info">
-                                <div class="result-title">${escapeHtml(manual.title || item.trackId)}</div>
-                                <div class="result-meta"><span class="source-tag">${escapeHtml(manual.source || 'custom')}</span><span>${escapeHtml(manual.artist || '')}</span></div>
-                            </div>
-                        `;
-                        container.appendChild(div);
-                    });
-                } else {
-                    container.innerHTML = '<div class="empty-state">尚無已同步的歌詞</div>';
-                }
-            } catch (e) {
-                container.innerHTML = '<div class="empty-state">載入失敗</div>';
-            }
-        }
-
-        async function downloadLyricsBackup() {
-            try {
-                const res = await fetch(`${spotifyManager.API_BASE}/kv/export-all-lyrics`);
-                const data = await res.json();
-                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `lyrics-backup-${new Date().toISOString().slice(0, 10)}.json`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                URL.revokeObjectURL(url);
-                showToast('備份已下載');
-            } catch (e) {
-                showToast('下載備份失敗', 'error');
+                resetButton('選擇');
             }
         }
 
@@ -1774,7 +1729,6 @@
         setInterval(update, 2000);
         setInterval(() => { if (Date.now() - lastSuccessfulUpdate > 4000) renderStatus(false); }, 1000);
         update();
-        loadSyncedLyrics();
         updateProgressUI();
     </script>
 </body>

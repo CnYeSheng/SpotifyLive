@@ -633,6 +633,7 @@
          styles.css 已有自己的 :root 變數與 fallback 值，不受影響 -->
     
     <script src="enhanced-session-manager.js"></script>
+    <script src="js/modules/enhanced-lyrics-parser.js"></script>
     <script src="script.js"></script>
     <script src="lyrics-search.js"></script>
     <script src="lyrics-manager.js"></script>
@@ -682,25 +683,11 @@
                 // 🔧 修正「歌詞亂跳」：記錄本地剛調整的時間，讓輪詢邏輯短時間內不要拿伺服器的舊值蓋回來
                 this.lastLocalOffsetChangeTime = Date.now();
                 this.log(`⏰ 歌詞時間調整: ${this.lyricsTimeOffset > 0 ? '+' : ''}${this.lyricsTimeOffset}ms`);
-                
-                // --- 新增：同步到服务器 Session ---
-                if (this.sessionId) {
-                    fetch('/api/kv/save-time-offset', {
-                        method: 'POST', 
-                        headers: { 
-                            'Content-Type': 'application/json',
-                            'X-Session-Id': this.sessionId
-                        },
-                        body: JSON.stringify({ 
-                            timeOffset: this.lyricsTimeOffset,
-                            trackInfo: this.currentTrack,
-                            sessionId: this.sessionId 
-                        })
-                    }).catch(e => console.error('同步偏移失敗:', e));
-                }
-                // -------------------------------
 
-                // 保存歌詞時間調整到永久存儲
+                // 🔧 統一發送：保存歌詞時間調整到永久存儲（這個方法內部已經會
+                // 呼叫 /api/kv/save-time-offset 同步到伺服器，原本這裡還另外
+                // 自己直接 fetch 了一次同一個端點，兩份重複的請求會增加無謂
+                // 的網路來回、也讓「到底哪個請求先/後完成」變得不確定。
                 if (this.currentTrack) {
                     this.saveLyricsTimeAdjustment(this.currentTrack, this.lyricsTimeOffset);
                 }
@@ -879,7 +866,10 @@
                     const syncedTrack = track || this.currentTrack;
                     if (syncedTrack) {
                         // 同步时间偏移
-                        if (typeof syncedTrack.lyricsOffset !== 'undefined' && syncedTrack.lyricsOffset !== this.lyricsTimeOffset) {
+                        // 🔧 修正：最近本地才調整過的話先不理這裡讀到的值，
+                        // 避免跟另一套獨立的偏移儲存系統一樣、把剛調好的值蓋回去
+                        const recentlyAdjustedLocallyForSync = this.lastLocalOffsetChangeTime && (Date.now() - this.lastLocalOffsetChangeTime < 12000);
+                        if (!recentlyAdjustedLocallyForSync && typeof syncedTrack.lyricsOffset !== 'undefined' && syncedTrack.lyricsOffset !== this.lyricsTimeOffset) {
                             this.log(`🔄 從同步伺服器接收到新的時間偏移: ${syncedTrack.lyricsOffset}ms`);
                             this.lyricsTimeOffset = syncedTrack.lyricsOffset;
                             this.updateOffsetDisplay();

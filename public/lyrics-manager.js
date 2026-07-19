@@ -518,8 +518,36 @@ SpotifyLyricsPlayer.prototype.processUploadedLyrics = function(content) {
         };
     };
 
-    // 解析歌詞內容（LRC、ASS 等格式）
+    // 解析歌詞內容（LRC、Enhanced LRC、SRT、ASS/SSA 格式）
+    // 使用 EnhancedLyricsParser 作為主要解析器，ASS/SSA 作為特殊處理
     SpotifyLyricsPlayer.prototype.parseLyricsContent = function(content) {
+        // 如果 EnhancedLyricsParser 可用，使用它
+        if (typeof EnhancedLyricsParser !== 'undefined') {
+            const parser = new EnhancedLyricsParser();
+            const result = parser.parse(content);
+            
+            // 如果解析器返回了 ASS/SSA 格式，需要特殊處理
+            // 先檢查是否包含 ASS/SSA 格式的 Dialogue 行
+            const lines = content.split('\n');
+            const hasAssDialogue = lines.some(l => l.trim().startsWith('Dialogue:'));
+            
+            if (hasAssDialogue && result.lyrics.length === 0) {
+                // 使用原有的 ASS 解析邏輯
+                return this.parseAssContent(content);
+            }
+            
+            // 如果 EnhancedLyricsParser 成功解析，直接返回
+            if (result.lyrics.length > 0) {
+                return result;
+            }
+        }
+        
+        // Fallback: 使用原有的解析邏輯
+        return this.parseLyricsContentLegacy(content);
+    };
+
+    // Legacy 解析邏輯（保留作為 fallback）
+    SpotifyLyricsPlayer.prototype.parseLyricsContentLegacy = function(content) {
         // 先檢查是否為 SRT 格式
         if (this.isSrtFormat(content)) {
             return this.parseSrtLyrics(content);
@@ -529,9 +557,7 @@ SpotifyLyricsPlayer.prototype.processUploadedLyrics = function(content) {
         const lyrics = [];
         let isSynced = false;
         
-        // 1. 先檢測是否為 SRT 格式
         const trimmedContent = content.trim();
-        // 更加寬容的 SRT 檢測：支持小時位數不固定，支持 , 或 . 分隔符
         const srtPattern = /^\d+\s*\n\d{1,2}:\d{2}:\d{2}[,\.]\d{3}\s*-->\s*\d{1,2}:\d{2}:\d{2}[,\.]\d{3}/m;
         
         if (srtPattern.test(trimmedContent)) {
@@ -555,14 +581,12 @@ SpotifyLyricsPlayer.prototype.processUploadedLyrics = function(content) {
                     continue;
                 }
 
-                // 序號行
                 if (/^\d+$/.test(line)) {
                     if (currentEntry && currentEntry.startTime !== undefined) pushSrtEntry();
                     currentEntry = { index: parseInt(line) };
                     continue;
                 }
 
-                // 時間軸行
                 const timeMatch = line.match(/(\d{1,2}):(\d{2}):(\d{2})[,\.](\d{3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[,\.](\d{3})/);
                 if (timeMatch) {
                     if (!currentEntry) currentEntry = {};
@@ -574,7 +598,6 @@ SpotifyLyricsPlayer.prototype.processUploadedLyrics = function(content) {
                     continue;
                 }
 
-                // 文本行
                 if (currentEntry) {
                     if (!currentEntry.text) currentEntry.text = line;
                     else currentEntry.text += ' ' + line;
@@ -587,12 +610,10 @@ SpotifyLyricsPlayer.prototype.processUploadedLyrics = function(content) {
             }
         }
 
-        // 2. 原有的 LRC / ASS 解析邏輯
         for (const line of lines) {
             const trimmedLine = line.trim();
             if (!trimmedLine) continue;
             
-            // 2a. 檢查 ASS/SSA 格式
             if (trimmedLine.startsWith('Dialogue:')) {
                 const assParsed = this.parseAssLine(trimmedLine);
                 if (assParsed) {
@@ -602,8 +623,6 @@ SpotifyLyricsPlayer.prototype.processUploadedLyrics = function(content) {
                 continue;
             }
 
-            // 2b. 檢查 LRC 格式 (包含標準、[] 增強版、<> 增強版)
-            // 允許時間戳周圍有空格，允許 . 或 : 作為秒和毫秒的分隔符
             const timeMatch = trimmedLine.match(/^\[\s*(\d{1,2})\s*:\s*(\d{2})\s*(?:[\.:]\s*(\d{1,3}))?\s*\]/);
             
             if (timeMatch) {
@@ -612,16 +631,12 @@ SpotifyLyricsPlayer.prototype.processUploadedLyrics = function(content) {
                 const milliseconds = timeMatch[3] ? parseInt(timeMatch[3].padEnd(3, '0')) : 0;
                 const timeMs = minutes * 60000 + seconds * 1000 + milliseconds;
                 
-                // 移除行首時間戳，獲取剩餘內容
                 const textContent = trimmedLine.replace(/^\[\s*\d{1,2}\s*:\s*\d{2}\s*(?:[\.:]\s*\d{1,3})?\s*\]/, '').trim();
                 
                 let words = [];
                 let hasInternalTimestamps = false;
 
-                // 2a. 檢查 [] 增強版：[mm:ss.xx]Word
                 const bracketMatches = Array.from(textContent.matchAll(/\[\s*(\d{1,2})\s*:\s*(\d{2})\s*(?:[\.:\]\s*(\d{1,3}))?\s*\]([^\[]*)/g));
-                
-                // 2b. 檢查 <> 增強版：<mm:ss.xx>Word
                 const angleMatches = Array.from(textContent.matchAll(/<\s*(\d{1,2})\s*:\s*(\d{2})\s*(?:[\.:\]\s*(\d{1,3}))?\s*>([^<]*)/g));
 
                 if (bracketMatches.length > 0) {
@@ -644,13 +659,11 @@ SpotifyLyricsPlayer.prototype.processUploadedLyrics = function(content) {
                     });
                 }
 
-                // 計算單詞持續時間 (Duration)
                 if (hasInternalTimestamps && words.length > 0) {
                     for (let i = 0; i < words.length; i++) {
                         if (i < words.length - 1) {
                             words[i].duration = words[i+1].time - words[i].time;
                         } else {
-                            // 最後一個字的持續時間
                             words[i].duration = 0; 
                         }
                     }
@@ -671,7 +684,6 @@ SpotifyLyricsPlayer.prototype.processUploadedLyrics = function(content) {
                     });
                 }
             } else if (!isSynced && trimmedLine) {
-                // 純文本
                 lyrics.push({
                     text: trimmedLine
                 });
@@ -682,6 +694,29 @@ SpotifyLyricsPlayer.prototype.processUploadedLyrics = function(content) {
             type: isSynced ? 'synced' : 'plain',
             lyrics: lyrics
         };
+    };
+
+    // ASS/SSA 內容解析
+    SpotifyLyricsPlayer.prototype.parseAssContent = function(content) {
+        const lyrics = [];
+        const lines = content.split('\n');
+        
+        for (const line of lines) {
+            const trimmedLine = line.trim();
+            if (trimmedLine.startsWith('Dialogue:')) {
+                const assParsed = this.parseAssLine(trimmedLine);
+                if (assParsed) {
+                    lyrics.push(assParsed);
+                }
+            }
+        }
+        
+        if (lyrics.length > 0) {
+            lyrics.sort((a, b) => (a.time || 0) - (b.time || 0));
+            return { type: 'synced', lyrics: lyrics, format: 'ass' };
+        }
+        
+        return { type: 'plain', lyrics: [], format: 'ass' };
     };
         };
 
