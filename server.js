@@ -3551,6 +3551,32 @@ function cleanArtist(text) {
 }
 
 // Get lyrics with multiple providers support
+// 歌詞快取（減少外部 API 調用，避免 429）
+const lyricsCache = new Map();
+const LYRICS_CACHE_TTL = 30 * 60 * 1000; // 30 分鐘
+
+function getLyricsCacheKey(artist, title, provider) {
+    return `${artist.toLowerCase()}|${title.toLowerCase()}|${provider || 'auto'}`;
+}
+
+function getFromLyricsCache(key) {
+    const entry = lyricsCache.get(key);
+    if (entry && Date.now() - entry.time < LYRICS_CACHE_TTL) {
+        return entry.data;
+    }
+    lyricsCache.delete(key);
+    return null;
+}
+
+function setLyricsCache(key, data) {
+    // 限制快取大小
+    if (lyricsCache.size > 500) {
+        const firstKey = lyricsCache.keys().next().value;
+        lyricsCache.delete(firstKey);
+    }
+    lyricsCache.set(key, { data, time: Date.now() });
+}
+
 app.get('/api/lyrics/:artist/:title', async (req, res) => {
     const { artist: originalArtist, title: originalTitle } = req.params;
     const provider = req.query.p; // undefined 表示自動模式
@@ -3558,6 +3584,14 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
     // 清洗元數據
     const artist = cleanArtist(originalArtist);
     const title = cleanMetadata(originalTitle);
+
+    // 檢查快取
+    const cacheKey = getLyricsCacheKey(artist, title, provider);
+    const cached = getFromLyricsCache(cacheKey);
+    if (cached) {
+        console.log(`📦 歌詞快取命中: ${artist} - ${title}`);
+        return res.json(cached);
+    }
 
     try {
         console.log(`🎤 請求歌詞: ${artist} - ${title} (原始: ${originalArtist} - ${originalTitle}) (provider: ${provider || 'auto'})`);
@@ -3622,12 +3656,14 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                 console.log(`✅ 自動並行載入成功：選用 ${best.provider} (品質分數: ${best.score})`);
                 
                 // 確保數據格式正確回傳給前端
-                return res.json({
+                const successResult = {
                     success: true,
                     lyrics: best.lyrics,
                     type: best.type,
                     provider: best.provider
-                });
+                };
+                setLyricsCache(cacheKey, successResult);
+                return res.json(successResult);
             }
 
             // 🚀 關鍵回退：如果直接獲取失敗，嘗試「搜尋」模式
@@ -3645,13 +3681,15 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
                     const lyricsResponse = await axios.get(lyricsUrl, { timeout: 15000 });
                     
                     if (lyricsResponse.data && (lyricsResponse.data.success || lyricsResponse.data.lyrics)) {
-                        return res.json({
+                        const fallbackResult = {
                             success: true,
                             lyrics: lyricsResponse.data.lyrics,
                             type: lyricsResponse.data.type || 'plain',
                             provider: 'SearchFallback',
                             isFallback: true
-                        });
+                        };
+                        setLyricsCache(cacheKey, fallbackResult);
+                        return res.json(fallbackResult);
                     }
                 }
             } catch (searchError) {
@@ -3708,12 +3746,14 @@ app.get('/api/lyrics/:artist/:title', async (req, res) => {
 
                 if (safeLyrics.length > 0) {
                     console.log(`✅ 指定來源 ${provider} 成功取得歌詞`);
-                    return res.json({
+                    const providerResult = {
                         success: true,
                         lyrics: safeLyrics,
                         type: response.data.type || 'plain',
                         provider: provider
-                    });
+                    };
+                    setLyricsCache(cacheKey, providerResult);
+                    return res.json(providerResult);
                 }
             }
             

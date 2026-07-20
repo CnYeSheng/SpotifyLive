@@ -17,6 +17,11 @@ document.addEventListener('DOMContentLoaded', function() {
 function initLyricsManager() {
     console.log('🎼 初始化歌詞管理功能');
 
+    // 如果 player 沒有 log 方法，添加一個
+    if (SpotifyLyricsPlayer && !SpotifyLyricsPlayer.prototype.log) {
+        SpotifyLyricsPlayer.prototype.log = function(msg) { console.log(msg); };
+    }
+
     // =================
     // 歌詞下載功能
     // =================
@@ -76,10 +81,12 @@ function initLyricsManager() {
         const textInput = document.getElementById('lyrics-text-input');
         const preview = document.getElementById('upload-preview');
         
+        if (!modal) return;
+        
         // 重置輸入
-        fileInput.value = '';
-        textInput.value = '';
-        preview.style.display = 'none';
+        if (fileInput) fileInput.value = '';
+        if (textInput) textInput.value = '';
+        if (preview) preview.style.display = 'none';
         
         modal.style.display = 'flex';
         this.log('📤 顯示歌詞上傳模態框');
@@ -87,7 +94,7 @@ function initLyricsManager() {
 
     SpotifyLyricsPlayer.prototype.hideLyricsUploadModal = function() {
         const modal = document.getElementById('lyrics-upload-modal');
-        modal.style.display = 'none';
+        if (modal) modal.style.display = 'none';
         this.log('❌ 隱藏歌詞上傳模態框');
     };
 
@@ -236,8 +243,8 @@ SpotifyLyricsPlayer.prototype.processUploadedLyrics = function(content) {
         }
 
         const modal = document.getElementById('lyrics-edit-modal');
-        const visualEditor = document.getElementById('visual-lyrics-editor');
-        const textEditor = document.getElementById('text-lyrics-editor');
+        
+        if (!modal) return;
         
         // 初始化編輯器內容
         this.initializeEditors();
@@ -248,7 +255,7 @@ SpotifyLyricsPlayer.prototype.processUploadedLyrics = function(content) {
 
     SpotifyLyricsPlayer.prototype.hideLyricsEditModal = function() {
         const modal = document.getElementById('lyrics-edit-modal');
-        modal.style.display = 'none';
+        if (modal) modal.style.display = 'none';
         this.log('❌ 隱藏歌詞編輯模態框');
     };
 
@@ -257,10 +264,10 @@ SpotifyLyricsPlayer.prototype.processUploadedLyrics = function(content) {
         const textEditor = document.getElementById('text-lyrics-editor');
         
         // 初始化視覺編輯器
-        this.populateVisualEditor(visualEditor);
+        if (visualEditor) this.populateVisualEditor(visualEditor);
         
         // 初始化文本編輯器
-        this.populateTextEditor(textEditor);
+        if (textEditor) this.populateTextEditor(textEditor);
     };
 
     SpotifyLyricsPlayer.prototype.populateVisualEditor = function(container) {

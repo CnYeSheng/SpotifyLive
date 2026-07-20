@@ -315,8 +315,14 @@ class SpotifyLyricsPlayer {
                 try {
                     const data = JSON.parse(ev.data);
                     if (data.type === 'settings-changed') {
-                        this.log(`📡 SSE: 設定已變更 (v${data.version})，立即同步...`);
-                        this.checkCurrentTrack(); // Bypass rate limit
+                        this.log(`📡 SSE: 設定已變更 (v${data.version})，延遲同步...`);
+                        // 延遲 1 秒再同步，避免多裝置同時收到事件造成 429
+                        if (this._sseSyncTimeout) clearTimeout(this._sseSyncTimeout);
+                        this._sseSyncTimeout = setTimeout(() => {
+                            if (!this.isRateLimited) {
+                                this.checkCurrentTrack();
+                            }
+                        }, 1000 + Math.random() * 1000); // 1~2 秒隨機延遲
                     } else if (data.type === 'sync-event') {
                         this.log(`📡 SSE: 收到即時同步事件:`, data.event);
                         this.applySyncEvent(data.event);
@@ -4649,18 +4655,37 @@ async loadLyrics() {
     try {
         let artist = this.currentTrack.artist;
         let proxyUrl = `/api/lyrics/${encodeURIComponent(artist)}/${encodeURIComponent(this.currentTrack.name)}`;
-        let response = await fetch(proxyUrl);
+        
+        // 帶重試的 fetch（處理 429）
+        let response = null;
+        let retryCount = 0;
+        const maxRetries = 2;
+        
+        while (retryCount <= maxRetries) {
+            response = await fetch(proxyUrl);
+            
+            if (response.status === 429) {
+                retryCount++;
+                if (retryCount <= maxRetries) {
+                    const waitMs = retryCount * 2000; // 2s, 4s
+                    this.log(`⏳ 歌詞 API 速率限制，${waitMs/1000}秒後重試 (${retryCount}/${maxRetries})`);
+                    await new Promise(r => setTimeout(r, waitMs));
+                    continue;
+                }
+            }
+            break;
+        }
         
         // 🚨 增強：如果 404 且包含多個歌手，嘗試只用第一個歌手
-        if (!response.ok && response.status === 404 && artist.includes(',')) {
+        if (response && !response.ok && response.status === 404 && artist.includes(',')) {
             const firstArtist = artist.split(',')[0].trim();
             this.log(`⚠️ 完整歌手名 404，嘗試第一個歌手: ${firstArtist}`);
             proxyUrl = `/api/lyrics/${encodeURIComponent(firstArtist)}/${encodeURIComponent(this.currentTrack.name)}`;
             response = await fetch(proxyUrl);
         }
         
-        if (!response.ok) {
-            throw new Error(`API 响应错误: ${response.status}`);
+        if (!response || !response.ok) {
+            throw new Error(`API 响应错误: ${response?.status || 'network'}`);
         }
         
         const data = await response.json();
@@ -4931,8 +4956,9 @@ async loadLyrics() {
 
             const timeAttr = this.lyricsType === 'synced' && line.time ? `data-time="${line.time}"` : '';
             const interludeClass = line.isInterlude ? ' interlude' : '';
+            const chorusClass = line.isChorus ? ' chorus' : '';
             const endTimeAttr = line.endTime ? ` data-end-time="${line.endTime}"` : '';
-            return `<div class="lyrics-line${interludeClass}" data-index="${index}" ${timeAttr}${endTimeAttr}>${lineContent}</div>`;
+            return `<div class="lyrics-line${interludeClass}${chorusClass}" data-index="${index}" ${timeAttr}${endTimeAttr}>${lineContent}</div>`;
         }).join('');
 
         this.lyricsContent.innerHTML = lyricsHTML;
@@ -5076,14 +5102,8 @@ async loadLyrics() {
                     });
                 }
 
-                // 应用三态到非当前行
-                lyricsLines.forEach((line, index) => {
-                    if (index < this.currentLyricIndex) {
-                        line.classList.add('passed');
-                    } else if (index > this.currentLyricIndex) {
-                        line.classList.add('waiting');
-                    }
-                });
+                // 不对非当前行添加 waiting/passed 类，保持原有样式
+                // 三态模型仅应用于当前行的逐字歌词
                 
                 if (this.autoScroll && this.currentLyricIndex !== this._lastScrolledIndex) {
                     // 只有當歌詞行真正改變時才滾動，避免重複滾動導致跳動
